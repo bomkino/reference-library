@@ -23,3 +23,20 @@ export function moveSelectionIndex(
               : itemCount - 1;
   return Math.min(Math.max(proposed, 0), itemCount - 1);
 }
+
+export function scrollTopForSelection(
+  index: number,
+  columns: number,
+  rowHeight: number,
+  viewportHeight: number,
+  currentScrollTop: number,
+): number {
+  const safeColumns = Math.max(1, Math.floor(columns));
+  const itemTop = Math.floor(Math.max(0, index) / safeColumns) * rowHeight;
+  const itemBottom = itemTop + rowHeight;
+  if (itemTop < currentScrollTop) return itemTop;
+  if (itemBottom > currentScrollTop + viewportHeight) {
+    return Math.max(0, itemBottom - viewportHeight);
+  }
+  return currentScrollTop;
+}

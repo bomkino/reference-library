@@ -43,3 +43,10 @@ Do not rewrite or delete entries. Corrections append a superseding entry.
 **Change:** added the versioned named bridge, editorial workspace, paging and virtualization, stable keyboard selection, independent Interface Scale and thumbnail density, opaque preview resources, native reveal, supervised Electron main/preload, and pacman/AppImage/tar source configuration.
 **Fresh measurement:** `npm run check` passed TypeScript, 4 workspace tests, 6 Linux public-seam tests and both production builds; `npm audit --audit-level=high` found 0 vulnerabilities; `electron-builder --dir` assembled a Linux x86_64 package directory containing a 2.1 MiB ASAR and the 3.5 MiB release core.
 **Decision:** keep the shared workspace and hardened Linux shell. Status is packaged in a compatible Linux x86_64 environment, not integrated on Garuda; L1 remains open.
+
+## 2026-08-26 — Virtual focus and refresh hardening
+
+**Hypothesis:** logical keyboard focus can cross an unloaded page without expanding the rendered window or losing selection during progressive refresh.
+**Change:** retained a pending logical focus index, scrolled it into the bounded window, selected after its page arrived, isolated stale page completions by generation, and mapped closed opaque-resource sessions through the typed core error code.
+**Fresh measurement:** `npm run check` passed TypeScript, 5 workspace tests, 6 Linux public-seam tests and both production builds; the 100,000-Asset fixture remains bounded to at most 66 rendered cards.
+**Decision:** keep the focus/refresh repair; target assistive-technology and compositor behavior remains in M1/L1.

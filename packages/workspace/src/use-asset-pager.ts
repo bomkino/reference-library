@@ -57,7 +57,9 @@ export function useAssetPager(
           }
         })
         .finally(() => {
-          inFlight.current.delete(normalizedOffset);
+          if (inFlight.current.get(normalizedOffset) === request) {
+            inFlight.current.delete(normalizedOffset);
+          }
           if (currentGeneration === generation.current) setLoading(false);
         });
       inFlight.current.set(normalizedOffset, request);
@@ -79,6 +81,9 @@ export function useAssetPager(
   );
 
   const refresh = useCallback(() => {
+    generation.current += 1;
+    inFlight.current.clear();
+    setLoading(true);
     void loadPage(0, true);
   }, [loadPage]);
 

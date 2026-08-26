@@ -10,7 +10,11 @@ import type {
   AssetSummary,
   ReferenceWorkspaceBridge,
 } from "@pitchdog/reference-bridge";
-import { moveSelectionIndex, type NavigationKey } from "./selection";
+import {
+  moveSelectionIndex,
+  scrollTopForSelection,
+  type NavigationKey,
+} from "./selection";
 import { computeVirtualWindow } from "./virtual-window";
 
 interface ContactSheetProps {
@@ -27,6 +31,7 @@ interface ContactSheetProps {
 
 export function ContactSheet(props: ContactSheetProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
+  const pendingFocusIndex = useRef<number | null>(null);
   const [geometry, setGeometry] = useState({ width: 900, height: 600, scrollTop: 0 });
   const gap = 12;
   const cardHeight = Math.round(props.thumbnailSize * 0.72 + 58);
@@ -67,6 +72,20 @@ export function ContactSheet(props: ContactSheetProps) {
     ensureWindow(virtual.startIndex, virtual.endIndexExclusive);
   }, [ensureWindow, virtual.startIndex, virtual.endIndexExclusive]);
 
+  useEffect(() => {
+    const index = pendingFocusIndex.current;
+    if (index === null) return;
+    const asset = props.items.get(index);
+    if (!asset) return;
+    pendingFocusIndex.current = null;
+    props.onSelect(asset);
+    requestAnimationFrame(() => {
+      viewportRef.current
+        ?.querySelector<HTMLButtonElement>(`[data-index="${index}"]`)
+        ?.focus({ preventScroll: true });
+    });
+  }, [props.items, props.onSelect, virtual.startIndex, virtual.endIndexExclusive]);
+
   const indices = useMemo(
     () =>
       Array.from(
@@ -80,14 +99,28 @@ export function ContactSheet(props: ContactSheetProps) {
     if (!isNavigationKey(event.key)) return;
     event.preventDefault();
     const nextIndex = moveSelectionIndex(index, event.key, columns, props.total);
+    pendingFocusIndex.current = nextIndex;
     const nextAsset = props.items.get(nextIndex);
-    if (nextAsset) props.onSelect(nextAsset);
+    if (nextAsset) {
+      pendingFocusIndex.current = null;
+      props.onSelect(nextAsset);
+    }
     props.ensureWindow(nextIndex, nextIndex + 1);
+    const viewport = viewportRef.current;
+    if (viewport) {
+      viewport.scrollTop = scrollTopForSelection(
+        nextIndex,
+        columns,
+        cardHeight + gap,
+        geometry.height,
+        viewport.scrollTop,
+      );
+    }
     requestAnimationFrame(() => {
       const next = viewportRef.current?.querySelector<HTMLButtonElement>(
         `[data-index="${nextIndex}"]`,
       );
-      next?.focus({ preventScroll: false });
+      next?.focus({ preventScroll: true });
     });
   };
 

@@ -131,7 +131,7 @@ function registerProtocols() {
         },
       });
     } catch (error) {
-      const status = error?.message === "SessionClosed" ? 410 : 403;
+      const status = error?.code === "SessionClosed" ? 410 : 403;
       return new Response(status === 410 ? "Session closed" : "Resource denied", { status });
     }
   });
