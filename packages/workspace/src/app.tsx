@@ -304,19 +304,34 @@ function OpenWorkspace(props: OpenWorkspaceProps) {
         {props.selected ? `Selected ${props.selected.displayName}` : "No Asset selected"}
       </div>
       {props.preview && (
-        <div className="preview" role="dialog" aria-modal="true" aria-label={`Preview ${props.preview.displayName}`}>
-          <button className="preview__close" autoFocus onClick={() => props.setPreview(null)}>Close Preview</button>
-          <img
-            alt={props.preview.displayName}
-            src={props.bridge.assetResourceUrl({
-              sessionId: props.session.sessionId,
-              assetId: props.preview.assetId,
-              profile: "preview",
-            })}
-          />
-        </div>
+        <AssetPreview
+          asset={props.preview}
+          source={props.bridge.assetResourceUrl({
+            sessionId: props.session.sessionId,
+            assetId: props.preview.assetId,
+            profile: "preview",
+          })}
+          onClose={() => props.setPreview(null)}
+        />
       )}
     </main>
+  );
+}
+
+function AssetPreview(props: { asset: AssetSummary; source: string; onClose(): void }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className="preview" role="dialog" aria-modal="true" aria-label={`Preview ${props.asset.displayName}`}>
+      <button className="preview__close" autoFocus onClick={props.onClose}>Close Preview</button>
+      {failed ? (
+        <div className="preview__error" role="alert">
+          <strong>Preview unavailable</strong>
+          <span>The original remains catalogued. Its source was not changed.</span>
+        </div>
+      ) : (
+        <img alt={props.asset.displayName} src={props.source} onError={() => setFailed(true)} />
+      )}
+    </div>
   );
 }
 

@@ -176,11 +176,8 @@ export function ContactSheet(props: ContactSheetProps) {
               >
                 <span className="asset-card__image-frame">
                   {asset.availability === "present" ? (
-                    <img
-                      alt=""
-                      draggable={false}
-                      loading="lazy"
-                      src={props.bridge.assetResourceUrl({
+                    <AssetThumbnail
+                      source={props.bridge.assetResourceUrl({
                         sessionId: props.sessionId,
                         assetId: asset.assetId,
                         profile: "grid_standard",
@@ -200,6 +197,26 @@ export function ContactSheet(props: ContactSheetProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+function AssetThumbnail({ source }: { source: string }) {
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  return (
+    <>
+      {state === "loading" && <span className="asset-card__resource-state">Loading preview…</span>}
+      {state === "error" && <span className="asset-card__resource-state">Preview unavailable</span>}
+      <img
+        alt=""
+        aria-hidden
+        draggable={false}
+        loading="lazy"
+        src={source}
+        hidden={state === "error"}
+        onLoad={() => setState("ready")}
+        onError={() => setState("error")}
+      />
+    </>
   );
 }
 

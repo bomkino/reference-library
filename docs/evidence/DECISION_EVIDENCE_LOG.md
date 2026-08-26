@@ -50,3 +50,10 @@ Do not rewrite or delete entries. Corrections append a superseding entry.
 **Change:** retained a pending logical focus index, scrolled it into the bounded window, selected after its page arrived, isolated stale page completions by generation, and mapped closed opaque-resource sessions through the typed core error code.
 **Fresh measurement:** `npm run check` passed TypeScript, 5 workspace tests, 6 Linux public-seam tests and both production builds; the 100,000-Asset fixture remains bounded to at most 66 rendered cards.
 **Decision:** keep the focus/refresh repair; target assistive-technology and compositor behavior remains in M1/L1.
+
+## 2026-08-26 — Honest resource failure states
+
+**Hypothesis:** opaque resource failures can remain explicit without revealing paths or destabilizing contact-sheet geometry.
+**Change:** added per-card loading/unavailable states and a bounded Preview error surface that confirms the original remains untouched.
+**Fresh measurement:** `npm run check` again passed TypeScript, 5 workspace tests, 6 Linux public-seam tests and production workspace/Linux builds.
+**Decision:** keep the local failure states; decoder- and target-specific behavior remains in M1/L1.
