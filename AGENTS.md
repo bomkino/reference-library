@@ -21,6 +21,10 @@ Read `CONTEXT.md`, `docs/product/PRODUCT_CONSTITUTION.md`, `docs/specs/TRACER_T0
 
 ```bash
 python3 scripts/check_repository.py
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+python3 scripts/generate_dependency_licenses.py
 ```
 
 Add commands here only after they exist and pass.
