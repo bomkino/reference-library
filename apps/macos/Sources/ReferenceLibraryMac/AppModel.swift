@@ -99,9 +99,15 @@ final class AppModel: ObservableObject {
                 guard requestedSession == activeSessionID else { throw ModelFailure.sessionClosed }
                 _ = try Self.opaqueID(payload, "sessionId")
             }
+            let sessionValue: Any
+            if let requestedSession {
+                sessionValue = requestedSession
+            } else {
+                sessionValue = NSNull()
+            }
             let capabilities = try await requestValue(
                 method: "get_capabilities",
-                params: ["sessionId": requestedSession ?? NSNull()],
+                params: ["sessionId": sessionValue],
                 expected: "capabilities"
             )
             if let dictionary = capabilities as? [String: Any], let detail = dictionary["detail"] {
