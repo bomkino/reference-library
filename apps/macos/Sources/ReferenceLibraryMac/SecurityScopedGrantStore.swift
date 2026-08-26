@@ -43,7 +43,7 @@ final class SecurityScopedGrantStore {
                 relativeTo: nil,
                 bookmarkDataIsStale: &stale
             )
-            if stale { _ = storeAndActivate(url: url, rootID: rootID) }
+            if stale { return storeAndActivate(url: url, rootID: rootID) }
             if url.startAccessingSecurityScopedResource() { activeURLs[rootID] = url }
             return true
         } catch {
