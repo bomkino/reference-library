@@ -6,7 +6,8 @@
 Repository: https://github.com/bomkino/reference-library
 Expected and actual start SHA: 622237237e4492292df91b8912f9109cb3a0bf1e
 Branch: codex/reference-library-tracer-01
-Verified source head: 621cd4192b6073ffbb0f93a26112c2c8e162da0c
+Reviewed implementation head: c9db5624cadc4894c8dd34b27d52007a65321dd0
+Spec/Standards review commit: 2472966c4bc66a205ca0b61019e5e5a115bc8ba8
 Local environment: Linux 6.18.35 x86_64
 CI environments: ubuntu-24.04 x86_64; macos-26 arm64
 Recorded: 26 August 2026 UTC
@@ -32,6 +33,9 @@ This is not a claim of target integration. No release was published, no deployme
 | `abbb534` | Swift capability parameter compile repair | Swift tests and Apple-Silicon package build passed |
 | `c10b693` | Cross-page virtual focus and stale refresh repair | 100,000-Asset window remained bounded; 5 workspace tests passed |
 | `621cd41` | Explicit opaque thumbnail/preview failure states | Full five-job CI passed |
+| `d158534` | Immutable-SHA pinning for every third-party CI action | Subsequent five-job CI passed |
+| `c9db562` | Complete Linux release metadata | pacman/AppImage/tar assembled in compatible Linux environment |
+| `2472966` | Spec and Standards reviews | No blocking source-level deviation; target gates kept open |
 
 ## Public seams
 
@@ -71,9 +75,31 @@ python3 scripts/generate_dependency_licenses.py
 
 npm run package:dir -w @pitchdog/reference-linux
   pass: Linux x86_64 package directory contains executable, ASAR and release core
+
+cargo build --release --locked -p reference-core
+npm run package -w @pitchdog/reference-linux
+  first pass: AppImage and tar assembled; pacman exposed missing release metadata
+  second pass: metadata fixed; pacman exposed missing runner command bsdtar (exit 127)
+
+apt-get update && apt-get install -y --no-install-recommends libarchive-tools
+  blocked: managed runner cannot change apt identities (exit 100); repository unchanged
+
+curl -fsSL --max-time 60 https://archive.ubuntu.com/ubuntu/pool/universe/liba/libarchive/libarchive-tools_3.7.2-2ubuntu0.8_amd64.deb
+sha256sum -c
+  pass: Canonical package matched ca4f763c2b35a49b9d37a19cd0d3b6625c04c0b81fb4986dd3b95a6ed9de1b77
+
+PATH=<verified-bsdtar>:$PATH npx electron-builder --linux pacman
+  pass: pacman package assembled
+
+bsdtar -tf release/linux/reference-library-0.1.0-x64.pacman
+tar -tzf release/linux/reference-library-0.1.0-x64.tar.gz
+  pass: archives contain packaged workspace and release core
+
+release/linux/reference-library-0.1.0-x86_64.AppImage --appimage-extract-and-run --version
+  structural extraction passed; graphical launch stopped at absent X server/DBus
 ```
 
-GitHub Actions run [`33020077063`](https://github.com/bomkino/reference-library/actions/runs/33020077063) passed all five jobs at source head `621cd41`. On `macos-26` arm64, two Swift bridge tests passed, the release Swift executable and `aarch64-apple-darwin` Rust core compiled, ad-hoc codesign verification passed, and the app ZIP checksum verified.
+GitHub Actions run [`33020944489`](https://github.com/bomkino/reference-library/actions/runs/33020944489) passed all five jobs at reviewed implementation head `c9db562`. On `macos-26` arm64, two Swift bridge tests passed, the release Swift executable and `aarch64-apple-darwin` Rust core compiled, ad-hoc codesign verification passed, and the app ZIP checksum verified.
 
 ## Build truth
 
@@ -81,7 +107,7 @@ GitHub Actions run [`33020077063`](https://github.com/bomkino/reference-library/
 |---|---|---|---|
 | Canonical Rust core | Source-ready; production candidate | Release build, SQLite/WAL public seams, supervised crash/restart | C1 |
 | Shared workspace | Source-ready | Bounded contact sheet, focus, explicit states, independent scales | M1/L1 assistive-tech and compositor checks |
-| Electron/Linux | Packaged on compatible Linux x86_64 runner | Unpacked Electron directory with ASAR and bundled core; pacman/AppImage/tar config present | L1 |
+| Electron/Linux | Packaged in a compatible Linux x86_64 environment | pacman `1a9af203…`, AppImage `989b25f2…`, tar `540465bf…`; each contains workspace and release core | L1 |
 | Swift/macOS | Compiled and packaged on Apple-Silicon CI | Ad-hoc-signed `.app` ZIP with verified checksum | M1 |
 | Cross-platform semantics | Host-neutral pass | Electron-labelled create → Swift-labelled reopen, zero semantic diff | X1 |
 
@@ -95,6 +121,23 @@ GitHub Actions run [`33020077063`](https://github.com/bomkino/reference-library/
 - Source mutation is explicitly absent; scan preserves originals and models missing files as state.
 - Helper exit rejects pending work, freezes shell writes, preserves committed metadata and requires explicit restart.
 - Canonical dumps exclude grants, caches, provider paths, window state and volatile timestamps.
+
+## Spec review
+
+The review in `T01_SPEC_REVIEW.md` found every bounded T01 source requirement satisfied. It retained the accepted WKWebView fallback and recorded only target/release limitations: real bookmark/Finder/VoiceOver behavior, Garuda/KDE integration, real Mac–Garuda–Mac parity, target resource backpressure, signing/notarization, release checksum substitution and final iconography. Deferred features remained absent.
+
+## Standards review
+
+The review in `T01_STANDARDS_REVIEW.md` found no Critical or High source-level defect. Rust format/clippy/tests, TypeScript and shell tests/builds, audits, licence inventory, dependency duplication check, bridge security, accessibility semantics, recovery and compatible package assembly passed. The default placeholder icon and unperformed target assistive-tech/signing journeys remain explicit limitations.
+
+## Honest limits
+
+- **Verified complete:** package/schema/identity core seam, framed commands/events/cancellation/restart, bounded queries and virtualization, opaque authorization/reveal, host-neutral zero semantic diff.
+- **Source-ready:** shared workspace, Electron shell, SwiftUI/WebKit shell and packaging source.
+- **Packaged in compatible environments:** Linux x86_64 pacman/AppImage/tar; Apple-Silicon CI `.app.zip`.
+- **Target-machine blocked:** M1, L1, X1 and therefore C1/ADR acceptance.
+- **Not attempted because outside T01:** source mutation, Excerpts, similarity, duplicate review, broad formats, MCP, accounts, telemetry, AI and release publishing.
+- **Known packaging limitation:** placeholder app icon; Apple package is ad-hoc signed and not notarized.
 
 ## Remaining gates only
 
@@ -114,4 +157,6 @@ Run Mac → Garuda → Mac with the exact installed builds and compare canonical
 
 Close ADR-004 only after M1 and L1 prove the supervised Rust executable's signing, bundling, WAL recovery and resource backpressure on the real targets.
 
-T02 and all post-T01 features remain undispatched.
+## Next exact vertical slice
+
+Run M1 on a representative Apple-Silicon Mac using the exact CI package recipe: clean-account ZIP extraction; create/open one Library; authorize one still Root; verify bookmark restore, progressive Contact Sheet, opaque Preview, Finder reveal, Interface Scale, keyboard/VoiceOver, forced core restart and canonical dump. Pass requires no raw path exposure, no curation loss, valid signing/bundle paths and an appended target receipt. Do not begin T02 before M1/L1/X1/C1 are resolved or explicitly rescheduled.
