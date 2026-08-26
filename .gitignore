@@ -1,0 +1,29 @@
+# User Libraries and transfer packages
+*.pitchlibrary/
+*.pitchlibrary.zip
+*.pitchlibrary-transfer.zip
+
+# Rust
+target/
+
+# Node and workspace
+node_modules/
+dist/
+coverage/
+.playwright/
+
+# Swift and Xcode
+.build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Electron packaging
+release/
+out/
+
+# Local evidence and generated fixtures
+docs/evidence/local/
+fixtures/generated/
+*.log
+.DS_Store
