@@ -2,7 +2,12 @@
   "name": "@pitchdog/reference-linux",
   "version": "0.1.0",
   "description": "Private project visual research library",
-  "author": "pitch.dog",
+  "homepage": "https://github.com/bomkino/reference-library",
+  "author": {
+    "name": "pitch.dog",
+    "email": "111725271+bomkino@users.noreply.github.com"
+  },
+  "desktopName": "Reference Library",
   "private": true,
   "type": "module",
   "main": "dist/main.mjs",
@@ -34,6 +39,7 @@
     "linux": {
       "category": "Graphics",
       "executableName": "reference-library",
+      "syncDesktopName": true,
       "target": [
         "pacman",
         "AppImage",

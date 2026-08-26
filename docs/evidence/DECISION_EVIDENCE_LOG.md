@@ -64,3 +64,10 @@ Do not rewrite or delete entries. Corrections append a superseding entry.
 **Change:** added per-card loading/unavailable states and a bounded Preview error surface that confirms the original remains untouched.
 **Fresh measurement:** `npm run check` again passed TypeScript, 5 workspace tests, 6 Linux public-seam tests and production workspace/Linux builds.
 **Decision:** keep the local failure states; decoder- and target-specific behavior remains in M1/L1.
+
+## 2026-08-26 — Linux distributable package assembly
+
+**Hypothesis:** the declared pacman/AppImage/tar targets can assemble in the compatible Linux runner once release metadata and the Arch mtree tool are explicit.
+**Change:** added repository homepage, verified repository-author address and desktop identity; supplied `bsdtar` from Canonical's `libarchive-tools_3.7.2-2ubuntu0.8_amd64.deb` after verifying SHA-256 `ca4f763c2b35a49b9d37a19cd0d3b6625c04c0b81fb4986dd3b95a6ed9de1b77`.
+**Fresh measurement:** pacman, AppImage and tar packages assembled and listed successfully. SHA-256 values are `1a9af20340b23c72e7c401086db4ae693cf9d1989527c3d7cb2e19cc29aa3447`, `989b25f29480fca3fe7eee9a4b35b1c782ae7e82f06620b7b27e3cdc7cd4e898` and `540465bfd1168a3fbc573db779b436311c85f373f6be523fd395b4f533bcaad8` respectively. AppImage extraction passed; graphical launch stopped at the runner's absent X server/DBus.
+**Decision:** status is packaged in a compatible Linux x86_64 environment, not integrated on Garuda. Keep L1 open and record the default placeholder icon as a packaging-polish limitation.
