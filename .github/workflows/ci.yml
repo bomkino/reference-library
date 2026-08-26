@@ -28,5 +28,56 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      - run: node scripts/t01-semantic-roundtrip.mjs --core target/debug/reference-core
+
+  workspace-and-linux-source:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci --ignore-scripts
+      - run: npm audit --audit-level=high
+      - run: cargo build --locked -p reference-core
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
       - run: python3 scripts/generate_dependency_licenses.py
       - run: git diff --exit-code -- DEPENDENCY-LICENSES.json
+
+  linux-package-directory:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: cargo build --release --locked -p reference-core
+      - run: npm run build -w @pitchdog/reference-workspace
+      - run: npm run package:dir -w @pitchdog/reference-linux
+      - run: test -x release/linux/linux-unpacked/reference-library
+      - run: test -x release/linux/linux-unpacked/resources/bin/reference-core
+      - run: test -f release/linux/linux-unpacked/resources/app.asar
+
+  macos-arm64-package:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - run: npm ci --ignore-scripts
+      - run: swift test --package-path apps/macos
+      - run: apps/macos/scripts/build-app.sh
+      - run: test -f release/macos/reference-library-0.1.0-macos-arm64.app.zip
+      - run: shasum -a 256 -c release/macos/reference-library-0.1.0-macos-arm64.app.zip.sha256

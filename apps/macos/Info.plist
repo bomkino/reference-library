@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleDisplayName</key><string>Reference Library</string>
+  <key>CFBundleExecutable</key><string>ReferenceLibraryMac</string>
+  <key>CFBundleIdentifier</key><string>io.pitchdog.ReferenceLibrary</string>
+  <key>CFBundleName</key><string>Reference Library</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSArchitecturePriority</key><array><string>arm64</string></array>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key><string>Reference Library</string>
+      <key>CFBundleTypeRole</key><string>Editor</string>
+      <key>LSHandlerRank</key><string>Owner</string>
+      <key>LSItemContentTypes</key><array><string>io.pitchdog.pitchlibrary</string></array>
+    </dict>
+  </array>
+  <key>UTImportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeConformsTo</key><array><string>com.apple.package</string></array>
+      <key>UTTypeDescription</key><string>Reference Library package</string>
+      <key>UTTypeIdentifier</key><string>io.pitchdog.pitchlibrary</string>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key><array><string>pitchlibrary</string></array>
+      </dict>
+    </dict>
+  </array>
+</dict>
+</plist>
