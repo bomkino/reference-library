@@ -1,5 +1,6 @@
 use std::{
     fs,
+    io::Write,
     path::{Path, PathBuf},
     sync::{Arc, atomic::AtomicBool, mpsc},
 };
@@ -17,6 +18,32 @@ const WEBP_HEX: &str = "524946463c000000574542505650382030000000f001009d012a0200
 
 struct TestProject {
     directory: PathBuf,
+}
+
+#[test]
+fn oversized_asset_resource_is_denied_at_the_public_seam() {
+    let project = TestProject::new();
+    let root = project.root_path();
+    fs::create_dir_all(&root).unwrap();
+    let path = root.join("oversized.png");
+    let mut file = fs::File::create(&path).unwrap();
+    file.write_all(&decode_hex(PNG_HEX)).unwrap();
+    file.set_len(512 * 1024 * 1024 + 1).unwrap();
+    drop(file);
+
+    let mut session = LibrarySession::create(project.library_path(), "Project".into()).unwrap();
+    let plan = session.add_root(root, "Source Root".into()).unwrap();
+    let (sender, _receiver) = mpsc::channel();
+    scan_root(plan, Arc::new(AtomicBool::new(false)), sender);
+    let page = session
+        .query_assets(0, 10, AssetProjection::ContactSheetStandard)
+        .unwrap();
+    assert_eq!(page.total, 1);
+    assert!(matches!(
+        session.authorize_resource(&page.items[0].asset_id, ResourceProfile::Preview),
+        Err(CoreError::ResourceTooLarge)
+    ));
+    session.close().unwrap();
 }
 
 impl TestProject {

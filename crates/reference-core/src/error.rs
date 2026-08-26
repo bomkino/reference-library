@@ -35,6 +35,8 @@ pub enum CoreError {
     LocationMissing,
     #[error("preview is unsupported for this media type")]
     UnsupportedPreview,
+    #[error("Asset resource exceeds the T01 512 MiB output limit")]
+    ResourceTooLarge,
     #[error("raw paths are not valid resource identifiers")]
     RawPathResourceDenied,
     #[error("protocol version {0} is unsupported")]
@@ -59,6 +61,7 @@ impl CoreError {
             Self::LocationNotFound => ("LocationNotFound", false),
             Self::LocationMissing => ("LocationMissing", true),
             Self::UnsupportedPreview => ("UnsupportedPreview", false),
+            Self::ResourceTooLarge => ("ResourceTooLarge", false),
             Self::RawPathResourceDenied => ("RawPathResourceDenied", false),
             Self::ProtocolVersionUnsupported(_) => ("ProtocolVersionUnsupported", false),
             Self::TestCommandDisabled => ("TestCommandDisabled", false),

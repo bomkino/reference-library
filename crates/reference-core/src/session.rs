@@ -14,6 +14,8 @@ use reference_protocol::{
 use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
 
+const MAX_RESOURCE_BYTES: u64 = 512 * 1024 * 1024;
+
 use crate::{
     canonical,
     discovery::ScanPlan,
@@ -292,6 +294,9 @@ impl LibrarySession {
             "image/jpeg" | "image/png" | "image/webp"
         ) {
             return Err(CoreError::UnsupportedPreview);
+        }
+        if content_length > MAX_RESOURCE_BYTES {
+            return Err(CoreError::ResourceTooLarge);
         }
         let native_path = resolve_authorized_path(root_path, relative_bytes)?;
         let observed_length = native_path.metadata()?.len();

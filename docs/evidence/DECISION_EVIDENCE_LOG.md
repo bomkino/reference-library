@@ -29,3 +29,10 @@ Do not rewrite or delete entries. Corrections append a superseding entry.
 **Change:** added framed protocol crate, migration 1, atomic package create/open/close, writer lock, Source/Revision/Location and AssetOrigin/Asset persistence, cancellable progressive scanner, resource/reveal resolution, canonical dump, dependency inventory and public-seam fixtures.
 **Fresh measurement:** `cargo test --workspace` passed 7 tests, including 100,000-Asset paging in 13.97 seconds and forced core exit/restart in 0.18 seconds; `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all -- --check`, licence generation, repository boundary check and `git diff --check` passed.
 **Decision:** keep production-candidate supervised protocol as ADR-004 Proposed; commit slice. C1/M1/L1 remain required before acceptance/integration.
+
+## 2026-08-26 — T01 protocol and resource boundary hardening
+
+**Hypothesis:** camel-case field serialization, per-entry cancellation checks and a bounded native resource descriptor close interoperability and backpressure gaps without widening the public seam.
+**Change:** made the framed JSON shape explicit, checked cancellation inside large directories, and denied still resources larger than 512 MiB before either shell reads bytes.
+**Fresh measurement:** `cargo test --workspace` passed 9 public-seam and unit tests, including a sparse 512 MiB resource denial; `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all -- --check` passed.
+**Decision:** keep the narrow interoperable protocol and 512 MiB T01 resource ceiling; target-machine range/backpressure proof remains in M1/L1.

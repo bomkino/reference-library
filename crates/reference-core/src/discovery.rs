@@ -65,7 +65,7 @@ fn run_scan(
 
     while let Some(directory) = stack.pop() {
         if cancelled.load(Ordering::Relaxed) {
-            flush_batch(
+            finish_cancelled(
                 &mut connection,
                 plan,
                 &mut batch,
@@ -73,32 +73,22 @@ fn run_scan(
                 &mut observed_count,
                 events,
             )?;
-            mark_cancelled(&connection, plan, observed_count)?;
-            events
-                .send(Event::ScanProgressChanged {
-                    root_id: plan.root_id.clone(),
-                    job_id: plan.job_id.clone(),
-                    observed_count,
-                    terminal: true,
-                })
-                .ok();
-            events
-                .send(Event::RootStateChanged {
-                    root_id: plan.root_id.clone(),
-                    state: "connected".into(),
-                })
-                .ok();
-            events
-                .send(Event::JobUpdated {
-                    job_id: plan.job_id.clone(),
-                    state: "cancelled".into(),
-                })
-                .ok();
             return Ok(());
         }
         let mut entries = fs::read_dir(&directory)?.collect::<Result<Vec<_>, _>>()?;
         entries.sort_by_key(|entry| entry.file_name());
         for entry in entries.into_iter().rev() {
+            if cancelled.load(Ordering::Relaxed) {
+                finish_cancelled(
+                    &mut connection,
+                    plan,
+                    &mut batch,
+                    &mut seen,
+                    &mut observed_count,
+                    events,
+                )?;
+                return Ok(());
+            }
             let file_type = entry.file_type()?;
             if file_type.is_symlink() {
                 continue;
@@ -153,6 +143,39 @@ fn run_scan(
         .send(Event::JobUpdated {
             job_id: plan.job_id.clone(),
             state: "completed".into(),
+        })
+        .ok();
+    Ok(())
+}
+
+fn finish_cancelled(
+    connection: &mut Connection,
+    plan: &ScanPlan,
+    batch: &mut Vec<FileCandidate>,
+    seen: &mut BTreeSet<Vec<u8>>,
+    observed_count: &mut u64,
+    events: &Sender<Event>,
+) -> Result<(), CoreError> {
+    flush_batch(connection, plan, batch, seen, observed_count, events)?;
+    mark_cancelled(connection, plan, *observed_count)?;
+    events
+        .send(Event::ScanProgressChanged {
+            root_id: plan.root_id.clone(),
+            job_id: plan.job_id.clone(),
+            observed_count: *observed_count,
+            terminal: true,
+        })
+        .ok();
+    events
+        .send(Event::RootStateChanged {
+            root_id: plan.root_id.clone(),
+            state: "connected".into(),
+        })
+        .ok();
+    events
+        .send(Event::JobUpdated {
+            job_id: plan.job_id.clone(),
+            state: "cancelled".into(),
         })
         .ok();
     Ok(())

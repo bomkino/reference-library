@@ -22,7 +22,12 @@ pub struct ClientFrame {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "method", content = "params", rename_all = "snake_case")]
+#[serde(
+    tag = "method",
+    content = "params",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum Command {
     Hello {
         client_name: String,
@@ -89,7 +94,11 @@ pub enum ResourceProfile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum ServerFrame {
     Response {
         protocol_version: u32,
@@ -109,7 +118,12 @@ pub enum ServerFrame {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "result", content = "value", rename_all = "snake_case")]
+#[serde(
+    tag = "result",
+    content = "value",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum CommandResult {
     Hello(HelloResult),
     SessionOpened(SessionOpened),
@@ -224,7 +238,12 @@ pub enum CancellationState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "event", content = "value", rename_all = "snake_case")]
+#[serde(
+    tag = "event",
+    content = "value",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum Event {
     RootStateChanged {
         root_id: String,
@@ -341,5 +360,33 @@ mod tests {
         bytes.extend_from_slice(b"{}");
         let error = read_frame::<ClientFrame>(&mut bytes.as_slice()).unwrap_err();
         assert!(matches!(error, FrameError::FrameTooLarge { .. }));
+    }
+
+    #[test]
+    fn public_json_uses_camel_case_fields_and_snake_case_methods() {
+        let request = ClientFrame {
+            protocol_version: PROTOCOL_VERSION,
+            request_id: "request-1".into(),
+            command: Command::AddRoot {
+                session_id: "session-1".into(),
+                authorized_path: "/native-only".into(),
+                display_name: "References".into(),
+            },
+        };
+        assert_eq!(
+            serde_json::to_value(request).unwrap(),
+            serde_json::json!({
+                "protocolVersion": 1,
+                "requestId": "request-1",
+                "command": {
+                    "method": "add_root",
+                    "params": {
+                        "sessionId": "session-1",
+                        "authorizedPath": "/native-only",
+                        "displayName": "References"
+                    }
+                }
+            })
+        );
     }
 }
