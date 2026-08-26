@@ -65,10 +65,21 @@ export class CoreSupervisor extends EventEmitter {
     const child = this.#child;
     if (!child) return;
     this.#stopping = true;
+    const exited = new Promise((resolve) => child.once("exit", resolve));
     try {
       await this.request({ method: "shutdown" }, 2_000);
     } catch {
       child.kill("SIGTERM");
+    }
+    if (child.exitCode === null) {
+      const didExit = await Promise.race([
+        exited.then(() => true),
+        new Promise((resolve) => setTimeout(() => resolve(false), 2_000)),
+      ]);
+      if (!didExit && child.exitCode === null) {
+        child.kill("SIGTERM");
+        await exited;
+      }
     }
     this.#child = null;
     this.#stopping = false;

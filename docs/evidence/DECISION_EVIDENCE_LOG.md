@@ -36,3 +36,10 @@ Do not rewrite or delete entries. Corrections append a superseding entry.
 **Change:** made the framed JSON shape explicit, checked cancellation inside large directories, and denied still resources larger than 512 MiB before either shell reads bytes.
 **Fresh measurement:** `cargo test --workspace` passed 9 public-seam and unit tests, including a sparse 512 MiB resource denial; `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all -- --check` passed.
 **Decision:** keep the narrow interoperable protocol and 512 MiB T01 resource ceiling; target-machine range/backpressure proof remains in M1/L1.
+
+## 2026-08-26 — Shared workspace and Garuda shell source
+
+**Hypothesis:** a single bounded React contact sheet can remain platform-neutral while a sandboxed Electron shell owns every privileged Linux operation.
+**Change:** added the versioned named bridge, editorial workspace, paging and virtualization, stable keyboard selection, independent Interface Scale and thumbnail density, opaque preview resources, native reveal, supervised Electron main/preload, and pacman/AppImage/tar source configuration.
+**Fresh measurement:** `npm run check` passed TypeScript, 4 workspace tests, 6 Linux public-seam tests and both production builds; `npm audit --audit-level=high` found 0 vulnerabilities; `electron-builder --dir` assembled a Linux x86_64 package directory containing a 2.1 MiB ASAR and the 3.5 MiB release core.
+**Decision:** keep the shared workspace and hardened Linux shell. Status is packaged in a compatible Linux x86_64 environment, not integrated on Garuda; L1 remains open.
