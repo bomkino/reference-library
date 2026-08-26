@@ -6,7 +6,9 @@ One project gets one `.pitchlibrary` package. Apple-Silicon macOS is primary; Ga
 
 ## Status
 
-T01, the first production tracer, is under construction. Nothing in this repository is yet target-integrated on Apple Silicon or Garuda.
+T01, the first production tracer, is **source-ready**. Core, workspace and both native shell sources pass CI; compatible runners assemble the Linux package directory and the ad-hoc-signed Apple-Silicon app ZIP.
+
+Nothing is yet target-integrated on representative Apple Silicon or Jenai's Garuda system. M1, L1, X1 and C1 remain explicit gates.
 
 ## Repository shape
 

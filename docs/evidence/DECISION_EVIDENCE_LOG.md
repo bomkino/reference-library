@@ -51,6 +51,13 @@ Do not rewrite or delete entries. Corrections append a superseding entry.
 **Fresh measurement:** `npm run check` passed TypeScript, 5 workspace tests, 6 Linux public-seam tests and both production builds; the 100,000-Asset fixture remains bounded to at most 66 rendered cards.
 **Decision:** keep the focus/refresh repair; target assistive-technology and compositor behavior remains in M1/L1.
 
+## 2026-08-26 — T01 source-ready receipt
+
+**Hypothesis:** the bounded T01 journey can be called source-ready once every available public seam, both shell source builds and compatible package assemblies pass from the synchronized branch, while target integration remains unclaimed.
+**Change:** closed the visible Library, virtual-focus and opaque-resource failure seams; compiled the SwiftUI/WebKit adapter; assembled Linux and Apple-Silicon packages; recorded the final source receipt.
+**Fresh measurement:** source head `621cd4192b6073ffbb0f93a26112c2c8e162da0c` passed all five jobs in GitHub Actions run `33020077063`: repository boundary, Rust format/clippy/9 tests plus zero-diff semantic round-trip, TypeScript/5 workspace tests/6 Linux tests/build/licence audit, Linux x86_64 package directory, and Apple-Silicon Swift tests/ad-hoc codesign/app ZIP checksum. Local rerun matched those non-Swift seams.
+**Decision:** mark T01 source-ready, not target-integrated. Only M1, L1, X1 and C1 remain; do not dispatch T02 from this branch.
+
 ## 2026-08-26 — Honest resource failure states
 
 **Hypothesis:** opaque resource failures can remain explicit without revealing paths or destabilizing contact-sheet geometry.
