@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Reference Library
+Comment=Private project visual research library
+Exec=reference-library %U
+Terminal=false
+Categories=Graphics;
+MimeType=application/x-pitchdog-reference-library;
+StartupWMClass=reference-library

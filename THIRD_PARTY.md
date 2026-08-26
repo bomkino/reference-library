@@ -28,4 +28,4 @@ Current direct dependencies are implemented from their public APIs; no dependenc
 | `thiserror` | 2.0.20 | MIT OR Apache-2.0 | Typed internal errors | crates.io |
 | `uuid` | 1.25.0 | Apache-2.0 OR MIT | Generated stable IDs and session tokens | crates.io |
 
-Exact transitive versions live in `Cargo.lock`; generated licence inventory replaces the placeholder before final receipt.
+Exact transitive versions live in `Cargo.lock` and `package-lock.json`; generated licence inventory covers both ecosystems.

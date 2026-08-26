@@ -1,0 +1,31 @@
+pkgname=reference-library
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Private project visual research library'
+arch=('x86_64' 'aarch64')
+url='https://github.com/bomkino/reference-library'
+license=('AGPL-3.0-only')
+depends=('gtk3' 'nss' 'libxss')
+makedepends=('cargo' 'nodejs' 'npm')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+# Release engineering replaces this token with the published tarball SHA-256.
+# Deliberately do not use SKIP for a non-VCS source.
+sha256sums=('REPLACE_WITH_RELEASE_TARBALL_SHA256')
+
+build() {
+  cd "$srcdir/reference-library-$pkgver"
+  cargo build --release --locked -p reference-core
+  npm ci
+  npm run build
+  npm run package:dir -w @pitchdog/reference-linux
+}
+
+package() {
+  cd "$srcdir/reference-library-$pkgver/release/linux/linux-unpacked"
+  install -d "$pkgdir/opt/reference-library"
+  cp -a . "$pkgdir/opt/reference-library/"
+  install -Dm755 "$srcdir/reference-library-$pkgver/apps/linux/packaging/reference-library" \
+    "$pkgdir/usr/bin/reference-library"
+  install -Dm644 "$srcdir/reference-library-$pkgver/apps/linux/packaging/io.pitchdog.ReferenceLibrary.desktop" \
+    "$pkgdir/usr/share/applications/io.pitchdog.ReferenceLibrary.desktop"
+}

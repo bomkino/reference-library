@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate deterministic Rust dependency licence inventory from Cargo metadata."""
+"""Generate deterministic Cargo and npm dependency licence inventory."""
 
 import json
 from pathlib import Path
@@ -20,6 +20,7 @@ def main() -> None:
     metadata = json.loads(process.stdout)
     packages = [
         {
+            "ecosystem": "cargo",
             "name": package["name"],
             "version": package["version"],
             "license": package.get("license"),
@@ -28,7 +29,23 @@ def main() -> None:
         for package in metadata["packages"]
         if package.get("source") is not None
     ]
-    packages.sort(key=lambda package: (package["name"], package["version"]))
+    package_lock_path = ROOT / "package-lock.json"
+    if package_lock_path.is_file():
+        package_lock = json.loads(package_lock_path.read_text(encoding="utf-8"))
+        packages.extend(
+            {
+                "ecosystem": "npm",
+                "name": package_path.rsplit("node_modules/", 1)[-1],
+                "version": package["version"],
+                "license": package.get("license"),
+                "source": package.get("resolved"),
+            }
+            for package_path, package in package_lock.get("packages", {}).items()
+            if package_path and "node_modules/" in package_path and not package.get("link")
+        )
+    packages.sort(
+        key=lambda package: (package["ecosystem"], package["name"], package["version"])
+    )
     inventory = {
         "schemaVersion": 1,
         "generated": True,

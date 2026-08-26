@@ -1,0 +1,32 @@
+{
+  "name": "pitchdog-reference-library",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/linux"
+  ],
+  "scripts": {
+    "build": "npm run build -w @pitchdog/reference-workspace && npm run build -w @pitchdog/reference-linux",
+    "typecheck": "npm run typecheck -w @pitchdog/reference-bridge && npm run typecheck -w @pitchdog/reference-workspace",
+    "test": "npm run test -w @pitchdog/reference-workspace && npm run test -w @pitchdog/reference-linux",
+    "check": "npm run typecheck && npm test && npm run build",
+    "test:semantic-roundtrip": "node scripts/t01-semantic-roundtrip.mjs"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "@vitejs/plugin-react": "6.1.0",
+    "electron": "44.0.0",
+    "electron-builder": "26.15.3",
+    "jsdom": "30.0.1",
+    "typescript": "7.0.2",
+    "vite": "8.2.2",
+    "vitest": "4.1.11"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  }
+}
