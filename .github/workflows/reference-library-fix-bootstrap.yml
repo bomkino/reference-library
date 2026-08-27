@@ -25,11 +25,11 @@ jobs:
         run: |
           python3 scripts/check_repository.py
           git diff --check
-      - name: Commit repaired tree
+      - name: Commit non-workflow repair
         shell: bash
         run: |
+          git restore --source=HEAD -- .github/workflows/ci.yml
           rm .github/reference-library-repair.py
-          rm .github/workflows/reference-library-fix-bootstrap.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
