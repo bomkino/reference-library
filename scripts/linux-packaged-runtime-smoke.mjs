@@ -128,22 +128,8 @@ export async function observePackagedJourney({ command, args = [], env = process
   try {
     const target = await waitForRendererTarget(port, child, timeoutMs);
     const client = await connectDevtools(target.webSocketDebuggerUrl, timeoutMs);
-    let observation;
     try {
-      observation = await evaluate(client, `(async () => {
-        const bridge = globalThis.referenceLibrary;
-        const preferences = await bridge?.readPreferences?.();
-        const capabilities = await bridge?.queryCapabilities?.();
-        return {
-          url: location.href,
-          readyState: document.readyState,
-          heading: document.querySelector("h1")?.textContent?.trim() ?? null,
-          bridgeVersion: bridge?.version ?? null,
-          preferences,
-          capabilities,
-        };
-      })()`, true);
-      assertPackagedJourneyObservation(observation);
+      await waitForPackagedJourneyObservation(client, timeoutMs);
       await evaluate(client, "setTimeout(() => window.close(), 0); true", false);
     } finally {
       client.close();
@@ -174,10 +160,38 @@ export async function observePackagedJourney({ command, args = [], env = process
   } finally {
     if (!cleanExit && child.exitCode === null && child.signalCode === null) {
       terminateProcessGroup(child, "SIGTERM");
-      const stopped = await Promise.race([exit.then(() => true), delay(2_000).then(() => false)]);
+      const stopped = await Promise.race([exit.then(() => true, () => true), delay(2_000).then(() => false)]);
       if (!stopped && child.exitCode === null && child.signalCode === null) terminateProcessGroup(child, "SIGKILL");
     }
   }
+}
+
+async function waitForPackagedJourneyObservation(client, timeoutMs) {
+  const expression = `(async () => {
+    const bridge = globalThis.referenceLibrary;
+    const preferences = await bridge?.readPreferences?.();
+    const capabilities = await bridge?.queryCapabilities?.();
+    return {
+      url: location.href,
+      readyState: document.readyState,
+      heading: document.querySelector("h1")?.textContent?.trim() ?? null,
+      bridgeVersion: bridge?.version ?? null,
+      preferences,
+      capabilities,
+    };
+  })()`;
+  const deadline = Date.now() + timeoutMs;
+  let lastError = null;
+  while (Date.now() < deadline) {
+    try {
+      const observation = await evaluate(client, expression, true);
+      return assertPackagedJourneyObservation(observation);
+    } catch (error) {
+      lastError = error;
+      await delay(50);
+    }
+  }
+  throw new Error(`packaged workspace journey did not become ready: ${lastError?.message ?? "unknown state"}`);
 }
 
 export function assertPackagedJourneyObservation(observation) {
@@ -283,7 +297,7 @@ async function evaluate(client, expression, awaitPromise) {
 
 function terminateProcessGroup(child, signal) {
   try {
-    if (process.platform === "win32") child.kill(signal);
+    if (process.platform === "win32" || !Number.isSafeInteger(child.pid)) child.kill(signal);
     else process.kill(-child.pid, signal);
   } catch (error) {
     if (error.code !== "ESRCH") throw error;
