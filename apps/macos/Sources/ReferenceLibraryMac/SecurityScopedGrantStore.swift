@@ -1,5 +1,7 @@
 import Foundation
 
+private let grantPersistenceSchemaVersion = 1
+
 struct ProvisionalLibraryGrant: Equatable {
     let token: String
     let libraryID: String
@@ -81,15 +83,13 @@ struct SecurityScopedGrantOperations {
 final class SecurityScopedGrantStore: SecurityScopedGrantManaging {
     static let shared = SecurityScopedGrantStore()
 
-    private static let persistenceSchemaVersion = 1
-
     private struct ProvisionalRootRecord: Codable, Equatable {
         let libraryID: String
         let bookmarkData: Data
     }
 
     private struct PersistedState: Codable, Equatable {
-        var schemaVersion = SecurityScopedGrantStore.persistenceSchemaVersion
+        var schemaVersion = grantPersistenceSchemaVersion
         var libraries: [String: Data] = [:]
         var roots: [String: [String: Data]] = [:]
         var provisionalRoots: [String: ProvisionalRootRecord] = [:]
@@ -110,7 +110,7 @@ final class SecurityScopedGrantStore: SecurityScopedGrantManaging {
         self.storageURL = storageURL ?? Self.defaultStorageURL()
         self.operations = operations
         state = Self.readState(from: self.storageURL) ?? PersistedState()
-        if state.schemaVersion != Self.persistenceSchemaVersion {
+        if state.schemaVersion != grantPersistenceSchemaVersion {
             state = PersistedState()
         }
         if !state.provisionalRoots.isEmpty {

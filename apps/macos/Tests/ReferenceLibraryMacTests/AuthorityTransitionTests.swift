@@ -113,4 +113,71 @@ final class AuthorityTransitionTests: XCTestCase {
         XCTAssertEqual(result, "root")
         XCTAssertEqual(trace, ["prepare", "add", "commit"])
     }
+
+    func testFailedProvisionalCloseRestartsHelperToReleaseUnknownLock() async {
+        var trace: [String] = []
+        let outcome = await ProvisionalSessionCleanup.perform(
+            close: {
+                trace.append("close")
+                throw ExpectedFailure.failed
+            },
+            restartHelper: { trace.append("restart") }
+        )
+
+        XCTAssertEqual(outcome, .helperRestarted)
+        XCTAssertEqual(trace, ["close", "restart"])
+    }
+
+    func testSuccessfulProvisionalCloseDoesNotRestartHelper() async {
+        var trace: [String] = []
+        let outcome = await ProvisionalSessionCleanup.perform(
+            close: { trace.append("close") },
+            restartHelper: { trace.append("restart") }
+        )
+
+        XCTAssertEqual(outcome, .closed)
+        XCTAssertEqual(trace, ["close"])
+    }
+
+    func testFailedProvisionalCloseAndRestartReportsUnavailable() async {
+        var trace: [String] = []
+        let outcome = await ProvisionalSessionCleanup.perform(
+            close: {
+                trace.append("close")
+                throw ExpectedFailure.failed
+            },
+            restartHelper: {
+                trace.append("restart")
+                throw ExpectedFailure.failed
+            }
+        )
+
+        XCTAssertEqual(outcome, .helperUnavailable)
+        XCTAssertEqual(trace, ["close", "restart"])
+    }
+
+    func testRootRollbackCancelsBeforeUnbindingCanonicalRoot() async {
+        var trace: [String] = []
+        let succeeded = await RootCanonicalRollback.perform(
+            cancelJob: { trace.append("cancel") },
+            unbindRoot: { trace.append("unbind") }
+        )
+
+        XCTAssertTrue(succeeded)
+        XCTAssertEqual(trace, ["cancel", "unbind"])
+    }
+
+    func testRootRollbackReportsUnbindFailureAfterCancellation() async {
+        var trace: [String] = []
+        let succeeded = await RootCanonicalRollback.perform(
+            cancelJob: { trace.append("cancel") },
+            unbindRoot: {
+                trace.append("unbind")
+                throw ExpectedFailure.failed
+            }
+        )
+
+        XCTAssertFalse(succeeded)
+        XCTAssertEqual(trace, ["cancel", "unbind"])
+    }
 }

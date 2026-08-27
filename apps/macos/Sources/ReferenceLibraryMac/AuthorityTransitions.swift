@@ -42,3 +42,45 @@ enum RootAuthorityTransition {
         }
     }
 }
+
+@MainActor
+enum ProvisionalSessionCleanup {
+    enum Outcome: Equatable {
+        case closed
+        case helperRestarted
+        case helperUnavailable
+    }
+
+    static func perform(
+        close: () async throws -> Void,
+        restartHelper: () async throws -> Void
+    ) async -> Outcome {
+        do {
+            try await close()
+            return .closed
+        } catch {
+            do {
+                try await restartHelper()
+                return .helperRestarted
+            } catch {
+                return .helperUnavailable
+            }
+        }
+    }
+}
+
+@MainActor
+enum RootCanonicalRollback {
+    static func perform(
+        cancelJob: () async -> Void,
+        unbindRoot: () async throws -> Void
+    ) async -> Bool {
+        await cancelJob()
+        do {
+            try await unbindRoot()
+            return true
+        } catch {
+            return false
+        }
+    }
+}
