@@ -169,7 +169,7 @@ export function assertSafeArchiveListing({ entries, verboseLines, label = "archi
       const split = line.lastIndexOf(marker);
       assert.ok(split > 0, `${label} symbolic link target is missing`);
       const entry = listedEntryAtEnd(line.slice(0, split), entriesByLength, label);
-      assertSafeLinkTarget(normalized.get(normalizeArchivePath(entry, label)), line.slice(split + marker.length), label, false);
+      assertSafeLinkTarget(normalizeArchivePath(entry, label), line.slice(split + marker.length), label);
     } else if (line.includes(" link to ")) {
       const marker = " link to ";
       const split = line.lastIndexOf(marker);
@@ -238,13 +238,17 @@ function normalizeArchivePath(value, label) {
 }
 
 function listedEntryAtEnd(metadata, entries, label) {
-  const matches = entries.filter((entry) => metadata === entry || metadata.endsWith(` ${entry}`));
-  assert.equal(matches.length, 1, `${label} archive link metadata is ambiguous`);
-  return matches[0];
+  const match = entries.find((entry) => metadata === entry || metadata.endsWith(` ${entry}`));
+  assert.ok(match, `${label} archive link metadata is ambiguous`);
+  return match;
 }
 
 function assertSafeLinkTarget(entry, target, label) {
+  assert.equal(typeof target, "string", `${label} archive link target must be text`);
+  assert.ok(target && Buffer.byteLength(target, "utf8") <= MAX_ARCHIVE_PATH_BYTES,
+    `${label} archive link target is invalid`);
   assert.doesNotMatch(target, /[\0-\x1f\x7f\\]/, `${label} archive link target contains an unsafe character`);
+  assert.doesNotMatch(target, / -> | link to /, `${label} archive link target is ambiguous`);
   assert.ok(!path.posix.isAbsolute(target) && !/^[A-Za-z]:/.test(target), `${label} archive link target is absolute`);
   const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(entry), target));
   assert.ok(resolved !== ".." && !resolved.startsWith("../") && !path.posix.isAbsolute(resolved),

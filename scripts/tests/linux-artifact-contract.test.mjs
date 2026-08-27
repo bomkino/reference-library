@@ -44,15 +44,16 @@ test("Linux package names and local-file association are release-metadata bound"
 
 test("archive preflight rejects paths and links that could escape before extraction", async () => {
   const safe = {
-    entries: ["./", "./opt/Reference Library/app.asar", "./usr/bin/reference-library"],
+    entries: ["./", "reference-library", "./opt/Reference Library/app.asar", "./usr/bin/reference-library"],
     verboseLines: [
       "drwxr-xr-x  0 root root 0 Aug 27 00:00 ./",
+      "-rw-r--r--  0 root root 1 Aug 27 00:00 reference-library",
       "-rw-r--r--  0 root root 1 Aug 27 00:00 ./opt/Reference Library/app.asar",
       "lrwxrwxrwx  0 root root 0 Aug 27 00:00 ./usr/bin/reference-library -> ../../opt/Reference Library/reference-library",
     ],
     label: "fixture",
   };
-  assert.deepEqual(assertSafeArchiveListing(safe), { entryCount: 3 });
+  assert.deepEqual(assertSafeArchiveListing(safe), { entryCount: 4 });
   for (const entries of [
     ["/etc/passwd"],
     ["../../outside"],
