@@ -5,7 +5,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     path::{Component, Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, atomic::AtomicBool},
 };
 
 #[cfg(unix)]
@@ -25,15 +25,15 @@ use reference_protocol::{
 use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
 
-const MAX_RESOURCE_BYTES: u64 = 512 * 1024 * 1024;
-
 use crate::{
     canonical,
     discovery::ScanPlan,
     editorial,
     error::CoreError,
     manifest::{Manifest, staging_path, validate_package_extension},
-    now_ms, schema,
+    now_ms,
+    rendition::{self, ResourcePlan},
+    schema,
 };
 
 pub struct LibrarySession {
@@ -112,6 +112,21 @@ impl AuthorizedRoot {
                 return Err(CoreError::LocationMissing);
             }
             Ok(file)
+        }
+    }
+
+    fn same_directory(&self, other: &Self) -> bool {
+        #[cfg(unix)]
+        {
+            let (Ok(left), Ok(right)) = (self.directory.metadata(), other.directory.metadata())
+            else {
+                return false;
+            };
+            left.dev() == right.dev() && left.ino() == right.ino()
+        }
+        #[cfg(not(unix))]
+        {
+            self.canonical_path == other.canonical_path
         }
     }
 }
@@ -225,15 +240,34 @@ impl LibrarySession {
             return Err(CoreError::RootPermissionRequired);
         }
         let path_text = root_path.to_string_lossy().into_owned();
-        let root_id: Option<String> = connection
-            .query_row(
-                "SELECT id FROM roots
-                 WHERE library_id = ?1 AND last_known_display_path = ?2
-                 ORDER BY created_at_ms LIMIT 1",
-                params![self.manifest.library_id, path_text],
-                |row| row.get(0),
-            )
-            .optional()?;
+        let mut root_id = self
+            .authorized_roots
+            .borrow()
+            .iter()
+            .find(|(_, existing)| existing.same_directory(&authority))
+            .map(|(root_id, _)| root_id.clone());
+        if root_id.is_none() {
+            let candidates = {
+                let mut statement = connection.prepare(
+                    "SELECT id FROM roots WHERE library_id=?1 AND last_known_display_path=?2
+                     ORDER BY created_at_ms,id",
+                )?;
+                statement
+                    .query_map(params![self.manifest.library_id, path_text], |row| {
+                        row.get(0)
+                    })?
+                    .collect::<Result<Vec<String>, _>>()?
+            };
+            let matches = candidates
+                .into_iter()
+                .filter(|candidate| {
+                    validate_root_evidence(connection, candidate, &authority).is_ok()
+                })
+                .collect::<Vec<_>>();
+            if let [matched] = matches.as_slice() {
+                root_id = Some(matched.clone());
+            }
+        }
         let root_id = root_id.unwrap_or_else(|| Uuid::new_v4().to_string());
         let active: bool = connection.query_row(
             "SELECT EXISTS(SELECT 1 FROM jobs
@@ -344,15 +378,33 @@ impl LibrarySession {
         if !exists {
             return Err(CoreError::RootNotFound);
         }
+        let active: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM jobs WHERE root_id=?1 AND state IN ('queued','running'))",
+            params![root_id],
+            |row| row.get(0),
+        )?;
+        if active {
+            return Err(CoreError::RootScanInProgress);
+        }
         let authority = AuthorizedRoot::open(authorized_path.as_ref())?;
         validate_root_evidence(connection, root_id, &authority)?;
         let timestamp = now_ms() as i64;
-        connection.execute(
+        let transaction = connection.unchecked_transaction()?;
+        let active: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM jobs WHERE root_id=?1 AND state IN ('queued','running'))",
+            params![root_id],
+            |row| row.get(0),
+        )?;
+        if active {
+            return Err(CoreError::RootScanInProgress);
+        }
+        transaction.execute(
             "UPDATE roots SET last_known_display_path = ?1, state = 'connected',
                               updated_at_ms = ?2, last_seen_at_ms = ?2 WHERE id = ?3",
             params![authority.path().to_string_lossy(), timestamp, root_id],
         )?;
-        bump_revision(connection, timestamp)?;
+        bump_revision(&transaction, timestamp)?;
+        transaction.commit()?;
         self.authorized_roots
             .borrow_mut()
             .insert(root_id.to_owned(), authority);
@@ -609,64 +661,131 @@ impl LibrarySession {
         asset_id: &str,
         profile: ResourceProfile,
     ) -> Result<ResourceDescriptor, CoreError> {
+        let plan = self.resource_plan(asset_id, profile, None)?;
+        rendition::authorize(plan, &AtomicBool::new(false))
+    }
+
+    pub fn start_resource_authorization(
+        &self,
+        asset_id: &str,
+        profile: ResourceProfile,
+    ) -> Result<(String, ResourcePlan), CoreError> {
+        let job_id = Uuid::new_v4().to_string();
+        let plan = self.resource_plan(asset_id, profile, Some(job_id.clone()))?;
+        let timestamp = now_ms() as i64;
+        let transaction = self.connection()?.unchecked_transaction()?;
+        transaction.execute(
+            "INSERT INTO jobs (id,library_id,job_kind,state,progress_json,root_id,created_at_ms,updated_at_ms)
+             VALUES (?1,?2,'rendition_generation','queued','{\"phase\":\"queued\"}',?3,?4,?4)",
+            params![job_id, self.manifest.library_id, plan.root_id, timestamp],
+        )?;
+        rendition::prune_jobs(&transaction)?;
+        transaction.commit()?;
+        Ok((job_id, plan))
+    }
+
+    pub fn fail_resource_job(&self, job_id: &str, error: &CoreError) -> Result<(), CoreError> {
+        let timestamp = now_ms() as i64;
+        self.connection()?.execute(
+            "UPDATE jobs SET state='failed',error_code=?1,updated_at_ms=?2,finished_at_ms=?2
+             WHERE id=?3 AND job_kind='rendition_generation'",
+            params![error.to_protocol_error().code, timestamp, job_id],
+        )?;
+        Ok(())
+    }
+
+    fn resource_plan(
+        &self,
+        asset_id: &str,
+        profile: ResourceProfile,
+        job_id: Option<String>,
+    ) -> Result<ResourcePlan, CoreError> {
         reject_path_shaped_id(asset_id)?;
         Uuid::parse_str(asset_id).map_err(|_| CoreError::AssetNotFound)?;
         let connection = self.connection()?;
-        let record = connection
-            .query_row(
-                "SELECT l.id, r.last_known_display_path, l.relative_path_bytes,
-                        sr.mime_detected, sr.byte_size, l.state
-                 FROM assets a
-                 JOIN asset_origins ao ON ao.asset_id = a.id
-                 JOIN sources s ON s.id = ao.source_id
-                 JOIN source_revisions sr ON sr.id = s.current_revision_id
-                 JOIN locations l ON l.source_id = s.id
-                 JOIN roots r ON r.id = l.root_id
-                 WHERE a.id = ?1
-                 ORDER BY CASE l.state WHEN 'present' THEN 0 ELSE 1 END, l.created_at_ms
-                 LIMIT 1",
-                params![asset_id],
-                |row| {
+        let exists: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM assets WHERE id=?1 AND library_id=?2)",
+            params![asset_id, self.manifest.library_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(CoreError::AssetNotFound);
+        }
+        let records = {
+            let mut statement = connection.prepare(
+                "SELECT l.id,l.root_id,l.relative_path_bytes,l.state,sr.id,sr.mime_detected,
+                        sr.byte_size,sr.quick_fingerprint
+                 FROM asset_origins ao JOIN sources s ON s.id=ao.source_id
+                 JOIN source_revisions sr ON sr.id=s.current_revision_id
+                 JOIN locations l ON l.source_id=s.id WHERE ao.asset_id=?1
+                 ORDER BY CASE l.state WHEN 'present' THEN 0 ELSE 1 END,l.created_at_ms,l.id",
+            )?;
+            statement
+                .query_map(params![asset_id], |row| {
                     Ok((
                         row.get::<_, String>(0)?,
-                        row.get::<_, Option<String>>(1)?,
+                        row.get::<_, String>(1)?,
                         row.get::<_, Vec<u8>>(2)?,
                         row.get::<_, String>(3)?,
-                        row.get::<_, i64>(4)? as u64,
+                        row.get::<_, String>(4)?,
                         row.get::<_, String>(5)?,
+                        row.get::<_, i64>(6)? as u64,
+                        row.get::<_, Option<String>>(7)?,
                     ))
-                },
-            )
-            .optional()?
-            .ok_or(CoreError::AssetNotFound)?;
-        let (location_id, root_path, relative_bytes, mime_type, content_length, state) = record;
-        if state != "present" {
-            return Err(CoreError::LocationMissing);
-        }
-        if !matches!(
-            mime_type.as_str(),
-            "image/jpeg" | "image/png" | "image/webp"
-        ) {
-            return Err(CoreError::UnsupportedPreview);
-        }
-        if content_length > MAX_RESOURCE_BYTES {
-            return Err(CoreError::ResourceTooLarge);
-        }
-        let native_path = resolve_authorized_path(root_path, relative_bytes)?;
-        let observed_length = native_path.metadata()?.len();
-        if observed_length != content_length {
-            return Err(CoreError::LocationMissing);
-        }
-        Ok(ResourceDescriptor {
-            resource_token: Uuid::new_v4().to_string(),
-            session_id: self.session_id.clone(),
-            asset_id: asset_id.into(),
+                })?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        let authorized = self.authorized_roots.borrow();
+        let mut saw_present = false;
+        for (
             location_id,
-            profile,
+            root_id,
+            relative_bytes,
+            state,
+            source_revision_id,
             mime_type,
-            content_length,
-            native_path_for_handler: native_path.to_string_lossy().into_owned(),
-        })
+            source_length,
+            fingerprint,
+        ) in records
+        {
+            if state != "present" {
+                continue;
+            }
+            saw_present = true;
+            if !matches!(
+                mime_type.as_str(),
+                "image/jpeg" | "image/png" | "image/webp"
+            ) {
+                return Err(CoreError::UnsupportedPreview);
+            }
+            if source_length > rendition::MAX_SOURCE_BYTES {
+                return Err(CoreError::ResourceTooLarge);
+            }
+            let Some(authority) = authorized.get(&root_id) else {
+                continue;
+            };
+            let source_file = authority.open_file(&relative_bytes)?;
+            return Ok(ResourcePlan {
+                package_path: self.package_path.clone(),
+                library_id: self.manifest.library_id.clone(),
+                session_id: self.session_id.clone(),
+                asset_id: asset_id.into(),
+                location_id,
+                root_id,
+                source_revision_id,
+                profile,
+                source_mime_type: mime_type,
+                source_length,
+                expected_fingerprint: fingerprint.ok_or(CoreError::SourceRevisionChanged)?,
+                source_file,
+                job_id,
+            });
+        }
+        if saw_present {
+            Err(CoreError::RootPermissionRequired)
+        } else {
+            Err(CoreError::UnsupportedPreview)
+        }
     }
 
     pub fn resolve_location(&self, location_id: &str) -> Result<NativeLocation, CoreError> {
@@ -675,13 +794,11 @@ impl LibrarySession {
         let connection = self.connection()?;
         let record = connection
             .query_row(
-                "SELECT r.last_known_display_path, l.relative_path_bytes, l.state
-                 FROM locations l JOIN roots r ON r.id = l.root_id
-                 WHERE l.id = ?1",
+                "SELECT l.root_id,l.relative_path_bytes,l.state FROM locations l WHERE l.id=?1",
                 params![location_id],
                 |row| {
                     Ok((
-                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, String>(0)?,
                         row.get::<_, Vec<u8>>(1)?,
                         row.get::<_, String>(2)?,
                     ))
@@ -692,7 +809,16 @@ impl LibrarySession {
         if record.2 != "present" {
             return Err(CoreError::LocationMissing);
         }
-        let path = resolve_authorized_path(record.0, record.1)?;
+        let authority = self
+            .authorized_roots
+            .borrow()
+            .get(&record.0)
+            .cloned()
+            .ok_or(CoreError::RootPermissionRequired)?;
+        let _verified = authority.open_file(&record.1)?;
+        let relative = relative_path_from_bytes(&record.1)?;
+        validate_relative(&relative)?;
+        let path = authority.path().join(relative);
         Ok(NativeLocation {
             location_id: location_id.into(),
             native_path_for_shell: path.to_string_lossy().into_owned(),
@@ -801,26 +927,29 @@ fn validate_root_evidence(
     if total == 0 {
         return Ok(());
     }
-    let evidence = {
-        let mut statement = connection.prepare(
-            "SELECT l.relative_path_bytes, sr.byte_size, sr.quick_fingerprint
-             FROM locations l
-             JOIN sources s ON s.id = l.source_id
-             JOIN source_revisions sr ON sr.id = s.current_revision_id
-             WHERE l.root_id = ?1
-             ORDER BY CASE l.state WHEN 'present' THEN 0 ELSE 1 END, l.id
-             LIMIT 8",
-        )?;
-        statement
-            .query_map(params![root_id], |row| {
-                Ok((
-                    row.get::<_, Vec<u8>>(0)?,
-                    row.get::<_, i64>(1)? as u64,
-                    row.get::<_, Option<String>>(2)?,
-                ))
-            })?
-            .collect::<Result<Vec<_>, _>>()?
+    let offsets = if total <= 8 {
+        (0..total).collect::<Vec<_>>()
+    } else {
+        (0..8)
+            .map(|index| index * (total - 1) / 7)
+            .collect::<Vec<_>>()
     };
+    let mut evidence = Vec::with_capacity(offsets.len());
+    let mut statement = connection.prepare(
+        "SELECT l.relative_path_bytes,sr.byte_size,sr.quick_fingerprint FROM locations l
+         JOIN sources s ON s.id=l.source_id JOIN source_revisions sr ON sr.id=s.current_revision_id
+         WHERE l.root_id=?1 ORDER BY CASE l.state WHEN 'present' THEN 0 ELSE 1 END,l.id
+         LIMIT 1 OFFSET ?2",
+    )?;
+    for offset in offsets {
+        evidence.push(statement.query_row(params![root_id, offset as i64], |row| {
+            Ok((
+                row.get::<_, Vec<u8>>(0)?,
+                row.get::<_, i64>(1)? as u64,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?);
+    }
     let required = usize::min(2, total);
     let mut matched = 0_usize;
     for (relative, expected_size, expected_fingerprint) in evidence {
@@ -976,38 +1105,6 @@ pub(crate) fn openat(directory: &File, name: &[u8], flags: i32) -> std::io::Resu
         // SAFETY: successful openat returns a new owned file descriptor.
         Ok(unsafe { File::from_raw_fd(fd) })
     }
-}
-
-fn resolve_authorized_path(
-    root_path: Option<String>,
-    relative_bytes: Vec<u8>,
-) -> Result<PathBuf, CoreError> {
-    let root_path = root_path.ok_or(CoreError::RootPermissionRequired)?;
-    let root = PathBuf::from(root_path)
-        .canonicalize()
-        .map_err(|_| CoreError::RootPermissionRequired)?;
-    #[cfg(unix)]
-    let relative = PathBuf::from(std::ffi::OsString::from_vec(relative_bytes));
-    #[cfg(not(unix))]
-    let relative = PathBuf::from(String::from_utf8_lossy(&relative_bytes).into_owned());
-    if relative.is_absolute()
-        || relative.components().any(|component| {
-            matches!(
-                component,
-                Component::ParentDir | Component::RootDir | Component::Prefix(_)
-            )
-        })
-    {
-        return Err(CoreError::LocationMissing);
-    }
-    let candidate = root.join(relative);
-    let canonical = candidate
-        .canonicalize()
-        .map_err(|_| CoreError::LocationMissing)?;
-    if !canonical.starts_with(&root) || !canonical.is_file() {
-        return Err(CoreError::LocationMissing);
-    }
-    Ok(canonical)
 }
 
 #[cfg(unix)]
