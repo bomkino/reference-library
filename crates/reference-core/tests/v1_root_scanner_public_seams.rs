@@ -108,6 +108,35 @@ fn roots_reopen_unbound_rebind_by_evidence_and_reject_duplicate_scans() {
 }
 
 #[test]
+fn moved_absolute_provider_path_rebind_preserves_every_domain_identity() {
+    let project = Project::new();
+    let original = project.root("Provider A");
+    fs::create_dir(&original).unwrap();
+    fs::write(original.join("alpha.png"), decode_hex(PNG_HEX)).unwrap();
+    fs::write(original.join("bravo.png"), decode_hex(PNG_HEX)).unwrap();
+    let mut session = LibrarySession::create(&project.library, "Moved provider".into()).unwrap();
+    let plan = session.add_root(&original, "References".into()).unwrap();
+    let root_id = plan.root_id.clone();
+    run(plan);
+    let before = domain_identity_projection(&session.canonical_dump().unwrap());
+    session.close().unwrap();
+
+    let moved_parent = project.root("Different Absolute Parent");
+    fs::create_dir(&moved_parent).unwrap();
+    let moved = moved_parent.join("Provider B");
+    fs::rename(&original, &moved).unwrap();
+    assert_ne!(original, moved);
+
+    let mut reopened = LibrarySession::open(&project.library).unwrap();
+    let bound = reopened.reauthorize_root(&root_id, &moved).unwrap();
+    assert_eq!(bound.root_id, root_id);
+    run(reopened.rescan_root(&root_id).unwrap());
+    let after = domain_identity_projection(&reopened.canonical_dump().unwrap());
+    assert_eq!(after, before);
+    reopened.close().unwrap();
+}
+
+#[test]
 fn jobs_are_bounded_filterable_and_recovery_is_terminal() {
     let project = Project::new();
     let root = project.root("Root");
@@ -661,4 +690,26 @@ fn decode_hex(value: &str) -> Vec<u8> {
         .iter()
         .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
         .collect()
+}
+
+fn domain_identity_projection(dump: &serde_json::Value) -> Vec<(String, Vec<String>)> {
+    [
+        ("roots", "id"),
+        ("sources", "id"),
+        ("locations", "id"),
+        ("assetOrigins", "id"),
+        ("assets", "id"),
+    ]
+    .into_iter()
+    .map(|(entity, field)| {
+        let mut ids = dump[entity]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|record| record[field].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        ids.sort();
+        (entity.to_owned(), ids)
+    })
+    .collect()
 }

@@ -374,6 +374,14 @@ pub fn configure(connection: &Connection) -> Result<(), CoreError> {
 mod tests {
     use super::*;
 
+    #[derive(Debug, PartialEq, Eq)]
+    struct MigrationState {
+        user_version: u32,
+        meta_version: u32,
+        ledger: Vec<(u32, String, String)>,
+        schema: Vec<(String, String, String, String)>,
+    }
+
     #[test]
     fn embedded_checksum_rejects_source_drift_before_execution() {
         assert_eq!(
@@ -386,5 +394,76 @@ mod tests {
             1,
         );
         assert_ne!(migration_digest(&altered), MIGRATION_SOURCE_DIGESTS[1]);
+    }
+
+    #[test]
+    fn every_v1_migration_boundary_rolls_back_atomically_under_injected_failure() {
+        for (initial_version, migration) in [(1, MIGRATION_0002), (2, MIGRATION_0003)] {
+            let connection = database_at_version(initial_version);
+            let before = migration_state(&connection);
+            let injected = migration.replacen(
+                "COMMIT;",
+                "SELECT * FROM deterministic_injected_migration_failure;\nCOMMIT;",
+                1,
+            );
+            assert_ne!(injected, migration);
+            assert!(connection.execute_batch(&injected).is_err());
+            // SQLite leaves a failed explicit transaction active for most
+            // statement errors. The production connection is dropped on the
+            // error path; explicit rollback lets this test inspect the exact
+            // pre-migration state on the same handle.
+            let _ = connection.execute_batch("ROLLBACK;");
+            assert_eq!(migration_state(&connection), before);
+            validate_migration_ledger(&connection, initial_version).unwrap();
+            validate_schema_contract(&connection, initial_version).unwrap();
+
+            connection.execute_batch(migration).unwrap();
+            let after = migration_state(&connection);
+            assert_eq!(after.user_version, initial_version + 1);
+            assert_eq!(after.meta_version, initial_version + 1);
+            validate_migration_ledger(&connection, initial_version + 1).unwrap();
+            validate_schema_contract(&connection, initial_version + 1).unwrap();
+        }
+    }
+
+    fn database_at_version(version: u32) -> Connection {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(MIGRATION_0001).unwrap();
+        connection
+            .execute(
+                "INSERT INTO library_meta (
+                     id, schema_version, name, library_revision, created_at_ms, updated_at_ms
+                 ) VALUES ('library-proof', 1, 'Proof', 0, 1, 1)",
+                [],
+            )
+            .unwrap();
+        if version >= 2 {
+            connection.execute_batch(MIGRATION_0002).unwrap();
+        }
+        connection
+    }
+
+    fn migration_state(connection: &Connection) -> MigrationState {
+        let user_version = connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        let meta_version = connection
+            .query_row("SELECT schema_version FROM library_meta", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let ledger = connection
+            .prepare("SELECT version,name,checksum FROM schema_migrations ORDER BY version")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        MigrationState {
+            user_version,
+            meta_version,
+            ledger,
+            schema: schema_contract_rows(connection).unwrap(),
+        }
     }
 }
