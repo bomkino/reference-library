@@ -149,7 +149,6 @@ export interface ReferenceWorkspaceBridge {
   chooseRoot(sessionId: string): Promise<{ rootId: string; jobId: string } | null>;
   listRoots(sessionId: string): Promise<RootSummary[]>;
   reauthorizeRoot(sessionId: string, rootId: string): Promise<RootSummary | null>;
-  removeRoot(sessionId: string, rootId: string): Promise<RootSummary>;
   scanRoot(sessionId: string, rootId: string): Promise<{ rootId: string; jobId: string }>;
   cancelJob(sessionId: string, jobId: string): Promise<void>;
   queryJobs(input: { sessionId: string; offset: number; limit: number; query: { rootId?: string; states: JobState[] } }): Promise<JobPage>;
