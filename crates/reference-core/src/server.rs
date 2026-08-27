@@ -212,6 +212,7 @@ impl CommandEngine {
                         "external-rename-reconciliation".into(),
                         "opaque-resources".into(),
                         "canonical-dump-v1".into(),
+                        "canonical-proof-v1".into(),
                     ],
                 }))
             }
@@ -526,6 +527,23 @@ impl CommandEngine {
             Command::CanonicalDump { session_id } => Ok(CommandResult::CanonicalDump {
                 dump: self.session(&session_id)?.canonical_dump()?,
             }),
+            Command::CanonicalDigest { session_id } => Ok(CommandResult::CanonicalDigest(
+                self.session(&session_id)?.canonical_digest()?,
+            )),
+            Command::CanonicalPage {
+                session_id,
+                snapshot_digest,
+                entity,
+                cursor,
+                limit,
+            } => Ok(CommandResult::CanonicalPage(
+                self.session(&session_id)?.canonical_page(
+                    &snapshot_digest,
+                    entity,
+                    cursor.as_deref(),
+                    limit,
+                )?,
+            )),
             Command::GetCapabilities { session_id } => {
                 if let Some(session_id) = session_id {
                     self.session(&session_id)?;
@@ -583,9 +601,6 @@ impl CommandEngine {
                 }
                 Ok(CommandResult::Shutdown)
             }
-            _ => Err(CoreError::QueryInvalid(
-                "command is not implemented by this Core build".into(),
-            )),
         }
     }
 

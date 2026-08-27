@@ -21,9 +21,9 @@ use std::{
 };
 
 use reference_protocol::{
-    AssetDetail, AssetPage, AssetPatch, AssetProjection, AssetQuery, CollectionSummary, JobPage,
-    JobQuery, NativeLocation, ResourceDescriptor, ResourceProfile, ReviewState, RootSummary,
-    SessionOpened, TextPatch,
+    AssetDetail, AssetPage, AssetPatch, AssetProjection, AssetQuery, CanonicalDigest,
+    CanonicalEntity, CanonicalPage, CollectionSummary, JobPage, JobQuery, NativeLocation,
+    ResourceDescriptor, ResourceProfile, ReviewState, RootSummary, SessionOpened, TextPatch,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
@@ -830,6 +830,20 @@ impl LibrarySession {
 
     pub fn canonical_dump(&self) -> Result<serde_json::Value, CoreError> {
         canonical::generate(self.connection()?)
+    }
+
+    pub fn canonical_digest(&self) -> Result<CanonicalDigest, CoreError> {
+        canonical::digest(self.connection()?)
+    }
+
+    pub fn canonical_page(
+        &self,
+        snapshot_digest: &str,
+        entity: CanonicalEntity,
+        cursor: Option<&str>,
+        limit: u32,
+    ) -> Result<CanonicalPage, CoreError> {
+        canonical::page(self.connection()?, snapshot_digest, entity, cursor, limit)
     }
 
     pub fn job_state(&self, job_id: &str) -> Result<Option<String>, CoreError> {

@@ -1,8 +1,14 @@
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    io::{BufReader, BufWriter},
+    path::PathBuf,
+    process::{Child, ChildStdin, ChildStdout, Command as ProcessCommand, Stdio},
+};
 
 use reference_core::{canonical, error::CoreError};
 use reference_protocol::{
-    CanonicalEntity, CanonicalRecord, MAX_CANONICAL_PAGE_SIZE, MAX_FRAME_BYTES,
+    CanonicalEntity, CanonicalRecord, ClientFrame, Command, CommandResult, MAX_CANONICAL_PAGE_SIZE,
+    MAX_FRAME_BYTES, PROTOCOL_VERSION, ServerFrame, read_frame, write_frame,
 };
 use rusqlite::{Connection, params};
 use uuid::Uuid;
@@ -10,6 +16,128 @@ use uuid::Uuid;
 const MIGRATION_0001: &str = include_str!("../../../migrations/0001_t01.sql");
 const MIGRATION_0002: &str = include_str!("../../../migrations/0002_v1_domain.sql");
 const MIGRATION_0003: &str = include_str!("../../../migrations/0003_rendition_jobs.sql");
+
+struct CoreProcess {
+    child: Child,
+    input: BufWriter<ChildStdin>,
+    output: BufReader<ChildStdout>,
+}
+
+impl CoreProcess {
+    fn start() -> Self {
+        let mut child = ProcessCommand::new(env!("CARGO_BIN_EXE_reference-core"))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        Self {
+            input: BufWriter::new(child.stdin.take().unwrap()),
+            output: BufReader::new(child.stdout.take().unwrap()),
+            child,
+        }
+    }
+
+    fn send(&mut self, request_id: &str, command: Command) {
+        write_frame(
+            &mut self.input,
+            &ClientFrame {
+                protocol_version: PROTOCOL_VERSION,
+                request_id: request_id.into(),
+                command,
+            },
+        )
+        .unwrap();
+    }
+
+    fn next(&mut self) -> ServerFrame {
+        read_frame(&mut self.output).unwrap().unwrap()
+    }
+
+    fn response(&mut self, expected_request_id: &str) -> CommandResult {
+        loop {
+            match self.next() {
+                ServerFrame::Response {
+                    request_id, result, ..
+                } if request_id == expected_request_id => return result,
+                ServerFrame::Error {
+                    request_id, error, ..
+                } if request_id == expected_request_id => {
+                    panic!("{}: {}", error.code, error.message)
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+#[test]
+fn digest_and_snapshot_page_are_reachable_through_the_framed_public_protocol() {
+    let directory = std::env::temp_dir().join(format!("reference-v1-canonical-{}", Uuid::new_v4()));
+    fs::create_dir(&directory).unwrap();
+    let library = directory.join("Project.pitchlibrary");
+    let mut core = CoreProcess::start();
+    core.send(
+        "create",
+        Command::CreateLibrary {
+            path: library.to_string_lossy().into(),
+            name: "Canonical".into(),
+        },
+    );
+    let CommandResult::SessionOpened(opened) = core.response("create") else {
+        panic!("unexpected create result")
+    };
+    core.send(
+        "digest",
+        Command::CanonicalDigest {
+            session_id: opened.session_id.clone(),
+        },
+    );
+    let CommandResult::CanonicalDigest(digest) = core.response("digest") else {
+        panic!("unexpected digest result")
+    };
+    core.send(
+        "page",
+        Command::CanonicalPage {
+            session_id: opened.session_id.clone(),
+            snapshot_digest: digest.digest.clone(),
+            entity: CanonicalEntity::Library,
+            cursor: None,
+            limit: 1,
+        },
+    );
+    let CommandResult::CanonicalPage(page) = core.response("page") else {
+        panic!("unexpected page result")
+    };
+    assert_eq!(page.snapshot_digest, digest.digest);
+    assert_eq!(page.total, 1);
+    assert_eq!(page.records.len(), 1);
+
+    core.send(
+        "stale",
+        Command::CanonicalPage {
+            session_id: opened.session_id,
+            snapshot_digest: "00".repeat(32),
+            entity: CanonicalEntity::Library,
+            cursor: None,
+            limit: 1,
+        },
+    );
+    loop {
+        if let ServerFrame::Error {
+            request_id, error, ..
+        } = core.next()
+            && request_id == "stale"
+        {
+            assert_eq!(error.code, "CanonicalSnapshotChanged");
+            assert!(error.retryable);
+            break;
+        }
+    }
+    core.send("shutdown", Command::Shutdown);
+    assert!(matches!(core.response("shutdown"), CommandResult::Shutdown));
+    assert!(core.child.wait().unwrap().success());
+    fs::remove_dir_all(directory).unwrap();
+}
 
 #[test]
 fn digest_is_deterministic_across_reopen_and_ignores_host_operational_state() {
