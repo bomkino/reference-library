@@ -833,8 +833,8 @@ impl LibrarySession {
         Ok(self
             .connection()?
             .query_row(
-                "SELECT state FROM jobs WHERE id = ?1",
-                params![job_id],
+                "SELECT state FROM jobs WHERE id=?1 AND library_id=?2",
+                params![job_id, self.manifest.library_id],
                 |row| row.get(0),
             )
             .optional()?)

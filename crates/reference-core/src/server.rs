@@ -3,9 +3,9 @@ use std::{
     io::{Read, Write},
     path::PathBuf,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
-        mpsc::{self, Receiver, Sender, TryRecvError},
+        mpsc::{self, Receiver, Sender, SyncSender, TryRecvError},
     },
     thread::{self, JoinHandle},
     time::Duration,
@@ -17,6 +17,9 @@ use reference_protocol::{
 };
 
 use crate::{discovery, error::CoreError, session::LibrarySession};
+
+const RENDITION_WORKERS: usize = 2;
+const MAX_RENDITION_WORK: usize = 10;
 
 enum Input {
     Request(ClientFrame),
@@ -30,24 +33,120 @@ struct JobControl {
     handle: Option<JoinHandle<()>>,
 }
 
+struct ResourceWork {
+    request_id: String,
+    plan: crate::rendition::ResourcePlan,
+    cancelled: Arc<AtomicBool>,
+}
+
+struct AsyncResponse {
+    request_id: String,
+    job_id: String,
+    result: Result<reference_protocol::ResourceDescriptor, CoreError>,
+}
+
 pub struct CommandEngine {
     sessions: HashMap<String, LibrarySession>,
     jobs: HashMap<String, JobControl>,
     event_sender: Sender<Event>,
     event_receiver: Receiver<Event>,
     event_sequence: u64,
+    resource_sender: SyncSender<ResourceWork>,
+    async_receiver: Receiver<AsyncResponse>,
+    resource_inflight: usize,
 }
 
 impl CommandEngine {
     pub fn new() -> Self {
         let (event_sender, event_receiver) = mpsc::channel();
+        let (resource_sender, resource_receiver) =
+            mpsc::sync_channel::<ResourceWork>(MAX_RENDITION_WORK - RENDITION_WORKERS);
+        let resource_receiver = Arc::new(Mutex::new(resource_receiver));
+        let (async_sender, async_receiver) = mpsc::channel();
+        for _ in 0..RENDITION_WORKERS {
+            let receiver = Arc::clone(&resource_receiver);
+            let sender = async_sender.clone();
+            let events = event_sender.clone();
+            thread::spawn(move || {
+                loop {
+                    let work = {
+                        let Ok(receiver) = receiver.lock() else {
+                            return;
+                        };
+                        match receiver.recv() {
+                            Ok(work) => work,
+                            Err(_) => return,
+                        }
+                    };
+                    let job_id = work.plan.job_id.clone().unwrap_or_default();
+                    let result =
+                        crate::rendition::run_job(work.plan, work.cancelled, events.clone());
+                    if sender
+                        .send(AsyncResponse {
+                            request_id: work.request_id,
+                            job_id,
+                            result,
+                        })
+                        .is_err()
+                    {
+                        return;
+                    }
+                }
+            });
+        }
         Self {
             sessions: HashMap::new(),
             jobs: HashMap::new(),
             event_sender,
             event_receiver,
             event_sequence: 0,
+            resource_sender,
+            async_receiver,
+            resource_inflight: 0,
         }
+    }
+
+    fn start_resource_authorization(
+        &mut self,
+        request_id: String,
+        session_id: String,
+        asset_id: String,
+        profile: reference_protocol::ResourceProfile,
+    ) -> Result<(), CoreError> {
+        if self.resource_inflight >= MAX_RENDITION_WORK {
+            return Err(CoreError::RenditionQueueFull);
+        }
+        let (job_id, plan) = self
+            .session(&session_id)?
+            .start_resource_authorization(&asset_id, profile)?;
+        let cancelled = Arc::new(AtomicBool::new(false));
+        self.queue_local_event(Event::ResourceAuthorizationStarted {
+            request_id: request_id.clone(),
+            job_id: job_id.clone(),
+            asset_id,
+            profile,
+        });
+        let work = ResourceWork {
+            request_id,
+            plan,
+            cancelled: Arc::clone(&cancelled),
+        };
+        if self.resource_sender.try_send(work).is_err() {
+            let error = CoreError::RenditionQueueFull;
+            self.session(&session_id)?
+                .fail_resource_job(&job_id, &error)?;
+            return Err(error);
+        }
+        self.jobs.insert(
+            job_id,
+            JobControl {
+                session_id,
+                cancelled,
+                handle: None,
+            },
+        );
+        self.resource_inflight += 1;
+        Ok(())
     }
 
     fn execute(&mut self, request: ClientFrame) -> Result<CommandResult, CoreError> {
@@ -473,6 +572,24 @@ impl CommandEngine {
         self.event_receiver.try_recv().ok()
     }
 
+    fn take_async_response(&mut self) -> Option<ServerFrame> {
+        let response = self.async_receiver.try_recv().ok()?;
+        self.resource_inflight = self.resource_inflight.saturating_sub(1);
+        self.jobs.remove(&response.job_id);
+        Some(match response.result {
+            Ok(descriptor) => ServerFrame::Response {
+                protocol_version: PROTOCOL_VERSION,
+                request_id: response.request_id,
+                result: CommandResult::ResourceAuthorized(descriptor),
+            },
+            Err(error) => ServerFrame::Error {
+                protocol_version: PROTOCOL_VERSION,
+                request_id: response.request_id,
+                error: error.to_protocol_error(),
+            },
+        })
+    }
+
     fn next_event_frame(&mut self, event: Event) -> ServerFrame {
         self.event_sequence += 1;
         if let Event::JobUpdated { job_id, state } = &event
@@ -505,6 +622,9 @@ pub fn run_server(
     let mut engine = CommandEngine::new();
     let mut shutdown = false;
     while !shutdown {
+        while let Some(response) = engine.take_async_response() {
+            write_frame(&mut writer, &response).map_err(|e| e.to_string())?;
+        }
         while let Some(event) = engine.take_event() {
             write_frame(&mut writer, &engine.next_event_frame(event)).map_err(|e| e.to_string())?;
         }
@@ -512,6 +632,30 @@ pub fn run_server(
             Ok(Input::Request(request)) => {
                 let request_id = request.request_id.clone();
                 let is_shutdown = matches!(&request.command, Command::Shutdown);
+                if let Command::AuthorizeResource {
+                    session_id,
+                    asset_id,
+                    profile,
+                } = &request.command
+                {
+                    if let Err(error) = engine.start_resource_authorization(
+                        request_id.clone(),
+                        session_id.clone(),
+                        asset_id.clone(),
+                        *profile,
+                    ) {
+                        write_frame(
+                            &mut writer,
+                            &ServerFrame::Error {
+                                protocol_version: PROTOCOL_VERSION,
+                                request_id,
+                                error: error.to_protocol_error(),
+                            },
+                        )
+                        .map_err(|e| e.to_string())?;
+                    }
+                    continue;
+                }
                 let frame = match engine.execute(request) {
                     Ok(result) => ServerFrame::Response {
                         protocol_version: PROTOCOL_VERSION,
