@@ -113,3 +113,10 @@ Do not rewrite or delete entries. Corrections append a superseding entry.
 **Change:** no source change; synchronized the four causal commits and ran CI at review/receipt source `39c1a20f9ee1ef04af1774b69368dbe0d0ee8362`.
 **Fresh measurement:** GitHub Actions run `33040429601` passed all five jobs. Linux artifact `9633709504` and macOS artifact `9633656547` are bound to the exact source and retained through 26 September 2026; their workflow-container digests are recorded in the T02 receipt.
 **Decision:** mark T02 source-ready and packaged in compatible environments. Do not claim M1, L1, X1 or C1, and do not merge, release or deploy.
+
+## 2026-08-27 — V1 daily-use execution contract
+
+**Hypothesis:** the next product increment can remain narrow and falsifiable only if its daily-use capability, public seams, source closure and target gates are frozen before implementation begins.
+**Change:** added the V1-01–V1-10 execution contract and append-only run ledger; advanced the implementation frontier from T02 to safe migrations/recovery, Root lifecycle, real bounded renditions, manual curation, lexical query, flat Collections, independent view controls, compatible Linux runtime rehearsal and bounded canonical proof. No product source, manifest, workflow or package configuration changed.
+**Fresh measurement:** `python3 scripts/check_repository.py` and `git diff --check` passed from the exact clean T02 base.
+**Decision:** execute one public-seam vertical slice at a time. Keep M1, L1, X1 and C1 open; prohibit post-v1 scope until source-ready closure and target integration are independently proved.

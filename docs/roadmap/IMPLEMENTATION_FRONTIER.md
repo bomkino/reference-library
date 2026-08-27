@@ -10,10 +10,14 @@ Source head `d252121d1cca9022f679212d0f8c198fa04d20d3` passes the repository, co
 
 Run M1 and L1 on representative targets, then X1 across those installed builds and close C1 from the resulting packaging/recovery evidence. These gates remain open; source or compatible CI cannot substitute for them.
 
-## Active source-only product slice: T02
+## Source-ready: T02
 
-On `codex/reference-library-t02-rename-reconciliation`, reconcile an externally renamed still while preserving Source, Location and Asset identity, then expose Missing honestly when evidence is insufficient. The binding slice is `docs/specs/TRACER_T02.md`. It must not grow into broad source mutation or similarity work.
+External common-still rename reconciliation preserves Source, Location and Asset identity only from strict unique host identity plus matching current-Revision evidence. Ambiguous or insufficient evidence preserves Missing and catalogues the observation separately. Exact T02 source `8afdfa1f84b5421f3423f6d0df6c07b48229f944` is source-ready and packaged in compatible environments; target gates remain open.
+
+## Active source-only product slice: V1 daily-use still Library
+
+On `codex/reference-library-v1-completion`, execute the frozen `docs/specs/V1_EXECUTION_CONTRACT.md` ledger one causal vertical slice at a time. V1 adds safe editorial/Collection schema evolution, Root lifecycle, bounded real renditions, manual curation, lexical query/filtering, flat Collections, independent Preview controls, honest package-open/runtime rehearsal and bounded neutral canonical proof. No item is complete until its named public seam passes freshly.
 
 ## Explicitly deferred
 
-Managed move/copy/Trash, Excerpts, exact-duplicate review, similarity, broad professional formats, Collections beyond tracer need, MCP and release update systems.
+Managed move/copy/Trash, Excerpts, exact-duplicate review, similarity, broad professional formats, nested/smart Collections, tags, ratings, saved searches, MCP and release update systems.
