@@ -79,6 +79,13 @@ jobs:
           node scripts/linux-sandbox-refusal.mjs
           --asar-directory "$RUNNER_TEMP/reference-linux-artifacts/asar"
           > release/linux/LINUX_RENDERER_BOUNDARY.json
+      - name: Reproduce installed Chromium sandbox ownership
+        shell: bash
+        run: |
+          sandbox_path="$RUNNER_TEMP/reference-linux-artifacts/pacman/opt/Reference Library/chrome-sandbox"
+          sudo chown root:root "$sandbox_path"
+          sudo chmod 4755 "$sandbox_path"
+          test "$(stat -c '%u:%g:%a' "$sandbox_path")" = "0:0:4755"
       - name: Rehearse deterministic packaged journey under X11
         run: >-
           node scripts/linux-packaged-runtime-smoke.mjs
