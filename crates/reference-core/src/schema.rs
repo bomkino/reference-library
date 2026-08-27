@@ -31,7 +31,7 @@ pub fn create_database(path: &Path, manifest: &Manifest) -> Result<Connection, C
         ) VALUES (?1, ?2, ?3, 0, ?4, ?4)",
         params![
             manifest.library_id,
-            manifest.schema_version,
+            1,
             manifest.name,
             manifest.created_at_ms as i64
         ],
@@ -59,6 +59,7 @@ pub fn open_database(path: &Path, manifest: &Manifest) -> Result<Connection, Cor
     }
     configure(&connection)?;
     apply_pending_migrations(&connection, initial_version)?;
+    reconcile_library_meta_schema_version(&connection)?;
     post_migration_checks(&connection)?;
     let final_version =
         connection.query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))?;
@@ -96,20 +97,39 @@ fn validate_existing(connection: &Connection, manifest: &Manifest) -> Result<u32
         });
     }
     validate_migration_ledger(connection, version)?;
-    validate_library_identity(connection, manifest)?;
+    validate_library_identity(connection, manifest, version)?;
     Ok(version)
 }
 
 fn validate_library_identity(
     connection: &Connection,
     manifest: &Manifest,
+    database_version: u32,
 ) -> Result<(), CoreError> {
-    let database_library_id: Option<String> = connection
-        .query_row("SELECT id FROM library_meta LIMIT 1", [], |row| row.get(0))
+    let database_identity: Option<(String, u32)> = connection
+        .query_row(
+            "SELECT id, schema_version FROM library_meta LIMIT 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
         .optional()?;
-    if database_library_id.as_deref() != Some(manifest.library_id.as_str()) {
+    let Some((database_library_id, meta_version)) = database_identity else {
+        return Err(CoreError::DatabaseIntegrity(
+            "canonical database has no Library identity".into(),
+        ));
+    };
+    if database_library_id != manifest.library_id {
         return Err(CoreError::InvalidManifest(
             "manifest libraryId does not match canonical database".into(),
+        ));
+    }
+    // Releases prior to the atomic migration fix could commit the migration
+    // ledger/user_version immediately before this redundant marker. A marker
+    // behind the exact validated ledger is recoverable; a zero or future
+    // marker is not.
+    if meta_version == 0 || meta_version > database_version {
+        return Err(CoreError::DatabaseIntegrity(
+            "canonical database schema markers disagree".into(),
         ));
     }
     Ok(())
@@ -160,11 +180,23 @@ fn apply_pending_migrations(
         };
         connection.execute_batch(sql)?;
         validate_migration_ledger(connection, version)?;
-        connection.execute(
-            "UPDATE library_meta SET schema_version = ?1 WHERE schema_version <= ?1",
-            params![version],
-        )?;
     }
+    Ok(())
+}
+
+fn reconcile_library_meta_schema_version(connection: &Connection) -> Result<(), CoreError> {
+    let version = connection.query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))?;
+    let transaction = connection.unchecked_transaction()?;
+    let changed = transaction.execute(
+        "UPDATE library_meta SET schema_version = ?1 WHERE schema_version < ?1",
+        params![version],
+    )?;
+    if changed > 1 {
+        return Err(CoreError::DatabaseIntegrity(
+            "canonical database has multiple Library identities".into(),
+        ));
+    }
+    transaction.commit()?;
     Ok(())
 }
 

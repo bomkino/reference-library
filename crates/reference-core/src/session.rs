@@ -202,6 +202,18 @@ impl LibrarySession {
                     return Err(error);
                 }
             };
+        // Migrations may have atomically advanced both canonical schema
+        // markers and then recovered the manifest. Keep the session's durable
+        // copy authoritative so SessionOpened and close can never report or
+        // rewrite the pre-migration schema version.
+        let manifest = match Manifest::read(package_path) {
+            Ok(manifest) => manifest,
+            Err(error) => {
+                drop(connection);
+                let _ = lock_file.unlock();
+                return Err(error);
+            }
+        };
         recover_interrupted_scan(&connection)?;
         Ok(Self {
             session_id: Uuid::new_v4().to_string(),

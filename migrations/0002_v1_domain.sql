@@ -28,6 +28,8 @@ CREATE TABLE collection_assets (
 
 CREATE INDEX collection_assets_asset_idx ON collection_assets(asset_id);
 
+UPDATE library_meta SET schema_version = 2;
+
 INSERT INTO schema_migrations (
     version, name, applied_at_ms, application_version, checksum
 ) VALUES (2, 'v1_curation_and_flat_collections', 0, '0.1.0',

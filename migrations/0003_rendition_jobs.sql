@@ -31,6 +31,8 @@ DROP TABLE jobs_schema_2;
 CREATE INDEX jobs_state_idx ON jobs(state, created_at_ms);
 CREATE INDEX jobs_root_state_idx ON jobs(root_id, state, created_at_ms);
 
+UPDATE library_meta SET schema_version = 3;
+
 INSERT INTO schema_migrations (
     version, name, applied_at_ms, application_version, checksum
 ) VALUES (3, 'v1_async_rendition_jobs', 0, '0.1.0',
