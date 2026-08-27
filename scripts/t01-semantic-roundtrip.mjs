@@ -30,19 +30,20 @@ try {
     }),
     "session_opened",
   );
-  await electron.request({
-    method: "add_root",
-    params: {
-      sessionId: opened.sessionId,
-      authorizedPath: rootPath,
-      displayName: "Source Root",
-    },
-  });
+  const root = expectResult(
+    await electron.request({
+      method: "add_root",
+      params: {
+        sessionId: opened.sessionId,
+        authorizedPath: rootPath,
+        displayName: "Source Root",
+      },
+    }),
+    "root_added",
+  );
+  await waitForRootScan(electron, opened.sessionId, root.rootId, root.jobId);
   const firstPage = await waitForAssets(electron, opened.sessionId, 3);
-  const electronDump = expectResult(
-    await electron.request({ method: "canonical_dump", params: { sessionId: opened.sessionId } }),
-    "canonical_dump",
-  ).dump;
+  const electronMeaning = await canonicalMeaning(electron, opened.sessionId);
   await electron.request({ method: "close_library", params: { sessionId: opened.sessionId } });
   await electron.stop();
 
@@ -52,11 +53,30 @@ try {
     await swift.request({ method: "open_library", params: { path: libraryPath } }),
     "session_opened",
   );
-  const swiftDump = expectResult(
-    await swift.request({ method: "canonical_dump", params: { sessionId: reopened.sessionId } }),
-    "canonical_dump",
-  ).dump;
-  assert.deepEqual(swiftDump, electronDump);
+  const unboundRoot = await rootSummary(swift, reopened.sessionId, root.rootId);
+  assert.equal(unboundRoot.state, "needs_permission");
+  assert.equal(unboundRoot.authorized, false);
+  const bound = expectResult(
+    await swift.request({ method: "bind_root", params: {
+      sessionId: reopened.sessionId,
+      rootId: root.rootId,
+      authorizedPath: rootPath,
+    } }),
+    "root_bound",
+  ).root;
+  assert.equal(bound.state, "connected");
+  assert.equal(bound.authorized, true);
+  const scan = expectResult(
+    await swift.request({ method: "scan_root", params: {
+      sessionId: reopened.sessionId,
+      rootId: root.rootId,
+    } }),
+    "root_scan_started",
+  );
+  await waitForRootScan(swift, reopened.sessionId, root.rootId, scan.jobId);
+  await waitForAssets(swift, reopened.sessionId, 3);
+  const swiftMeaning = await canonicalMeaning(swift, reopened.sessionId);
+  assert.deepEqual(swiftMeaning, electronMeaning);
   await swift.request({ method: "close_library", params: { sessionId: reopened.sessionId } });
   await swift.stop();
 
@@ -93,6 +113,46 @@ async function waitForAssets(core, sessionId, expected) {
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error(`Timed out waiting for ${expected} progressively discovered Assets; last page: ${observed}`);
+}
+
+async function canonicalMeaning(core, sessionId) {
+  return expectResult(
+    await core.request({ method: "canonical_digest", params: { sessionId } }),
+    "canonical_digest",
+  );
+}
+
+async function rootSummary(core, sessionId, rootId) {
+  const roots = expectResult(
+    await core.request({ method: "list_roots", params: { sessionId } }),
+    "roots",
+  ).items;
+  const root = roots.find((item) => item.rootId === rootId);
+  assert.ok(root, "retained Root must survive the cross-host reopen");
+  return root;
+}
+
+async function waitForRootScan(core, sessionId, rootId, jobId) {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    const root = await rootSummary(core, sessionId, rootId);
+    const jobs = expectResult(
+      await core.request({ method: "query_jobs", params: {
+        sessionId,
+        offset: 0,
+        limit: 100,
+        query: { rootId, states: [] },
+      } }),
+      "job_page",
+    ).items;
+    const job = jobs.find((item) => item.jobId === jobId);
+    if (job?.state === "completed" && root.state === "ready" && root.activeJobId === null) return root;
+    if (job && ["cancelled", "failed", "core_restarted"].includes(job.state)) {
+      throw new Error(`Root scan ${jobId} reached unexpected terminal state ${job.state}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`Timed out waiting for Root scan ${jobId} to settle`);
 }
 
 function expectResult(result, expected) {
