@@ -19,6 +19,8 @@ import { readReleaseMetadata } from "./release-metadata.mjs";
 
 const execFileAsync = promisify(execFile);
 const MIME = "application/x-pitchdog-reference-library";
+const MAX_ARCHIVE_ENTRIES = 100_000;
+const MAX_ARCHIVE_PATH_BYTES = 4_096;
 
 export function expectedLinuxArtifacts(metadata) {
   assert.equal(metadata.targets["linux-x86_64"].os, "linux");
@@ -69,6 +71,11 @@ export async function validateLinuxArtifactSet({ repository, releaseDirectory, e
     path.join(repository, "assets/branding/reference-library-icon-1024.png"),
   );
 
+  await preflightLinuxArtifacts({
+    pacman: artifacts[artifactNames[0]],
+    appImage: artifacts[artifactNames[1]],
+    tar: artifacts[artifactNames[2]],
+  });
   await mkdir(extractionRoot, { recursive: false });
   const pacmanRoot = path.join(extractionRoot, "pacman");
   const tarRoot = path.join(extractionRoot, "tar");
@@ -76,7 +83,6 @@ export async function validateLinuxArtifactSet({ repository, releaseDirectory, e
   await Promise.all([pacmanRoot, tarRoot, appImageRoot].map((directory) => mkdir(directory)));
   await run("bsdtar", ["-xf", artifacts[artifactNames[0]], "-C", pacmanRoot]);
   await run("tar", ["-xzf", artifacts[artifactNames[2]], "-C", tarRoot]);
-  await chmod(artifacts[artifactNames[1]], 0o755);
   await run(artifacts[artifactNames[1]], ["--appimage-extract"], { cwd: appImageRoot });
 
   const distributions = await Promise.all([
@@ -134,6 +140,115 @@ export async function validateLinuxArtifactSet({ repository, releaseDirectory, e
     extractedAsar: asarRoot,
     claimExclusions: ["installed_on_garuda", "integrated_on_garuda", "released"],
   };
+}
+
+export async function preflightLinuxArtifacts(
+  { pacman, appImage, tar },
+  { inspectTar = preflightTarArchive, inspectAppImage = preflightAppImage } = {},
+) {
+  await inspectTar(pacman, "pacman");
+  await inspectTar(tar, "tar.gz");
+  await inspectAppImage(appImage, "AppImage");
+}
+
+export function assertSafeArchiveListing({ entries, verboseLines, label = "archive" }) {
+  assert.ok(Array.isArray(entries) && entries.length > 0, `${label} archive listing is empty`);
+  assert.ok(entries.length <= MAX_ARCHIVE_ENTRIES, `${label} archive has too many entries`);
+  assert.equal(verboseLines.length, entries.length, `${label} archive listing is structurally ambiguous`);
+  const normalized = new Map();
+  for (const entry of entries) {
+    const safe = normalizeArchivePath(entry, label);
+    assert.ok(!normalized.has(safe), `${label} archive contains a duplicate path`);
+    normalized.set(safe, entry);
+  }
+  const entriesByLength = [...entries].sort((left, right) => right.length - left.length);
+  for (const line of verboseLines) {
+    assert.match(line, /^[bcdhlps-][rwxStT-]{9}\s/, `${label} archive has an ambiguous metadata line`);
+    if (line.startsWith("l")) {
+      const marker = " -> ";
+      const split = line.lastIndexOf(marker);
+      assert.ok(split > 0, `${label} symbolic link target is missing`);
+      const entry = listedEntryAtEnd(line.slice(0, split), entriesByLength, label);
+      assertSafeLinkTarget(normalized.get(normalizeArchivePath(entry, label)), line.slice(split + marker.length), label, false);
+    } else if (line.includes(" link to ")) {
+      const marker = " link to ";
+      const split = line.lastIndexOf(marker);
+      const entry = listedEntryAtEnd(line.slice(0, split), entriesByLength, label);
+      normalizeArchivePath(entry, label);
+      normalizeArchivePath(line.slice(split + marker.length), label);
+    }
+  }
+  return { entryCount: entries.length };
+}
+
+async function preflightTarArchive(archive, label) {
+  const options = { env: { ...process.env, LC_ALL: "C" } };
+  const [{ stdout: listed }, { stdout: verbose }] = await Promise.all([
+    run("bsdtar", ["-tf", archive], options),
+    run("bsdtar", ["-tvf", archive], options),
+  ]);
+  return assertSafeArchiveListing({
+    entries: outputLines(listed, label),
+    verboseLines: outputLines(verbose, label),
+    label,
+  });
+}
+
+async function preflightAppImage(archive, label) {
+  await chmod(archive, 0o755);
+  const { stdout } = await run(archive, ["--appimage-offset"]);
+  const offset = stdout.trim();
+  assert.match(offset, /^[1-9][0-9]{0,15}$/, `${label} filesystem offset is invalid`);
+  const options = { env: { ...process.env, LC_ALL: "C" } };
+  const [{ stdout: listed }, { stdout: verbose }] = await Promise.all([
+    run("unsquashfs", ["-l", "-o", offset, archive], options),
+    run("unsquashfs", ["-ll", "-o", offset, archive], options),
+  ]);
+  const entries = outputLines(listed, label).filter((line) => line.startsWith("squashfs-root"));
+  const verboseLines = outputLines(verbose, label).filter((line) =>
+    /^[bcdhlps-][rwxStT-]{9}\s/.test(line) && line.includes("squashfs-root"));
+  return assertSafeArchiveListing({ entries, verboseLines, label });
+}
+
+function outputLines(output, label) {
+  assert.ok(Buffer.byteLength(output, "utf8") <= 16 * 1024 * 1024, `${label} archive listing is too large`);
+  const lines = output.split(/\r?\n/);
+  if (lines.at(-1) === "") lines.pop();
+  assert.ok(lines.every((line) => line.length > 0), `${label} archive contains a control character`);
+  return lines;
+}
+
+function normalizeArchivePath(value, label) {
+  assert.equal(typeof value, "string", `${label} archive path must be text`);
+  assert.ok(Buffer.byteLength(value, "utf8") <= MAX_ARCHIVE_PATH_BYTES, `${label} archive path is too long`);
+  assert.doesNotMatch(value, /[\0-\x1f\x7f\\]/, `${label} archive path contains an unsafe character`);
+  assert.doesNotMatch(value, / -> | link to /, `${label} archive path is ambiguous`);
+  assert.ok(!path.posix.isAbsolute(value) && !/^[A-Za-z]:/.test(value), `${label} archive path is absolute`);
+  let candidate = value;
+  while (candidate.startsWith("./")) candidate = candidate.slice(2);
+  if (candidate === "." || candidate === "") return ".";
+  const components = candidate.split("/").filter((component, index, values) =>
+    !(component === "" && index === values.length - 1));
+  assert.ok(components.every((component) => component && component !== "." && component !== ".."),
+    `${label} archive path traverses its extraction root`);
+  const normalized = path.posix.normalize(components.join("/"));
+  assert.ok(normalized !== ".." && !normalized.startsWith("../") && !path.posix.isAbsolute(normalized),
+    `${label} archive path escapes its extraction root`);
+  return normalized;
+}
+
+function listedEntryAtEnd(metadata, entries, label) {
+  const matches = entries.filter((entry) => metadata === entry || metadata.endsWith(` ${entry}`));
+  assert.equal(matches.length, 1, `${label} archive link metadata is ambiguous`);
+  return matches[0];
+}
+
+function assertSafeLinkTarget(entry, target, label) {
+  assert.doesNotMatch(target, /[\0-\x1f\x7f\\]/, `${label} archive link target contains an unsafe character`);
+  assert.ok(!path.posix.isAbsolute(target) && !/^[A-Za-z]:/.test(target), `${label} archive link target is absolute`);
+  const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(entry), target));
+  assert.ok(resolved !== ".." && !resolved.startsWith("../") && !path.posix.isAbsolute(resolved),
+    `${label} archive link escapes its extraction root`);
 }
 
 export async function validateLinuxDistribution(name, root, sourceIconSha256) {

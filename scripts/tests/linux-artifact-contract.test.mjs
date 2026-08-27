@@ -4,8 +4,10 @@ import path from "node:path";
 import { test } from "node:test";
 
 import {
+  assertSafeArchiveListing,
   assertDesktopAssociation,
   expectedLinuxArtifacts,
+  preflightLinuxArtifacts,
 } from "../linux-artifact-contract.mjs";
 import { readReleaseMetadata } from "../release-metadata.mjs";
 
@@ -38,4 +40,50 @@ test("Linux package names and local-file association are release-metadata bound"
     () => assertDesktopAssociation(desktop.replace(" %F", " --no-sandbox %F"), mimePackage),
     /--no-sandbox/,
   );
+});
+
+test("archive preflight rejects paths and links that could escape before extraction", async () => {
+  const safe = {
+    entries: ["./", "./opt/Reference Library/app.asar", "./usr/bin/reference-library"],
+    verboseLines: [
+      "drwxr-xr-x  0 root root 0 Aug 27 00:00 ./",
+      "-rw-r--r--  0 root root 1 Aug 27 00:00 ./opt/Reference Library/app.asar",
+      "lrwxrwxrwx  0 root root 0 Aug 27 00:00 ./usr/bin/reference-library -> ../../opt/Reference Library/reference-library",
+    ],
+    label: "fixture",
+  };
+  assert.deepEqual(assertSafeArchiveListing(safe), { entryCount: 3 });
+  for (const entries of [
+    ["/etc/passwd"],
+    ["../../outside"],
+    ["safe/../outside"],
+    ["C:/outside"],
+    ["safe\\..\\outside"],
+    ["safe\u0000outside"],
+  ]) {
+    assert.throws(() => assertSafeArchiveListing({
+      entries,
+      verboseLines: ["-rw-r--r--  0 root root 1 Aug 27 00:00 fixture"],
+      label: "fixture",
+    }), /archive/);
+  }
+  assert.throws(() => assertSafeArchiveListing({
+    entries: ["safe/link"],
+    verboseLines: ["lrwxrwxrwx  0 root root 0 Aug 27 00:00 safe/link -> ../../outside"],
+    label: "fixture",
+  }), /escapes its extraction root/);
+
+  const calls = [];
+  await preflightLinuxArtifacts(
+    { pacman: "a.pacman", tar: "a.tar.gz", appImage: "a.AppImage" },
+    {
+      inspectTar: async (file, label) => { calls.push(["archive", file, label]); },
+      inspectAppImage: async (file, label) => { calls.push(["appimage", file, label]); },
+    },
+  );
+  assert.deepEqual(calls, [
+    ["archive", "a.pacman", "pacman"],
+    ["archive", "a.tar.gz", "tar.gz"],
+    ["appimage", "a.AppImage", "AppImage"],
+  ]);
 });
