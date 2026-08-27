@@ -183,6 +183,62 @@ fn lexical_query_keeps_unicode_codepoints_and_ascii_case_fold_deterministic() {
 }
 
 #[test]
+fn lexical_query_treats_like_metacharacters_as_literal_punctuation() {
+    let (_project, mut session) = Project::new(&["percent.png", "underscore.png", "backslash.png"]);
+    let page = session
+        .query_assets(0, 10, AssetProjection::ContactSheetStandard)
+        .unwrap();
+    let percent = page
+        .items
+        .iter()
+        .find(|item| item.display_name == "percent.png")
+        .unwrap();
+    let underscore = page
+        .items
+        .iter()
+        .find(|item| item.display_name == "underscore.png")
+        .unwrap();
+    let backslash = page
+        .items
+        .iter()
+        .find(|item| item.display_name == "backslash.png")
+        .unwrap();
+    session
+        .update_asset_title(&percent.asset_id, 0, Some("Fifty% frame"))
+        .unwrap();
+    session
+        .update_asset_note(&underscore.asset_id, 0, Some("under_score"))
+        .unwrap();
+    session
+        .update_asset_title(&backslash.asset_id, 0, Some("back\\slash"))
+        .unwrap();
+
+    for (search, expected) in [
+        ("%", percent.asset_id.as_str()),
+        ("_", underscore.asset_id.as_str()),
+        ("\\", backslash.asset_id.as_str()),
+    ] {
+        let result = session
+            .query_asset_index(
+                0,
+                10,
+                AssetProjection::ContactSheetStandard,
+                &AssetQuery {
+                    search: Some(search.into()),
+                    ..AssetQuery::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(result.total, 1, "literal punctuation search {search:?}");
+        assert_eq!(
+            result.items[0].asset_id, expected,
+            "literal punctuation search {search:?}"
+        );
+    }
+    session.close().unwrap();
+}
+
+#[test]
 fn typed_filters_compose_and_each_asset_is_projected_once() {
     let (_project, mut session) = Project::new(&["alpha.png", "bravo.png"]);
     let page = session
@@ -220,6 +276,132 @@ fn typed_filters_compose_and_each_asset_is_projected_once() {
         .unwrap();
     assert_eq!(result.total, 1);
     assert_eq!(result.items[0].asset_id, alpha.asset_id);
+    session.close().unwrap();
+}
+
+#[test]
+fn composed_query_filters_and_sort_page_without_duplicates_or_gaps() {
+    let names = [
+        "needle-01.png",
+        "needle-02.png",
+        "needle-03.png",
+        "needle-04.png",
+        "needle-05.png",
+        "needle-06.png",
+        "needle-wrong-review.png",
+        "needle-wrong-collection.png",
+        "other.png",
+        "needle-missing.png",
+    ];
+    let (project, mut session) = Project::new(&names);
+    let second_root = project.directory.join("Second Root");
+    fs::create_dir(&second_root).unwrap();
+    fs::write(
+        second_root.join("needle-other-root.png"),
+        decode_hex(PNG_HEX),
+    )
+    .unwrap();
+    let second_plan = session
+        .add_root(&second_root, "Second Root".into())
+        .unwrap();
+    let (sender, _receiver) = mpsc::channel();
+    scan_root(second_plan, Arc::new(AtomicBool::new(false)), sender);
+
+    let original_root_id = session
+        .query_roots()
+        .unwrap()
+        .into_iter()
+        .find(|root| root.display_name == "Root")
+        .unwrap()
+        .root_id;
+    let assets = session
+        .query_assets(0, 20, AssetProjection::ContactSheetStandard)
+        .unwrap()
+        .items;
+    let by_name = |name: &str| {
+        assets
+            .iter()
+            .find(|asset| asset.display_name == name)
+            .unwrap()
+            .asset_id
+            .clone()
+    };
+    let qualifying = (1..=6)
+        .map(|index| by_name(&format!("needle-{index:02}.png")))
+        .collect::<Vec<_>>();
+    let wrong_review = by_name("needle-wrong-review.png");
+    let wrong_collection = by_name("needle-wrong-collection.png");
+    let wrong_search = by_name("other.png");
+    let missing = by_name("needle-missing.png");
+    let wrong_root = by_name("needle-other-root.png");
+
+    for asset_id in
+        qualifying
+            .iter()
+            .chain([&wrong_collection, &wrong_search, &missing, &wrong_root])
+    {
+        session
+            .update_asset_review(asset_id, 0, ReviewState::Maybe)
+            .unwrap();
+    }
+    let collection = session.create_collection("Needles").unwrap().0;
+    let members = qualifying
+        .iter()
+        .cloned()
+        .chain([wrong_review, wrong_search, missing, wrong_root])
+        .collect::<Vec<_>>();
+    session
+        .add_assets_to_collection(&collection.collection_id, &members)
+        .unwrap();
+
+    fs::remove_file(project.root.join("needle-missing.png")).unwrap();
+    let (sender, _receiver) = mpsc::channel();
+    scan_root(
+        session.rescan_root(&original_root_id).unwrap(),
+        Arc::new(AtomicBool::new(false)),
+        sender,
+    );
+
+    let query = AssetQuery {
+        search: Some("needle".into()),
+        review_states: vec![ReviewState::Maybe],
+        availability: vec![AvailabilityFilter::Present],
+        collection_id: Some(collection.collection_id),
+        root_id: Some(original_root_id),
+        sort: AssetSort::NameDescending,
+    };
+    let mut offset = 0;
+    let mut snapshot = None;
+    let mut observed = Vec::new();
+    loop {
+        let page = session
+            .query_asset_index_at_revision(
+                offset,
+                2,
+                AssetProjection::ContactSheetStandard,
+                &query,
+                snapshot,
+            )
+            .unwrap();
+        assert_eq!(page.total, 6);
+        snapshot = Some(page.library_revision);
+        observed.extend(page.items.into_iter().map(|asset| asset.display_name));
+        let Some(next) = page.next_offset else { break };
+        assert!(next > offset);
+        offset = next;
+    }
+
+    assert_eq!(
+        observed,
+        vec![
+            "needle-06.png",
+            "needle-05.png",
+            "needle-04.png",
+            "needle-03.png",
+            "needle-02.png",
+            "needle-01.png",
+        ]
+    );
     session.close().unwrap();
 }
 
