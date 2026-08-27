@@ -90,6 +90,9 @@ fn worst_case_canonical_asset_pages_fit_the_public_frame_without_gaps() {
             break;
         }
     }
-    assert!(page_count > 1, "fixture must exercise byte-budget pagination");
+    assert!(
+        page_count > 1,
+        "fixture must exercise byte-budget pagination"
+    );
     assert_eq!(observed.len(), MAX_CANONICAL_PAGE_SIZE as usize);
 }

@@ -1,11 +1,6 @@
 use std::{fs, path::PathBuf};
 
-use reference_core::{
-    SCHEMA_VERSION,
-    manifest::Manifest,
-    schema,
-    session::LibrarySession,
-};
+use reference_core::{SCHEMA_VERSION, manifest::Manifest, schema, session::LibrarySession};
 use rusqlite::{Connection, params};
 use uuid::Uuid;
 
@@ -103,7 +98,12 @@ impl PopulatedPackage {
                     id, root_id, source_id, relative_path_bytes, relative_path_display,
                     state, last_stat_size, last_stat_mtime_ms, created_at_ms, updated_at_ms
                  ) VALUES (?1, ?2, ?3, ?4, 'fixture.png', 'present', 68, 13, 14, 14)",
-                params![ids.location, ids.root, ids.source, b"fixture.png".as_slice()],
+                params![
+                    ids.location,
+                    ids.root,
+                    ids.source,
+                    b"fixture.png".as_slice()
+                ],
             )
             .unwrap();
         connection
@@ -184,10 +184,16 @@ fn populated_schema_one_migrates_without_rekeying_canonical_identity() {
     assert_version_surfaces_converged(&connection, &package.path);
     assert_eq!(single_id(&connection, "roots"), expected.root);
     assert_eq!(single_id(&connection, "sources"), expected.source);
-    assert_eq!(single_id(&connection, "source_revisions"), expected.source_revision);
+    assert_eq!(
+        single_id(&connection, "source_revisions"),
+        expected.source_revision
+    );
     assert_eq!(single_id(&connection, "locations"), expected.location);
     assert_eq!(single_id(&connection, "assets"), expected.asset);
-    assert_eq!(single_id(&connection, "asset_origins"), expected.asset_origin);
+    assert_eq!(
+        single_id(&connection, "asset_origins"),
+        expected.asset_origin
+    );
     assert_eq!(single_id(&connection, "renditions"), expected.rendition);
     assert_eq!(single_id(&connection, "jobs"), expected.job);
     assert_eq!(
@@ -195,8 +201,12 @@ fn populated_schema_one_migrates_without_rekeying_canonical_identity() {
             .query_row(
                 "SELECT custom_title, review_state, note, revision FROM assets WHERE id = ?1",
                 params![expected.asset],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?,
-                          row.get::<_, Option<String>>(2)?, row.get::<_, i64>(3)?)),
+                |row| Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, i64>(3)?
+                )),
             )
             .unwrap(),
         ("Fixture title".into(), "keep".into(), None, 0)
@@ -206,15 +216,21 @@ fn populated_schema_one_migrates_without_rekeying_canonical_identity() {
             .query_row(
                 "SELECT job_kind, state, root_id FROM jobs WHERE id = ?1",
                 params![expected.job],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?,
-                          row.get::<_, Option<String>>(2)?)),
+                |row| Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?
+                )),
             )
             .unwrap(),
         ("initial_scan".into(), "completed".into(), None)
     );
     drop(connection);
     session.close().unwrap();
-    assert_eq!(Manifest::read(&package.path).unwrap().schema_version, SCHEMA_VERSION);
+    assert_eq!(
+        Manifest::read(&package.path).unwrap().schema_version,
+        SCHEMA_VERSION
+    );
 
     let mut reopened = LibrarySession::open(&package.path).unwrap();
     assert_eq!(reopened.opened().schema_version, SCHEMA_VERSION);
@@ -223,7 +239,10 @@ fn populated_schema_one_migrates_without_rekeying_canonical_identity() {
     assert_eq!(single_id(&connection, "assets"), expected.asset);
     drop(connection);
     reopened.close().unwrap();
-    assert_eq!(Manifest::read(&package.path).unwrap().schema_version, SCHEMA_VERSION);
+    assert_eq!(
+        Manifest::read(&package.path).unwrap().schema_version,
+        SCHEMA_VERSION
+    );
 }
 
 #[test]
@@ -251,7 +270,10 @@ fn reopen_repairs_a_committed_migration_metadata_boundary() {
     assert_eq!(single_id(&connection, "assets"), package.ids.asset);
     drop(connection);
     session.close().unwrap();
-    assert_eq!(Manifest::read(&package.path).unwrap().schema_version, SCHEMA_VERSION);
+    assert_eq!(
+        Manifest::read(&package.path).unwrap().schema_version,
+        SCHEMA_VERSION
+    );
 
     let mut reopened = LibrarySession::open(&package.path).unwrap();
     assert_eq!(reopened.opened().schema_version, SCHEMA_VERSION);
@@ -259,7 +281,10 @@ fn reopen_repairs_a_committed_migration_metadata_boundary() {
     assert_version_surfaces_converged(&connection, &package.path);
     drop(connection);
     reopened.close().unwrap();
-    assert_eq!(Manifest::read(&package.path).unwrap().schema_version, SCHEMA_VERSION);
+    assert_eq!(
+        Manifest::read(&package.path).unwrap().schema_version,
+        SCHEMA_VERSION
+    );
 }
 
 #[test]
@@ -272,15 +297,20 @@ fn committed_wal_curation_recovers_across_sequential_reopens() {
         std::env::temp_dir().join(format!("reference-v1-wal-recovery-{}", Uuid::new_v4()));
     let recovery_path = recovery_directory.join("Recovered.pitchlibrary");
     fs::create_dir_all(recovery_path.join("embedded")).unwrap();
-    fs::copy(package.path.join("manifest.json"), recovery_path.join("manifest.json")).unwrap();
+    fs::copy(
+        package.path.join("manifest.json"),
+        recovery_path.join("manifest.json"),
+    )
+    .unwrap();
 
-    let connection = schema::open_database(&package.database(), &Manifest::read(&package.path).unwrap())
-        .unwrap();
-    connection.pragma_update(None, "wal_autocheckpoint", 0).unwrap();
-    let collection_id = Uuid::new_v4().to_string();
+    let connection =
+        schema::open_database(&package.database(), &Manifest::read(&package.path).unwrap())
+            .unwrap();
     connection
-        .execute_batch("BEGIN IMMEDIATE")
+        .pragma_update(None, "wal_autocheckpoint", 0)
         .unwrap();
+    let collection_id = Uuid::new_v4().to_string();
+    connection.execute_batch("BEGIN IMMEDIATE").unwrap();
     connection
         .execute(
             "UPDATE assets SET custom_title = 'Recovered title', note = 'Recovered note',
@@ -347,14 +377,19 @@ fn pragma_version(connection: &Connection) -> u32 {
 
 fn library_meta_version(connection: &Connection) -> u32 {
     connection
-        .query_row("SELECT schema_version FROM library_meta", [], |row| row.get(0))
+        .query_row("SELECT schema_version FROM library_meta", [], |row| {
+            row.get(0)
+        })
         .unwrap()
 }
 
 fn assert_version_surfaces_converged(connection: &Connection, package: &std::path::Path) {
     assert_eq!(pragma_version(connection), SCHEMA_VERSION);
     assert_eq!(library_meta_version(connection), SCHEMA_VERSION);
-    assert_eq!(Manifest::read(package).unwrap().schema_version, SCHEMA_VERSION);
+    assert_eq!(
+        Manifest::read(package).unwrap().schema_version,
+        SCHEMA_VERSION
+    );
     assert_eq!(
         connection
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
