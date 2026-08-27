@@ -708,8 +708,10 @@ impl CommandEngine {
             }
         }
         for job_id in &job_ids {
-            if let Some(job) = self.jobs.get_mut(job_id)
-                && job.kind == JobKind::Scan
+            let Some(mut job) = self.jobs.remove(job_id) else {
+                continue;
+            };
+            if job.kind == JobKind::Scan
                 && let Some(handle) = job.handle.take()
             {
                 let _ = handle.join();
@@ -1095,5 +1097,38 @@ mod tests {
         ));
         assert_eq!(engine.resource_inflight, 0);
         assert!(!engine.jobs.contains_key(&job_id));
+    }
+
+    #[test]
+    fn stopping_session_releases_all_completed_job_controls() {
+        let mut engine = CommandEngine::new();
+        let session_id = "closing-session".to_owned();
+        let scan_id = "completed-scan".to_owned();
+        let resource_id = "completed-resource".to_owned();
+        engine.jobs.insert(
+            scan_id.clone(),
+            JobControl {
+                session_id: session_id.clone(),
+                cancelled: Arc::new(AtomicBool::new(false)),
+                handle: Some(thread::spawn(|| false)),
+                kind: JobKind::Scan,
+                completion: Some(Arc::new((Mutex::new(true), Condvar::new()))),
+            },
+        );
+        engine.jobs.insert(
+            resource_id.clone(),
+            JobControl {
+                session_id: session_id.clone(),
+                cancelled: Arc::new(AtomicBool::new(false)),
+                handle: None,
+                kind: JobKind::Resource,
+                completion: Some(Arc::new((Mutex::new(true), Condvar::new()))),
+            },
+        );
+
+        engine.stop_jobs_for_session(&session_id).unwrap();
+
+        assert!(!engine.jobs.contains_key(&scan_id));
+        assert!(!engine.jobs.contains_key(&resource_id));
     }
 }

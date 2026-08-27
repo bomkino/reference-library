@@ -181,3 +181,14 @@ Do not rewrite or delete entries. Corrections append a superseding entry.
 **Fresh measurement:** the focused Core regression and repository boundary must pass before this repair is committed; the complete five-job workflow remains the integration gate.
 
 **Decision:** use one lifecycle invariant for scan and rendition workers: finished work never occupies live in-memory control state, while durable-state failures remain explicit restart conditions.
+
+
+## 2026-08-28 — Session shutdown releases completed controls
+
+**Hypothesis:** `stop_jobs_for_session` waited for workers and joined scan threads but left their `JobControl` records resident. A dropped terminal event or failed terminal write could therefore consume future scan capacity after a Library closed.
+
+**Change:** after every worker for the session confirms completion, remove each scan and resource control; join the owned scan handle before dropping it. Add a regression containing both worker kinds.
+
+**Fresh measurement:** the focused shutdown regression, format gate and repository boundary must pass before commit; the complete five-job workflow remains the integration gate.
+
+**Decision:** successful session shutdown is now the final in-memory ownership boundary. Timed-out workers remain retained because the session and writer lock must stay alive until quiescence.
