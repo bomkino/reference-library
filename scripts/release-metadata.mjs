@@ -38,6 +38,10 @@ export async function verifyReleaseMetadata(repository) {
   const linuxPackage = packages.find(([file]) => file === "apps/linux/package.json")[1];
   assert.equal(linuxPackage.build.appId, metadata.bundleIdentifier);
   assert.equal(linuxPackage.build.productName, metadata.productName);
+  assert.equal(
+    linuxPackage.build.linux.icon,
+    "../../assets/branding/reference-library-icon-1024.png",
+  );
   assert.deepEqual(linuxPackage.build.fileAssociations, [{
     ext: "pitchlibrary",
     name: "Reference Library package",
@@ -79,9 +83,23 @@ export async function verifyReleaseMetadata(repository) {
   const plist = await readFile(path.join(repository, "apps/macos/Info.plist"), "utf8");
   assertPlistString(plist, "CFBundleDisplayName", metadata.productName);
   assertPlistString(plist, "CFBundleIdentifier", metadata.bundleIdentifier);
+  assertPlistString(plist, "CFBundleIconFile", "ReferenceLibrary");
   assertPlistString(plist, "CFBundleShortVersionString", metadata.version);
   assertPlistString(plist, "CFBundleVersion", metadata.buildNumber);
   assertPlistString(plist, "UTTypeIdentifier", metadata.documentTypeIdentifier);
+  const appEntitlements = await readFile(
+    path.join(repository, "apps/macos/ReferenceLibrary.entitlements"),
+    "utf8",
+  );
+  assertPlistTrue(appEntitlements, "com.apple.security.app-sandbox");
+  assertPlistTrue(appEntitlements, "com.apple.security.files.user-selected.read-write");
+  assertPlistTrue(appEntitlements, "com.apple.security.files.bookmarks.app-scope");
+  const helperEntitlements = await readFile(
+    path.join(repository, "apps/macos/ReferenceCore.entitlements"),
+    "utf8",
+  );
+  assertPlistTrue(helperEntitlements, "com.apple.security.app-sandbox");
+  assertPlistTrue(helperEntitlements, "com.apple.security.inherit");
 
   const expected = {
     "linux-x86_64": [
@@ -100,6 +118,11 @@ export async function verifyReleaseMetadata(repository) {
 function assertPlistString(plist, key, expected) {
   const expression = new RegExp(`<key>${escapeRegExp(key)}</key>\\s*<string>${escapeRegExp(expected)}</string>`);
   assert.match(plist, expression, `Info.plist ${key} drift`);
+}
+
+function assertPlistTrue(plist, key) {
+  const expression = new RegExp(`<key>${escapeRegExp(key)}</key>\\s*<true\\s*\\/>`);
+  assert.match(plist, expression, `${key} entitlement drift`);
 }
 
 function escapeRegExp(value) {

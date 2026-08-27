@@ -24,6 +24,7 @@ export function assertMacosBundleMetadata(plist, metadata) {
   assert.equal(plist.CFBundleShortVersionString, metadata.version);
   assert.equal(String(plist.CFBundleVersion), metadata.buildNumber);
   assert.equal(plist.CFBundleExecutable, "ReferenceLibraryMac");
+  assert.equal(plist.CFBundleIconFile, "ReferenceLibrary");
   assert.ok(plist.LSArchitecturePriority?.includes("arm64"));
   const document = plist.CFBundleDocumentTypes?.find((item) =>
     item.LSItemContentTypes?.includes(metadata.documentTypeIdentifier));
@@ -54,11 +55,13 @@ export async function validateMacosArtifact({ repository, releaseDirectory, extr
   const executable = path.join(contents, "MacOS/ReferenceLibraryMac");
   const core = path.join(contents, "Resources/bin/reference-core");
   const legal = path.join(contents, "Resources/Legal");
+  const icon = path.join(contents, "Resources/ReferenceLibrary.icns");
   for (const file of [
     plistPath,
     executable,
     core,
     path.join(contents, "Resources/Workspace/index.html"),
+    icon,
     path.join(legal, "DEPENDENCY-LICENSES.json"),
     path.join(legal, "THIRD_PARTY-NOTICES.txt"),
     path.join(legal, "LICENSE"),
@@ -71,6 +74,16 @@ export async function validateMacosArtifact({ repository, releaseDirectory, extr
   await assertArm64MachO(core, "Reference Core helper");
   await run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", application]);
   await run("codesign", ["--verify", "--strict", "--verbose=2", core]);
+  const appEntitlements = await describeEntitlements(application);
+  assertEntitlement(appEntitlements, "com.apple.security.app-sandbox");
+  assertEntitlement(appEntitlements, "com.apple.security.files.user-selected.read-write");
+  assertEntitlement(appEntitlements, "com.apple.security.files.bookmarks.app-scope");
+  const helperEntitlements = await describeEntitlements(core);
+  assertEntitlement(helperEntitlements, "com.apple.security.app-sandbox");
+  assertEntitlement(helperEntitlements, "com.apple.security.inherit");
+  const iconset = path.join(extractionRoot, "validated.iconset");
+  await run("iconutil", ["-c", "iconset", icon, "-o", iconset]);
+  await assertRegularFile(path.join(iconset, "icon_512x512@2x.png"));
   await run(process.execPath, [
     path.join(repository, "scripts/legal-bundle-contract.mjs"),
     "--directory",
@@ -86,7 +99,13 @@ export async function validateMacosArtifact({ repository, releaseDirectory, extr
     documentTypeIdentifier: metadata.documentTypeIdentifier,
     architecture: "arm64",
     adHocSignatureVerified: true,
-    claimExclusions: ["notarized", "installed_on_apple_silicon", "target_integrated", "released"],
+    claimExclusions: [
+      "notarized",
+      "security_scope_inheritance_runtime_verified",
+      "installed_on_apple_silicon",
+      "target_integrated",
+      "released",
+    ],
   };
 }
 
@@ -97,6 +116,19 @@ async function assertArm64MachO(file, label) {
   ]);
   assert.equal(architectures.stdout.trim(), "arm64", `${label} is not arm64-only`);
   assert.match(kind.stdout, /Mach-O 64-bit executable arm64/, `${label} is not Mach-O arm64`);
+}
+
+async function describeEntitlements(file) {
+  const result = await run("codesign", ["-d", "--entitlements", ":-", file]);
+  return `${result.stdout}\n${result.stderr}`;
+}
+
+function assertEntitlement(plist, key) {
+  assert.match(
+    plist,
+    new RegExp(`<key>${escapeRegExp(key)}</key>\\s*<true\\s*\\/>`),
+    `${key} is missing from the extracted signature`,
+  );
 }
 
 async function assertRegularFile(file) {
@@ -115,6 +147,10 @@ async function run(command, args, options = {}) {
     const detail = [error.stdout, error.stderr].filter(Boolean).join("\n");
     throw new Error(`${command} failed${detail ? `:\n${detail}` : ""}`, { cause: error });
   }
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 const invoked = process.argv[1] &&

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Proposed v1 product-local mark: bounded editorial contact sheet. -->
+  <rect x="48" y="48" width="928" height="928" rx="220" fill="#3b3933"/>
+  <rect x="62" y="62" width="900" height="900" rx="207" fill="#191917"/>
+  <rect x="198" y="238" width="514" height="584" rx="72" fill="#373732"/>
+  <rect x="252" y="186" width="574" height="652" rx="82" fill="#ede6d9"/>
+  <rect x="276" y="210" width="526" height="604" rx="61" fill="#282824"/>
+  <rect x="318" y="264" width="192" height="174" rx="28" fill="#ce8d5b"/>
+  <rect x="546" y="264" width="214" height="174" rx="28" fill="#55564f"/>
+  <rect x="318" y="474" width="442" height="242" rx="34" fill="#41423c"/>
+  <rect x="318" y="746" width="166" height="18" rx="9" fill="#77776d"/>
+  <rect x="504" y="746" width="104" height="18" rx="9" fill="#56574f"/>
+</svg>

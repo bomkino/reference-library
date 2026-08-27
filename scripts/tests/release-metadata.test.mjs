@@ -27,6 +27,8 @@ test("release metadata rejects a stale native bundle version", async () => {
       "apps/linux/packaging/io.pitchdog.ReferenceLibrary.desktop",
       "apps/linux/packaging/io.pitchdog.ReferenceLibrary.xml",
       "apps/macos/Info.plist",
+      "apps/macos/ReferenceLibrary.entitlements",
+      "apps/macos/ReferenceCore.entitlements",
       "packages/bridge-contract/package.json",
       "packages/workspace/package.json",
     ]) {

@@ -17,6 +17,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: python3 scripts/check_repository.py
+      - run: node scripts/generate-product-icon.mjs --check
       - run: node scripts/check-release-metadata.mjs
 
   rust-core:
@@ -166,6 +167,7 @@ jobs:
         with:
           targets: aarch64-apple-darwin
       - run: npm ci --ignore-scripts
+      - run: node scripts/generate-product-icon.mjs --check
       - run: node scripts/check-release-metadata.mjs
       - run: python3 scripts/generate_dependency_licenses.py --check
       - run: node scripts/legal-bundle-contract.mjs --directory .

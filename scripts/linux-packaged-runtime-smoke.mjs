@@ -40,7 +40,8 @@ export async function observeSustainedProcess({
     if (outcome) {
       throw new Error(
         `packaged application exited before ${minimumRuntimeMs}ms ` +
-        `(code=${outcome.code}, signal=${outcome.signal})\n${stderr}`,
+        `(code=${outcome.code}, signal=${outcome.signal})\n` +
+        `stdout:\n${stdout}\nstderr:\n${stderr}`,
       );
     }
     survived = true;

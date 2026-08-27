@@ -18,6 +18,7 @@ test("Apple-Silicon package CI validates the extracted app and clean-source arti
     "--require-current-target --require-clean-source",
     "SHA256SUMS",
     "MACOS_ARTIFACT_VALIDATION.json",
+    "generate-product-icon.mjs --check",
   ]) assert.match(macos, new RegExp(escapeRegExp(required)), `missing macOS CI seam: ${required}`);
   assert.match(macos, /actions\/upload-artifact@[0-9a-f]{40}/);
   assert.doesNotMatch(macos, /notari[sz]|stapler|xcrun notarytool/i);

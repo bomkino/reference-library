@@ -21,6 +21,7 @@ test("macOS archive and document registration are release-metadata bound", async
     CFBundleShortVersionString: metadata.version,
     CFBundleVersion: metadata.buildNumber,
     CFBundleExecutable: "ReferenceLibraryMac",
+    CFBundleIconFile: "ReferenceLibrary",
     LSArchitecturePriority: ["arm64"],
     CFBundleDocumentTypes: [{
       CFBundleTypeRole: "Editor",

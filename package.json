@@ -8,11 +8,12 @@
     "apps/linux"
   ],
   "scripts": {
+    "check:product-icon": "node scripts/generate-product-icon.mjs --check",
     "check:release-metadata": "node scripts/check-release-metadata.mjs",
     "build": "npm run build -w @pitchdog/reference-workspace && npm run build -w @pitchdog/reference-linux",
     "typecheck": "npm run typecheck -w @pitchdog/reference-bridge && npm run typecheck -w @pitchdog/reference-workspace",
     "test": "node --test scripts/tests/*.test.mjs && npm run test -w @pitchdog/reference-workspace && npm run test -w @pitchdog/reference-linux",
-    "check": "npm run check:release-metadata && npm run typecheck && npm test && npm run build",
+    "check": "npm run check:product-icon && npm run check:release-metadata && npm run typecheck && npm test && npm run build",
     "test:semantic-roundtrip": "node scripts/t01-semantic-roundtrip.mjs"
   },
   "devDependencies": {

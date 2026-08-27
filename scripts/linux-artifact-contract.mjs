@@ -54,6 +54,9 @@ export async function validateLinuxArtifactSet({ repository, releaseDirectory, e
   await Promise.all(Object.values(artifacts).map(assertRegularFile));
   const unpacked = path.join(releaseDirectory, "linux-unpacked");
   assert.ok((await lstat(unpacked)).isDirectory(), "linux-unpacked directory is missing");
+  const sourceIconSha256 = await sha256File(
+    path.join(repository, "assets/branding/reference-library-icon-1024.png"),
+  );
 
   await mkdir(extractionRoot, { recursive: false });
   const pacmanRoot = path.join(extractionRoot, "pacman");
@@ -66,10 +69,10 @@ export async function validateLinuxArtifactSet({ repository, releaseDirectory, e
   await run(artifacts[artifactNames[1]], ["--appimage-extract"], { cwd: appImageRoot });
 
   const distributions = await Promise.all([
-    validateDistribution("linux-unpacked", unpacked),
-    validateDistribution("pacman", pacmanRoot),
-    validateDistribution("AppImage", appImageRoot),
-    validateDistribution("tar.gz", tarRoot),
+    validateDistribution("linux-unpacked", unpacked, sourceIconSha256),
+    validateDistribution("pacman", pacmanRoot, sourceIconSha256),
+    validateDistribution("AppImage", appImageRoot, sourceIconSha256),
+    validateDistribution("tar.gz", tarRoot, sourceIconSha256),
   ]);
   assert.equal(
     new Set(distributions.map((item) => item.coreSha256)).size,
@@ -122,7 +125,7 @@ export async function validateLinuxArtifactSet({ repository, releaseDirectory, e
   };
 }
 
-async function validateDistribution(name, root) {
+async function validateDistribution(name, root, sourceIconSha256) {
   const cores = await findNamed(root, "reference-core");
   const asars = await findNamed(root, "app.asar");
   assert.equal(cores.length, 1, `${name} must contain exactly one Reference Core helper`);
@@ -150,6 +153,13 @@ async function validateDistribution(name, root) {
     }
   }
   assert.ok(association, `${name} omits coherent .pitchlibrary association metadata`);
+  const icons = await findNamed(root, "reference-library.png");
+  assert.ok(icons.length > 0, `${name} omits the product-local icon`);
+  const iconHashes = await Promise.all(icons.map(sha256File));
+  assert.ok(
+    iconHashes.includes(sourceIconSha256),
+    `${name} does not contain the exact proposed product icon source raster`,
+  );
 
   await run(process.execPath, [
     path.resolve(path.dirname(fileURLToPath(import.meta.url)), "legal-bundle-contract.mjs"),

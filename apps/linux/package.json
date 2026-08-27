@@ -42,6 +42,10 @@
       {
         "from": "packaging/io.pitchdog.ReferenceLibrary.xml",
         "to": "share/mime/packages/io.pitchdog.ReferenceLibrary.xml"
+      },
+      {
+        "from": "../../assets/branding/reference-library-icon-1024.png",
+        "to": "share/icons/reference-library.png"
       }
     ],
     "fileAssociations": [
@@ -56,6 +60,7 @@
     "linux": {
       "category": "Graphics",
       "executableName": "reference-library",
+      "icon": "../../assets/branding/reference-library-icon-1024.png",
       "syncDesktopName": true,
       "target": [
         "pacman",
