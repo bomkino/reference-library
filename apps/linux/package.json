@@ -68,7 +68,13 @@
         "tar.gz"
       ]
     },
+    "appImage": {
+      "executableArgs": []
+    },
     "pacman": {
+      "executableArgs": [
+        "%F"
+      ],
       "depends": [
         "gtk3",
         "nss",

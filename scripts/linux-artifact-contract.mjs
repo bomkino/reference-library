@@ -35,7 +35,18 @@ export function expectedLinuxArtifacts(metadata) {
 export function assertDesktopAssociation(desktop, mimePackage) {
   assert.match(desktop, /^\[Desktop Entry\]$/m);
   assert.match(desktop, /^Type=Application$/m);
-  assert.match(desktop, /^Exec=\S.*\s%F$/m, "desktop command must accept local package paths");
+  assert.doesNotMatch(desktop, /--no-sandbox|--disable-setuid-sandbox/);
+  const command = desktop.match(/^Exec=(.+)$/m)?.[1] ?? "";
+  assert.match(
+    command,
+    /^\S.*\s%[FU]$/,
+    "desktop command must accept local package paths or local file URLs",
+  );
+  assert.equal(
+    command.match(/%[fFuU]/g)?.length,
+    1,
+    "desktop command must contain exactly one file field code",
+  );
   const mimeLine = desktop.match(/^MimeType=(.+)$/m)?.[1] ?? "";
   assert.ok(mimeLine.split(";").includes(MIME), "desktop file omits Library MIME type");
   assert.match(mimePackage, new RegExp(`type=["']${escapeRegExp(MIME)}["']`));
@@ -69,10 +80,10 @@ export async function validateLinuxArtifactSet({ repository, releaseDirectory, e
   await run(artifacts[artifactNames[1]], ["--appimage-extract"], { cwd: appImageRoot });
 
   const distributions = await Promise.all([
-    validateDistribution("linux-unpacked", unpacked, sourceIconSha256),
-    validateDistribution("pacman", pacmanRoot, sourceIconSha256),
-    validateDistribution("AppImage", appImageRoot, sourceIconSha256),
-    validateDistribution("tar.gz", tarRoot, sourceIconSha256),
+    validateLinuxDistribution("linux-unpacked", unpacked, sourceIconSha256),
+    validateLinuxDistribution("pacman", pacmanRoot, sourceIconSha256),
+    validateLinuxDistribution("AppImage", appImageRoot, sourceIconSha256),
+    validateLinuxDistribution("tar.gz", tarRoot, sourceIconSha256),
   ]);
   assert.equal(
     new Set(distributions.map((item) => item.coreSha256)).size,
@@ -125,7 +136,7 @@ export async function validateLinuxArtifactSet({ repository, releaseDirectory, e
   };
 }
 
-async function validateDistribution(name, root, sourceIconSha256) {
+export async function validateLinuxDistribution(name, root, sourceIconSha256) {
   const cores = await findNamed(root, "reference-core");
   const asars = await findNamed(root, "app.asar");
   assert.equal(cores.length, 1, `${name} must contain exactly one Reference Core helper`);
@@ -134,7 +145,9 @@ async function validateDistribution(name, root, sourceIconSha256) {
   await assertRegularFile(asars[0]);
   const applicationRoot = path.dirname(path.dirname(asars[0]));
   const executable = path.join(applicationRoot, "reference-library");
+  const chromiumSandbox = path.join(applicationRoot, "chrome-sandbox");
   await assertExecutableRegularFile(executable);
+  await assertExecutableRegularFile(chromiumSandbox);
   await assertElfX8664(executable, `${name} application`);
   await assertElfX8664(cores[0], `${name} Reference Core`);
 
@@ -144,12 +157,21 @@ async function validateDistribution(name, root, sourceIconSha256) {
   for (const desktopPath of desktops) {
     const desktop = await readFile(desktopPath, "utf8");
     if (!desktop.includes(MIME)) continue;
+    assert.doesNotMatch(
+      desktop,
+      /--no-sandbox|--disable-setuid-sandbox/,
+      `${name} association launches with a sandbox bypass`,
+    );
     for (const mimePath of mimePackages) {
       const mimePackage = await readFile(mimePath, "utf8");
       if (!mimePackage.includes(MIME)) continue;
-      assertDesktopAssociation(desktop, mimePackage);
-      association = { desktopPath, mimePath };
-      break;
+      try {
+        assertDesktopAssociation(desktop, mimePackage);
+        association = { desktopPath, mimePath };
+        break;
+      } catch {
+        // Another packaged association may be the portable or installed form.
+      }
     }
   }
   assert.ok(association, `${name} omits coherent .pitchlibrary association metadata`);

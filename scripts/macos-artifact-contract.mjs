@@ -75,12 +75,23 @@ export async function validateMacosArtifact({ repository, releaseDirectory, extr
   await run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", application]);
   await run("codesign", ["--verify", "--strict", "--verbose=2", core]);
   const appEntitlements = await describeEntitlements(application);
-  assertEntitlement(appEntitlements, "com.apple.security.app-sandbox");
-  assertEntitlement(appEntitlements, "com.apple.security.files.user-selected.read-write");
-  assertEntitlement(appEntitlements, "com.apple.security.files.bookmarks.app-scope");
+  assertExactSecurityEntitlements(appEntitlements, [
+    "com.apple.security.app-sandbox",
+    "com.apple.security.files.bookmarks.app-scope",
+    "com.apple.security.files.user-selected.read-write",
+  ]);
   const helperEntitlements = await describeEntitlements(core);
-  assertEntitlement(helperEntitlements, "com.apple.security.app-sandbox");
-  assertEntitlement(helperEntitlements, "com.apple.security.inherit");
+  assertExactSecurityEntitlements(helperEntitlements, [
+    "com.apple.security.app-sandbox",
+    "com.apple.security.inherit",
+  ]);
+  const [appSignature, helperSignature] = await Promise.all([
+    describeSignature(application),
+    describeSignature(core),
+  ]);
+  assert.match(appSignature, /^Signature=adhoc$/m);
+  assert.match(helperSignature, /^Signature=adhoc$/m);
+  assert.equal(signatureIdentity(appSignature), signatureIdentity(helperSignature));
   const iconset = path.join(extractionRoot, "validated.iconset");
   await run("iconutil", ["-c", "iconset", icon, "-o", iconset]);
   await assertRegularFile(path.join(iconset, "icon_512x512@2x.png"));
@@ -123,12 +134,27 @@ async function describeEntitlements(file) {
   return `${result.stdout}\n${result.stderr}`;
 }
 
-function assertEntitlement(plist, key) {
-  assert.match(
-    plist,
-    new RegExp(`<key>${escapeRegExp(key)}</key>\\s*<true\\s*\\/>`),
-    `${key} is missing from the extracted signature`,
-  );
+async function describeSignature(file) {
+  const result = await run("codesign", ["-d", "--verbose=4", file]);
+  return `${result.stdout}\n${result.stderr}`;
+}
+
+function signatureIdentity(description) {
+  return description.match(/^TeamIdentifier=(.+)$/m)?.[1] ?? "missing";
+}
+
+function assertExactSecurityEntitlements(plist, expected) {
+  for (const key of expected) {
+    assert.match(
+      plist,
+      new RegExp(`<key>${escapeRegExp(key)}</key>\\s*<true\\s*\\/>`),
+      `${key} is missing from the extracted signature`,
+    );
+  }
+  const observed = [...plist.matchAll(/<key>(com\.apple\.security\.[^<]+)<\/key>/g)]
+    .map((match) => match[1])
+    .sort();
+  assert.deepEqual(observed, [...expected].sort(), "unexpected extracted security entitlement");
 }
 
 async function assertRegularFile(file) {

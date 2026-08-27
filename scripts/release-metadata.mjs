@@ -42,6 +42,9 @@ export async function verifyReleaseMetadata(repository) {
     linuxPackage.build.linux.icon,
     "../../assets/branding/reference-library-icon-1024.png",
   );
+  assert.equal(linuxPackage.build.linux.executableArgs, undefined);
+  assert.deepEqual(linuxPackage.build.appImage.executableArgs, []);
+  assert.deepEqual(linuxPackage.build.pacman.executableArgs, ["%F"]);
   assert.deepEqual(linuxPackage.build.fileAssociations, [{
     ext: "pitchlibrary",
     name: "Reference Library package",
@@ -94,12 +97,21 @@ export async function verifyReleaseMetadata(repository) {
   assertPlistTrue(appEntitlements, "com.apple.security.app-sandbox");
   assertPlistTrue(appEntitlements, "com.apple.security.files.user-selected.read-write");
   assertPlistTrue(appEntitlements, "com.apple.security.files.bookmarks.app-scope");
+  assertExactSecurityEntitlements(appEntitlements, [
+    "com.apple.security.app-sandbox",
+    "com.apple.security.files.bookmarks.app-scope",
+    "com.apple.security.files.user-selected.read-write",
+  ]);
   const helperEntitlements = await readFile(
     path.join(repository, "apps/macos/ReferenceCore.entitlements"),
     "utf8",
   );
   assertPlistTrue(helperEntitlements, "com.apple.security.app-sandbox");
   assertPlistTrue(helperEntitlements, "com.apple.security.inherit");
+  assertExactSecurityEntitlements(helperEntitlements, [
+    "com.apple.security.app-sandbox",
+    "com.apple.security.inherit",
+  ]);
 
   const expected = {
     "linux-x86_64": [
@@ -123,6 +135,13 @@ function assertPlistString(plist, key, expected) {
 function assertPlistTrue(plist, key) {
   const expression = new RegExp(`<key>${escapeRegExp(key)}</key>\\s*<true\\s*\\/>`);
   assert.match(plist, expression, `${key} entitlement drift`);
+}
+
+function assertExactSecurityEntitlements(plist, expected) {
+  const observed = [...plist.matchAll(/<key>(com\.apple\.security\.[^<]+)<\/key>/g)]
+    .map((match) => match[1])
+    .sort();
+  assert.deepEqual(observed, [...expected].sort(), "unexpected macOS security entitlement");
 }
 
 function escapeRegExp(value) {

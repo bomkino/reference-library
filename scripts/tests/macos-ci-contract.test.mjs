@@ -22,6 +22,14 @@ test("Apple-Silicon package CI validates the extracted app and clean-source arti
   ]) assert.match(macos, new RegExp(escapeRegExp(required)), `missing macOS CI seam: ${required}`);
   assert.match(macos, /actions\/upload-artifact@[0-9a-f]{40}/);
   assert.doesNotMatch(macos, /notari[sz]|stapler|xcrun notarytool/i);
+  const buildScript = await readFile(
+    path.join(repository, "apps/macos/scripts/build-app.sh"),
+    "utf8",
+  );
+  const helperSign = buildScript.indexOf("ReferenceCore.entitlements");
+  const appSign = buildScript.indexOf("ReferenceLibrary.entitlements");
+  assert.ok(helperSign >= 0 && helperSign < appSign, "nested helper must be signed before the app");
+  assert.doesNotMatch(buildScript, /codesign[^\n]*--deep[^\n]*--sign/);
 });
 
 function escapeRegExp(value) {

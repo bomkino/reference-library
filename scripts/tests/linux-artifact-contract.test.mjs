@@ -23,8 +23,19 @@ test("Linux package names and local-file association are release-metadata bound"
     readFile(path.join(repository, "apps/linux/packaging/io.pitchdog.ReferenceLibrary.xml"), "utf8"),
   ]);
   assert.doesNotThrow(() => assertDesktopAssociation(desktop, mimePackage));
+  assert.doesNotThrow(
+    () => assertDesktopAssociation(desktop.replace("reference-library %F", "AppRun %U"), mimePackage),
+  );
   assert.throws(
-    () => assertDesktopAssociation(desktop.replace("%F", "%U"), mimePackage),
-    /local package paths/,
+    () => assertDesktopAssociation(desktop.replace(" %F", ""), mimePackage),
+    /local package paths or local file URLs/,
+  );
+  assert.throws(
+    () => assertDesktopAssociation(desktop.replace("%F", "%F %U"), mimePackage),
+    /exactly one file field code/,
+  );
+  assert.throws(
+    () => assertDesktopAssociation(desktop.replace(" %F", " --no-sandbox %F"), mimePackage),
+    /--no-sandbox/,
   );
 });
