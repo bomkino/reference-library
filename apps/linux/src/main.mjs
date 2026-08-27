@@ -19,6 +19,7 @@ import {
 } from "./bridge-contract.mjs";
 import { CoreSupervisor } from "./core-supervisor.mjs";
 import {
+  ExternalLibraryOpenQueue,
   LibraryOpenIntentQueue,
   LibraryOpenQueue,
   replaceActiveLibraryTransaction,
@@ -27,6 +28,7 @@ import {
   assertPitchLibraryPackage,
   canonicalLibraryCreationPath,
   collectLibraryOpenArguments,
+  externalLibraryOpenMessage,
 } from "./library-open.mjs";
 import { LibraryRecoveryCoordinator } from "./library-recovery.mjs";
 import { denyAllSessionPermissions } from "./permission-policy.mjs";
@@ -46,8 +48,9 @@ const workspaceRoot = path.join(sourceDirectory, "workspace");
 const core = new CoreSupervisor();
 const recovery = new LibraryRecoveryCoordinator();
 const libraryTransitions = new LibraryOpenQueue();
+const externalLibraryOpens = new ExternalLibraryOpenQueue();
 const openIntents = new LibraryOpenIntentQueue();
-const startupCandidates = collectLibraryOpenArguments(process.argv.slice(1));
+const startupArguments = process.argv.slice(1);
 let mainWindow = null;
 let preferencePath = null;
 let rendererReady = false;
@@ -62,8 +65,13 @@ if (forbiddenSwitch) {
 } else if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", (_event, argv) => { void receiveExternalArguments(argv); });
-  app.on("open-file", (event, candidate) => { event.preventDefault(); void receiveExternalArguments([candidate]); });
+  app.on("second-instance", (_event, argv) => {
+    void receiveExternalArguments(argv).catch(reportExternalOpenFailure);
+  });
+  app.on("open-file", (event, candidate) => {
+    event.preventDefault();
+    void receiveExternalArguments([candidate]).catch(reportExternalOpenFailure);
+  });
   app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
   app.on("before-quit", () => { void core.stop(); });
   app.whenReady().then(startApplication).catch(() => {
@@ -90,7 +98,7 @@ async function startApplication() {
   recovery.markCoreReady();
   automaticRecoveryEnabled = true;
   createWindow();
-  await receiveExternalArguments(startupCandidates);
+  await receiveExternalArguments(startupArguments).catch(reportExternalOpenFailure);
 }
 
 function createWindow() {
@@ -358,17 +366,24 @@ async function replaceActiveLibrary({ libraryPath, createName }) {
 }
 
 async function receiveExternalArguments(argv) {
-  for (const candidate of Array.isArray(argv) && argv.every((item) => typeof item === "string")
-    ? collectLibraryOpenArguments(argv) : []) {
-    try {
+  return externalLibraryOpens.run(async () => {
+    const candidates = collectLibraryOpenArguments(argv);
+    for (const candidate of candidates) {
       const canonical = await assertPitchLibraryPackage(candidate);
       if (recovery.snapshot()?.path === canonical) continue;
       if (!recovery.activeSession && !recovery.writesFrozen) {
         await libraryTransitions.run(() => replaceActiveLibrary({ libraryPath: canonical }));
-      } else if (openIntents.enqueue(canonical)) drainOpenIntent();
-    } catch {}
-  }
-  mainWindow?.focus();
+      } else {
+        openIntents.enqueue(canonical);
+        drainOpenIntent();
+      }
+    }
+    mainWindow?.focus();
+  });
+}
+
+function reportExternalOpenFailure(error) {
+  dialog.showErrorBox("Could not open Reference Library", externalLibraryOpenMessage(error));
 }
 
 function drainOpenIntent() {

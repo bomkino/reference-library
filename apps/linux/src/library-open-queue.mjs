@@ -66,13 +66,14 @@ export async function replaceActiveLibraryTransaction({
 }
 
 export const MAX_LIBRARY_OPEN_INTENTS = 16;
+export const MAX_EXTERNAL_LIBRARY_OPEN_REQUESTS = 32;
 export class LibraryOpenIntentQueue {
   #active = null; #pending = []; #createId;
   constructor({ createId = randomUUID } = {}) { this.#createId = createId; }
   get count() { return this.#pending.length + (this.#active ? 1 : 0); }
   enqueue(candidate) {
     if (typeof candidate !== "string" || !candidate) throw new TypeError("Library open candidate must be a native path");
-    if (this.count >= MAX_LIBRARY_OPEN_INTENTS) return false;
+    if (this.count >= MAX_LIBRARY_OPEN_INTENTS) throw capacityError("LibraryOpenIntentCapacityExceeded");
     this.#pending.push({ intentId: this.#createId(), displayName: safeDisplayName(candidate), candidate });
     return true;
   }
@@ -99,6 +100,21 @@ export class LibraryOpenIntentQueue {
     return this.#active;
   }
 }
+
+export class ExternalLibraryOpenQueue {
+  #tail = Promise.resolve(); #pending = 0;
+  get count() { return this.#pending; }
+  run(operation) {
+    if (typeof operation !== "function") return Promise.reject(new TypeError("Open request must be a function"));
+    if (this.#pending >= MAX_EXTERNAL_LIBRARY_OPEN_REQUESTS) {
+      return Promise.reject(capacityError("LibraryOpenRequestCapacityExceeded"));
+    }
+    this.#pending += 1;
+    const result = this.#tail.then(operation);
+    this.#tail = result.then(() => undefined, () => undefined);
+    return result.finally(() => { this.#pending -= 1; });
+  }
+}
 function publicIntent(intent) { return { intentId: intent.intentId, displayName: intent.displayName }; }
 function rendererSession(session) {
   const { sessionId, libraryId, schemaVersion, name } = session;
@@ -110,3 +126,4 @@ function safeDisplayName(candidate) {
     .slice(0, 120).join("");
   return value || "Reference Library";
 }
+function capacityError(code) { const error = new Error("Reference Library open request capacity was reached"); error.code = code; return error; }

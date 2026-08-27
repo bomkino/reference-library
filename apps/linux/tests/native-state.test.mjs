@@ -7,6 +7,8 @@ import { test } from "node:test";
 import {
   LibraryOpenIntentQueue,
   LibraryOpenQueue,
+  ExternalLibraryOpenQueue,
+  MAX_EXTERNAL_LIBRARY_OPEN_REQUESTS,
   MAX_LIBRARY_OPEN_INTENTS,
   replaceActiveLibraryTransaction,
 } from "../src/library-open-queue.mjs";
@@ -14,6 +16,7 @@ import {
   assertPitchLibraryPackage,
   canonicalLibraryCreationPath,
   collectLibraryOpenArguments,
+  externalLibraryOpenMessage,
 } from "../src/library-open.mjs";
 import { LibraryRecoveryCoordinator } from "../src/library-recovery.mjs";
 import { rendererSafeError } from "../src/renderer-error.mjs";
@@ -28,9 +31,22 @@ test("installed argv route accepts only package paths and file URLs", () => {
     "--flag",
     "/tmp/Project.pitchlibrary",
     "file:///tmp/Second.pitchlibrary",
-    "https://example.test/Evil.pitchlibrary",
     "/tmp/readme.txt",
   ]), ["/tmp/Project.pitchlibrary", "/tmp/Second.pitchlibrary"]);
+  for (const candidate of [
+    "https://example.test/Evil.pitchlibrary",
+    "file://remote-host/tmp/Evil.pitchlibrary",
+    "file:///tmp/%E0%A4%A.pitchlibrary",
+  ]) {
+    assert.throws(
+      () => collectLibraryOpenArguments([candidate]),
+      (error) => error.code === "LibraryOpenArgumentInvalid" && !error.message.includes(candidate),
+    );
+  }
+  assert.throws(
+    () => collectLibraryOpenArguments(Array.from({ length: 17 }, (_, index) => `/tmp/${index}.pitchlibrary`)),
+    (error) => error.code === "LibraryOpenArgumentsOverflow",
+  );
 });
 
 test("package-open validates real package children and canonicalizes parent aliases", async () => {
@@ -62,7 +78,44 @@ test("open intents are opaque, bounded, path-free, and strictly stale-rejected",
   assert.throws(() => intents.activeCandidate("00000000-0000-4000-8000-999999999999"), /Stale/);
   assert.equal(intents.resolve(request.intentId, true).candidate.startsWith("/secret/"), true);
   for (let index = 0; index < MAX_LIBRARY_OPEN_INTENTS; index += 1) assert.equal(intents.enqueue(`/tmp/${index}.pitchlibrary`), true);
-  assert.equal(intents.enqueue("/tmp/overflow.pitchlibrary"), false);
+  assert.throws(
+    () => intents.enqueue("/tmp/overflow.pitchlibrary"),
+    (error) => error.code === "LibraryOpenIntentCapacityExceeded",
+  );
+});
+
+test("external package-open batches are ordered, bounded, and report fixed path-free failures", async () => {
+  const queue = new ExternalLibraryOpenQueue();
+  const order = [];
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const first = queue.run(async () => { order.push("first-start"); await gate; order.push("first-end"); });
+  const second = queue.run(async () => { order.push("second"); });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(order, ["first-start"]);
+  release();
+  await Promise.all([first, second]);
+  assert.deepEqual(order, ["first-start", "first-end", "second"]);
+
+  let releaseCapacity;
+  const capacityGate = new Promise((resolve) => { releaseCapacity = resolve; });
+  const pending = Array.from({ length: MAX_EXTERNAL_LIBRARY_OPEN_REQUESTS }, () =>
+    queue.run(() => capacityGate));
+  await assert.rejects(
+    queue.run(async () => {}),
+    (error) => error.code === "LibraryOpenRequestCapacityExceeded",
+  );
+  releaseCapacity();
+  await Promise.all(pending);
+
+  for (const error of [
+    { code: "LibraryOpenArgumentInvalid", message: "/private/secret" },
+    { code: "LibraryOpenArgumentsOverflow" },
+    { code: "LibraryOpenIntentCapacityExceeded" },
+    new Error("/private/Project.pitchlibrary"),
+  ]) {
+    assert.doesNotMatch(externalLibraryOpenMessage(error), /private|secret|Project/);
+  }
 });
 
 test("replacement state is sampled inside the serialized transition", async () => {
