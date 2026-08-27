@@ -2,8 +2,6 @@ import Foundation
 import WebKit
 
 final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
-    private static let maximumResourceBytes = 512 * 1_024 * 1_024
-    private static let resourceChunkBytes = 64 * 1_024
     private weak var model: AppModel?
     private let taskLock = NSLock()
     private var assetTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
@@ -42,25 +40,42 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
                     profile: profile
                 )
                 guard descriptor.contentLength >= 0,
-                      descriptor.contentLength <= Self.maximumResourceBytes else {
+                      descriptor.contentLength <= ResourceFileStreamer.maximumBytes,
+                      ["image/png", "image/jpeg", "image/webp"].contains(descriptor.mimeType) else {
                     throw SchemeFailure.resourceTooLarge
                 }
                 try Task.checkCancellation()
                 let taskBox = SchemeTaskBox(urlSchemeTask)
+                let response = HTTPURLResponse(
+                    url: url,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: [
+                        "Content-Type": descriptor.mimeType,
+                        "Content-Length": String(descriptor.contentLength),
+                        "Cache-Control": "private, no-store",
+                        "X-Content-Type-Options": "nosniff"
+                    ]
+                )!
+                urlSchemeTask.didReceive(response)
                 let stream = Task.detached(priority: .userInitiated) {
-                    Self.streamResource(
-                        descriptor: descriptor,
-                        url: url,
-                        taskBox: taskBox
-                    )
+                    try await ResourceFileStreamer.stream(
+                        path: descriptor.nativePath,
+                        expectedSize: descriptor.contentLength
+                    ) { chunk in
+                        try Task.checkCancellation()
+                        await MainActor.run { taskBox.task.didReceive(chunk) }
+                    }
                 }
-                await withTaskCancellationHandler {
-                    await stream.value
+                try await withTaskCancellationHandler {
+                    try await stream.value
                 } onCancel: {
                     stream.cancel()
                 }
+                try Task.checkCancellation()
+                urlSchemeTask.didFinish()
             } catch {
-                if !Task.isCancelled { fail(urlSchemeTask, status: 403) }
+                if !Task.isCancelled { urlSchemeTask.didFailWithError(SchemeFailure.denied) }
             }
             removeAssetTask(identifier)
         }
@@ -70,52 +85,6 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
     func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {
         let identifier = ObjectIdentifier(urlSchemeTask as AnyObject)
         takeAssetTask(identifier)?.cancel()
-    }
-
-    private static func streamResource(
-        descriptor: ResourceDescriptor,
-        url: URL,
-        taskBox: SchemeTaskBox
-    ) {
-        do {
-            try Task.checkCancellation()
-            let fileURL = URL(fileURLWithPath: descriptor.nativePath).standardizedFileURL
-            let values = try fileURL.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
-            guard values.isRegularFile == true,
-                  values.fileSize == descriptor.contentLength else {
-                throw SchemeFailure.sourceChanged
-            }
-            let response = HTTPURLResponse(
-                url: url,
-                statusCode: 200,
-                httpVersion: "HTTP/1.1",
-                headerFields: [
-                    "Content-Type": descriptor.mimeType,
-                    "Content-Length": String(descriptor.contentLength),
-                    "Cache-Control": "private, no-store",
-                    "X-Content-Type-Options": "nosniff"
-                ]
-            )!
-            let handle = try FileHandle(forReadingFrom: fileURL)
-            defer { try? handle.close() }
-
-            taskBox.task.didReceive(response)
-            var delivered = 0
-            while delivered < descriptor.contentLength {
-                try Task.checkCancellation()
-                let remaining = descriptor.contentLength - delivered
-                let chunk = try handle.read(upToCount: min(Self.resourceChunkBytes, remaining))
-                guard let chunk, !chunk.isEmpty else { throw SchemeFailure.sourceChanged }
-                delivered += chunk.count
-                taskBox.task.didReceive(chunk)
-            }
-            try Task.checkCancellation()
-            taskBox.task.didFinish()
-        } catch is CancellationError {
-            return
-        } catch {
-            taskBox.task.didFailWithError(error)
-        }
     }
 
     private func storeAssetTask(_ task: Task<Void, Never>, identifier: ObjectIdentifier) {
@@ -203,9 +172,11 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
     }
 
     private static func workspaceRoot() -> URL? {
+        #if DEBUG
         if let path = ProcessInfo.processInfo.environment["REFERENCE_WORKSPACE_PATH"] {
             return URL(fileURLWithPath: path, isDirectory: true)
         }
+        #endif
         return Bundle.main.resourceURL?.appendingPathComponent("Workspace", isDirectory: true)
     }
 
