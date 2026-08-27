@@ -257,6 +257,7 @@ name = "reference-core"
 version = "0.1.0"
 dependencies = [
  "imagesize",
+ "libc",
  "reference-protocol",
  "rusqlite",
  "serde",

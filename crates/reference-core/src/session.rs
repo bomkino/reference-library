@@ -1,16 +1,26 @@
 use std::{
+    cell::RefCell,
+    collections::HashMap,
+    ffi::CString,
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     path::{Component, Path, PathBuf},
+    sync::Arc,
 };
 
 #[cfg(unix)]
-use std::os::unix::ffi::{OsStrExt, OsStringExt};
+use std::{
+    os::fd::{AsRawFd, FromRawFd},
+    os::unix::{
+        ffi::{OsStrExt, OsStringExt},
+        fs::MetadataExt,
+    },
+};
 
 use reference_protocol::{
     AssetDetail, AssetPage, AssetPatch, AssetProjection, AssetQuery, CollectionSummary, JobPage,
-    JobQuery, NativeLocation, ResourceDescriptor, ResourceProfile, ReviewState, SessionOpened,
-    TextPatch,
+    JobQuery, NativeLocation, ResourceDescriptor, ResourceProfile, ReviewState, RootSummary,
+    SessionOpened, TextPatch,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
@@ -32,7 +42,78 @@ pub struct LibrarySession {
     manifest: Manifest,
     connection: Option<Connection>,
     lock_file: Option<File>,
+    authorized_roots: RefCell<HashMap<String, AuthorizedRoot>>,
     closed: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct AuthorizedRoot {
+    canonical_path: PathBuf,
+    #[cfg(unix)]
+    directory: Arc<File>,
+}
+
+impl AuthorizedRoot {
+    pub(crate) fn open(path: &Path) -> Result<Self, CoreError> {
+        let canonical_path = path
+            .canonicalize()
+            .map_err(|_| CoreError::RootPermissionRequired)?;
+        let expected =
+            fs::metadata(&canonical_path).map_err(|_| CoreError::RootPermissionRequired)?;
+        if !expected.is_dir() {
+            return Err(CoreError::RootPermissionRequired);
+        }
+        #[cfg(unix)]
+        {
+            let directory = open_canonical_directory(&canonical_path)?;
+            let actual = directory
+                .metadata()
+                .map_err(|_| CoreError::RootPermissionRequired)?;
+            if actual.dev() != expected.dev() || actual.ino() != expected.ino() {
+                return Err(CoreError::RootIdentityMismatch);
+            }
+            Ok(Self {
+                canonical_path,
+                directory: Arc::new(directory),
+            })
+        }
+        #[cfg(not(unix))]
+        Ok(Self { canonical_path })
+    }
+
+    pub(crate) fn path(&self) -> &Path {
+        &self.canonical_path
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn directory(&self) -> Arc<File> {
+        Arc::clone(&self.directory)
+    }
+
+    pub(crate) fn open_file(&self, relative_bytes: &[u8]) -> Result<File, CoreError> {
+        let relative = relative_path_from_bytes(relative_bytes)?;
+        validate_relative(&relative)?;
+        #[cfg(unix)]
+        {
+            open_relative_file(self.directory.as_ref(), &relative)
+                .map_err(|_| CoreError::LocationMissing)
+        }
+        #[cfg(not(unix))]
+        {
+            let candidate = self.canonical_path.join(&relative);
+            let before =
+                fs::symlink_metadata(&candidate).map_err(|_| CoreError::LocationMissing)?;
+            if !before.is_file() || before.file_type().is_symlink() {
+                return Err(CoreError::LocationMissing);
+            }
+            let file = File::open(&candidate).map_err(|_| CoreError::LocationMissing)?;
+            let after = file.metadata().map_err(|_| CoreError::LocationMissing)?;
+            if before.len() != after.len() {
+                return Err(CoreError::LocationMissing);
+            }
+            Ok(file)
+        }
+    }
 }
 
 impl LibrarySession {
@@ -110,6 +191,7 @@ impl LibrarySession {
             manifest,
             connection: Some(connection),
             lock_file: Some(lock_file),
+            authorized_roots: RefCell::new(HashMap::new()),
             closed: false,
         })
     }
@@ -137,11 +219,9 @@ impl LibrarySession {
         display_name: String,
     ) -> Result<ScanPlan, CoreError> {
         let connection = self.connection()?;
-        let root_path = authorized_path
-            .as_ref()
-            .canonicalize()
-            .map_err(|_| CoreError::RootPermissionRequired)?;
-        if !root_path.is_dir() || display_name.trim().is_empty() {
+        let authority = AuthorizedRoot::open(authorized_path.as_ref())?;
+        let root_path = authority.path().to_path_buf();
+        if display_name.trim().is_empty() {
             return Err(CoreError::RootPermissionRequired);
         }
         let path_text = root_path.to_string_lossy().into_owned();
@@ -155,6 +235,15 @@ impl LibrarySession {
             )
             .optional()?;
         let root_id = root_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+        let active: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM jobs
+             WHERE root_id = ?1 AND state IN ('queued', 'running'))",
+            params![root_id],
+            |row| row.get(0),
+        )?;
+        if active {
+            return Err(CoreError::RootScanInProgress);
+        }
         let job_id = Uuid::new_v4().to_string();
         let timestamp = now_ms() as i64;
         let transaction = connection.unchecked_transaction()?;
@@ -178,21 +267,161 @@ impl LibrarySession {
         )?;
         transaction.execute(
             "INSERT INTO jobs (
-                id, library_id, job_kind, state, progress_json,
+                id, library_id, job_kind, state, progress_json, root_id,
                 created_at_ms, updated_at_ms
              ) VALUES (?1, ?2, 'initial_scan', 'running',
-                       '{\"observedCount\":0}', ?3, ?3)",
-            params![job_id, self.manifest.library_id, timestamp],
+                       '{\"observedCount\":0,\"unsupportedCount\":0}', ?3, ?4, ?4)",
+            params![job_id, self.manifest.library_id, root_id, timestamp],
         )?;
         bump_revision(&transaction, timestamp)?;
         transaction.commit()?;
+        self.authorized_roots
+            .borrow_mut()
+            .insert(root_id.clone(), authority.clone());
         Ok(ScanPlan {
             package_path: self.package_path.clone(),
             root_path,
             library_id: self.manifest.library_id.clone(),
             root_id,
             job_id,
+            #[cfg(unix)]
+            root_directory: authority.directory(),
         })
+    }
+
+    pub fn list_roots(&self) -> Result<Vec<RootSummary>, CoreError> {
+        let connection = self.connection()?;
+        let authorized = self.authorized_roots.borrow();
+        let mut statement = connection.prepare(
+            "SELECT r.id, r.display_name, r.root_kind, r.state,
+                    CASE WHEN j.state IN ('queued', 'running') THEN j.id END,
+                    j.progress_json
+             FROM roots r
+             LEFT JOIN jobs j ON j.id = (
+                 SELECT id FROM jobs
+                 WHERE root_id = r.id
+                 ORDER BY created_at_ms DESC, id DESC LIMIT 1
+             )
+             WHERE r.library_id = ?1 ORDER BY r.created_at_ms, r.id",
+        )?;
+        Ok(statement
+            .query_map(params![self.manifest.library_id], |row| {
+                let root_id: String = row.get(0)?;
+                let progress = row
+                    .get::<_, Option<String>>(5)?
+                    .and_then(|value| serde_json::from_str::<serde_json::Value>(&value).ok())
+                    .unwrap_or_default();
+                Ok(RootSummary {
+                    authorized: authorized.contains_key(&root_id),
+                    root_id,
+                    display_name: row.get(1)?,
+                    root_kind: row.get(2)?,
+                    state: row.get(3)?,
+                    active_job_id: row.get(4)?,
+                    observed_count: progress["observedCount"].as_u64().unwrap_or_default(),
+                    unsupported_count: progress["unsupportedCount"].as_u64().unwrap_or_default(),
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn query_roots(&self) -> Result<Vec<RootSummary>, CoreError> {
+        self.list_roots()
+    }
+
+    pub fn bind_root(
+        &self,
+        root_id: &str,
+        authorized_path: impl AsRef<Path>,
+    ) -> Result<RootSummary, CoreError> {
+        validate_uuid(root_id, CoreError::RootNotFound)?;
+        let connection = self.connection()?;
+        let exists: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM roots WHERE id = ?1 AND library_id = ?2)",
+            params![root_id, self.manifest.library_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(CoreError::RootNotFound);
+        }
+        let authority = AuthorizedRoot::open(authorized_path.as_ref())?;
+        validate_root_evidence(connection, root_id, &authority)?;
+        let timestamp = now_ms() as i64;
+        connection.execute(
+            "UPDATE roots SET last_known_display_path = ?1, state = 'connected',
+                              updated_at_ms = ?2, last_seen_at_ms = ?2 WHERE id = ?3",
+            params![authority.path().to_string_lossy(), timestamp, root_id],
+        )?;
+        bump_revision(connection, timestamp)?;
+        self.authorized_roots
+            .borrow_mut()
+            .insert(root_id.to_owned(), authority);
+        self.list_roots()?
+            .into_iter()
+            .find(|root| root.root_id == root_id)
+            .ok_or(CoreError::RootNotFound)
+    }
+
+    pub fn reauthorize_root(
+        &self,
+        root_id: &str,
+        authorized_path: impl AsRef<Path>,
+    ) -> Result<RootSummary, CoreError> {
+        self.bind_root(root_id, authorized_path)
+    }
+
+    pub fn scan_bound_root(&self, root_id: &str) -> Result<ScanPlan, CoreError> {
+        validate_uuid(root_id, CoreError::RootNotFound)?;
+        let connection = self.connection()?;
+        let authority = self
+            .authorized_roots
+            .borrow()
+            .get(root_id)
+            .cloned()
+            .ok_or(CoreError::RootPermissionRequired)?;
+        let active: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM jobs
+             WHERE root_id = ?1 AND state IN ('queued', 'running'))",
+            params![root_id],
+            |row| row.get(0),
+        )?;
+        if active {
+            return Err(CoreError::RootScanInProgress);
+        }
+        let job_id = Uuid::new_v4().to_string();
+        let timestamp = now_ms() as i64;
+        let transaction = connection.unchecked_transaction()?;
+        let changed = transaction.execute(
+            "UPDATE roots SET state = 'scanning', updated_at_ms = ?1
+             WHERE id = ?2 AND library_id = ?3",
+            params![timestamp, root_id, self.manifest.library_id],
+        )?;
+        if changed == 0 {
+            return Err(CoreError::RootNotFound);
+        }
+        transaction.execute(
+            "INSERT INTO jobs (
+                id, library_id, job_kind, state, progress_json, root_id,
+                created_at_ms, updated_at_ms
+             ) VALUES (?1, ?2, 'initial_scan', 'running',
+                       '{\"observedCount\":0,\"unsupportedCount\":0}', ?3, ?4, ?4)",
+            params![job_id, self.manifest.library_id, root_id, timestamp],
+        )?;
+        bump_revision(&transaction, timestamp)?;
+        transaction.commit()?;
+        Ok(ScanPlan {
+            package_path: self.package_path.clone(),
+            root_path: authority.path().to_path_buf(),
+            library_id: self.manifest.library_id.clone(),
+            root_id: root_id.to_owned(),
+            job_id,
+            #[cfg(unix)]
+            root_directory: authority.directory(),
+        })
+    }
+
+    pub fn rescan_root(&self, root_id: &str) -> Result<ScanPlan, CoreError> {
+        self.scan_bound_root(root_id)
     }
 
     pub fn query_assets(
@@ -552,6 +781,203 @@ fn reject_path_shaped_id(value: &str) -> Result<(), CoreError> {
     Ok(())
 }
 
+fn validate_uuid(value: &str, error: CoreError) -> Result<(), CoreError> {
+    if reject_path_shaped_id(value).is_err() || Uuid::parse_str(value).is_err() {
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn validate_root_evidence(
+    connection: &Connection,
+    root_id: &str,
+    authority: &AuthorizedRoot,
+) -> Result<(), CoreError> {
+    let total = connection.query_row(
+        "SELECT COUNT(*) FROM locations WHERE root_id = ?1",
+        params![root_id],
+        |row| row.get::<_, i64>(0),
+    )? as usize;
+    if total == 0 {
+        return Ok(());
+    }
+    let evidence = {
+        let mut statement = connection.prepare(
+            "SELECT l.relative_path_bytes, sr.byte_size, sr.quick_fingerprint
+             FROM locations l
+             JOIN sources s ON s.id = l.source_id
+             JOIN source_revisions sr ON sr.id = s.current_revision_id
+             WHERE l.root_id = ?1
+             ORDER BY CASE l.state WHEN 'present' THEN 0 ELSE 1 END, l.id
+             LIMIT 8",
+        )?;
+        statement
+            .query_map(params![root_id], |row| {
+                Ok((
+                    row.get::<_, Vec<u8>>(0)?,
+                    row.get::<_, i64>(1)? as u64,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    let required = usize::min(2, total);
+    let mut matched = 0_usize;
+    for (relative, expected_size, expected_fingerprint) in evidence {
+        let Ok(mut file) = authority.open_file(&relative) else {
+            continue;
+        };
+        let metadata = file
+            .metadata()
+            .map_err(|_| CoreError::RootIdentityMismatch)?;
+        if metadata.len() != expected_size {
+            return Err(CoreError::RootIdentityMismatch);
+        }
+        if let Some(expected_fingerprint) = expected_fingerprint
+            && full_fingerprint(&mut file, expected_size)? != expected_fingerprint
+        {
+            return Err(CoreError::RootIdentityMismatch);
+        }
+        matched += 1;
+    }
+    if matched < required {
+        return Err(CoreError::RootIdentityMismatch);
+    }
+    Ok(())
+}
+
+pub(crate) fn full_fingerprint(file: &mut File, size: u64) -> Result<String, CoreError> {
+    use sha2::{Digest, Sha256};
+    use std::io::{Seek, SeekFrom};
+
+    file.seek(SeekFrom::Start(0))?;
+    let mut hasher = Sha256::new();
+    hasher.update(size.to_be_bytes());
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(format!("sha256-full:{}", hex(&hasher.finalize())))
+}
+
+fn hex(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        output.push(DIGITS[(byte >> 4) as usize] as char);
+        output.push(DIGITS[(byte & 0x0f) as usize] as char);
+    }
+    output
+}
+
+fn relative_path_from_bytes(bytes: &[u8]) -> Result<PathBuf, CoreError> {
+    #[cfg(unix)]
+    {
+        Ok(PathBuf::from(std::ffi::OsString::from_vec(bytes.to_vec())))
+    }
+    #[cfg(not(unix))]
+    {
+        String::from_utf8(bytes.to_vec())
+            .map(PathBuf::from)
+            .map_err(|_| CoreError::LocationMissing)
+    }
+}
+
+fn validate_relative(path: &Path) -> Result<(), CoreError> {
+    if path.as_os_str().is_empty()
+        || path.is_absolute()
+        || path.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        return Err(CoreError::LocationMissing);
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn open_canonical_directory(path: &Path) -> Result<File, CoreError> {
+    let mut current = File::open("/").map_err(|_| CoreError::RootPermissionRequired)?;
+    for component in path.components() {
+        match component {
+            Component::RootDir => continue,
+            Component::Normal(name) => {
+                current = openat(
+                    &current,
+                    name.as_bytes(),
+                    libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                )
+                .map_err(|_| CoreError::RootPermissionRequired)?;
+            }
+            _ => return Err(CoreError::RootPermissionRequired),
+        }
+    }
+    Ok(current)
+}
+
+#[cfg(unix)]
+pub(crate) fn open_relative_file(root: &File, relative: &Path) -> std::io::Result<File> {
+    let components = relative.components().collect::<Vec<_>>();
+    let mut current = openat(
+        root,
+        b".",
+        libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+    )?;
+    for (index, component) in components.iter().enumerate() {
+        let Component::Normal(name) = component else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "invalid relative component",
+            ));
+        };
+        let last = index + 1 == components.len();
+        let flags = if last {
+            libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC
+        } else {
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC
+        };
+        current = openat(&current, name.as_bytes(), flags)?;
+    }
+    if !current.metadata()?.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "not a regular file",
+        ));
+    }
+    Ok(current)
+}
+
+#[cfg(unix)]
+pub(crate) fn fresh_directory(directory: &File) -> std::io::Result<File> {
+    openat(
+        directory,
+        b".",
+        libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+    )
+}
+
+#[cfg(unix)]
+pub(crate) fn openat(directory: &File, name: &[u8], flags: i32) -> std::io::Result<File> {
+    let name = CString::new(name)
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "NUL in name"))?;
+    // SAFETY: `directory` owns a valid fd, `name` is NUL-terminated and the
+    // returned fd is uniquely transferred into `File` on success.
+    let fd = unsafe { libc::openat(directory.as_raw_fd(), name.as_ptr(), flags) };
+    if fd < 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        // SAFETY: successful openat returns a new owned file descriptor.
+        Ok(unsafe { File::from_raw_fd(fd) })
+    }
+}
+
 fn resolve_authorized_path(
     root_path: Option<String>,
     relative_bytes: Vec<u8>,
@@ -592,12 +1018,4 @@ pub(crate) fn relative_path_bytes(path: &Path) -> Vec<u8> {
 #[cfg(not(unix))]
 pub(crate) fn relative_path_bytes(path: &Path) -> Vec<u8> {
     path.to_string_lossy().as_bytes().to_vec()
-}
-
-pub(crate) fn read_prefix(path: &Path, maximum: usize) -> Result<Vec<u8>, CoreError> {
-    let mut file = File::open(path)?;
-    let mut bytes = vec![0; maximum];
-    let read = file.read(&mut bytes)?;
-    bytes.truncate(read);
-    Ok(bytes)
 }

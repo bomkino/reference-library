@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeSet,
     fs::{self, File},
-    io::{Read, Seek, SeekFrom},
+    io::{BufReader, Read, Seek, SeekFrom},
     path::{Component, Path, PathBuf},
     sync::{
         Arc,
@@ -12,22 +12,32 @@ use std::{
 };
 
 #[cfg(unix)]
-use std::{ffi::OsString, os::unix::ffi::OsStringExt, os::unix::fs::MetadataExt};
+use std::{
+    ffi::{CStr, OsString},
+    os::{
+        fd::IntoRawFd,
+        unix::{
+            ffi::{OsStrExt, OsStringExt},
+            fs::MetadataExt,
+        },
+    },
+};
 
 use reference_protocol::Event;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
-use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::{
     error::CoreError,
     manifest::Manifest,
     now_ms, schema,
-    session::{bump_revision, read_prefix, relative_path_bytes},
+    session::{
+        bump_revision, fresh_directory, full_fingerprint, open_relative_file, openat,
+        relative_path_bytes,
+    },
 };
 
 const INSERT_BATCH: usize = 32;
-const QUICK_FINGERPRINT_CHUNK: u64 = 64 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct ScanPlan {
@@ -36,15 +46,17 @@ pub struct ScanPlan {
     pub library_id: String,
     pub root_id: String,
     pub job_id: String,
+    #[cfg(unix)]
+    pub root_directory: Arc<File>,
 }
 
 pub fn scan_root(plan: ScanPlan, cancelled: Arc<AtomicBool>, events: Sender<Event>) {
     let outcome = run_scan(&plan, &cancelled, &events);
     if let Err(error) = outcome {
-        let _ = mark_failed(&plan, &error);
+        let state = mark_failed(&plan, &error).unwrap_or_else(|_| "error".into());
         let _ = events.send(Event::RootStateChanged {
             root_id: plan.root_id.clone(),
-            state: "error".into(),
+            state,
         });
         let _ = events.send(Event::JobUpdated {
             job_id: plan.job_id,
@@ -61,10 +73,15 @@ fn run_scan(
     let manifest = Manifest::read(&plan.package_path)?;
     let mut connection =
         schema::open_database(&plan.package_path.join("library.sqlite"), &manifest)?;
-    let mut stack = vec![plan.root_path.clone()];
     let mut batch = Vec::with_capacity(INSERT_BATCH);
     let mut seen = BTreeSet::new();
     let mut observed_count = 0_u64;
+    let mut unsupported_count = 0_u64;
+
+    #[cfg(unix)]
+    let mut stack = vec![(PathBuf::new(), fresh_directory(&plan.root_directory)?)];
+    #[cfg(not(unix))]
+    let mut stack = vec![plan.root_path.clone()];
 
     while let Some(directory) = stack.pop() {
         if cancelled.load(Ordering::Relaxed) {
@@ -74,13 +91,23 @@ fn run_scan(
                 &mut batch,
                 &mut seen,
                 &mut observed_count,
+                &mut unsupported_count,
                 events,
             )?;
             return Ok(());
         }
-        let mut entries = fs::read_dir(&directory)?.collect::<Result<Vec<_>, _>>()?;
-        entries.sort_by_key(|entry| entry.file_name());
-        for entry in entries.into_iter().rev() {
+        #[cfg(unix)]
+        let entries = read_directory_names(&directory.1)?;
+        #[cfg(not(unix))]
+        let entries = {
+            let mut entries = fs::read_dir(&directory)?.collect::<Result<Vec<_>, _>>()?;
+            entries.sort_by_key(|entry| entry.file_name());
+            entries
+                .into_iter()
+                .map(|entry| entry.file_name())
+                .collect::<Vec<_>>()
+        };
+        for name in entries.into_iter().rev() {
             if cancelled.load(Ordering::Relaxed) {
                 finish_cancelled(
                     &mut connection,
@@ -88,22 +115,50 @@ fn run_scan(
                     &mut batch,
                     &mut seen,
                     &mut observed_count,
+                    &mut unsupported_count,
                     events,
                 )?;
                 return Ok(());
             }
-            let file_type = entry.file_type()?;
-            if file_type.is_symlink() {
-                continue;
-            }
-            if file_type.is_dir() {
-                stack.push(entry.path());
-                continue;
-            }
-            if !file_type.is_file() {
-                continue;
-            }
-            if let Some(candidate) = FileCandidate::inspect(&plan.root_path, &entry.path())? {
+            #[cfg(unix)]
+            let candidate = {
+                let name_bytes = name.as_bytes();
+                if let Ok(child) = openat(
+                    &directory.1,
+                    name_bytes,
+                    libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                ) {
+                    stack.push((directory.0.join(&name), child));
+                    continue;
+                }
+                match openat(
+                    &directory.1,
+                    name_bytes,
+                    libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                ) {
+                    Ok(file) if file.metadata()?.is_file() => {
+                        FileCandidate::inspect_file(directory.0.join(&name), file)?
+                    }
+                    _ => None,
+                }
+            };
+            #[cfg(not(unix))]
+            let candidate = {
+                let path = directory.join(&name);
+                let metadata = fs::symlink_metadata(&path)?;
+                if metadata.file_type().is_symlink() {
+                    continue;
+                }
+                if metadata.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+                if !metadata.is_file() {
+                    continue;
+                }
+                FileCandidate::inspect_path(&plan.root_path, &path)?
+            };
+            if let Some(candidate) = candidate {
                 batch.push(candidate);
                 if batch.len() >= INSERT_BATCH {
                     flush_batch(
@@ -112,6 +167,7 @@ fn run_scan(
                         &mut batch,
                         &mut seen,
                         &mut observed_count,
+                        &mut unsupported_count,
                         events,
                     )?;
                 }
@@ -124,16 +180,17 @@ fn run_scan(
         &mut batch,
         &mut seen,
         &mut observed_count,
+        &mut unsupported_count,
         events,
     )?;
     mark_unseen_missing(&mut connection, plan, &seen)?;
-    mark_completed(&connection, plan, observed_count)?;
+    mark_completed(&connection, plan, observed_count, unsupported_count)?;
     events
         .send(Event::ScanProgressChanged {
             root_id: plan.root_id.clone(),
             job_id: plan.job_id.clone(),
             observed_count,
-            unsupported_count: 0,
+            unsupported_count,
             terminal: true,
         })
         .ok();
@@ -158,16 +215,25 @@ fn finish_cancelled(
     batch: &mut Vec<FileCandidate>,
     seen: &mut BTreeSet<Vec<u8>>,
     observed_count: &mut u64,
+    unsupported_count: &mut u64,
     events: &Sender<Event>,
 ) -> Result<(), CoreError> {
-    flush_batch(connection, plan, batch, seen, observed_count, events)?;
-    mark_cancelled(connection, plan, *observed_count)?;
+    flush_batch(
+        connection,
+        plan,
+        batch,
+        seen,
+        observed_count,
+        unsupported_count,
+        events,
+    )?;
+    mark_cancelled(connection, plan, *observed_count, *unsupported_count)?;
     events
         .send(Event::ScanProgressChanged {
             root_id: plan.root_id.clone(),
             job_id: plan.job_id.clone(),
             observed_count: *observed_count,
-            unsupported_count: 0,
+            unsupported_count: *unsupported_count,
             terminal: true,
         })
         .ok();
@@ -192,6 +258,7 @@ fn flush_batch(
     candidates: &mut Vec<FileCandidate>,
     seen: &mut BTreeSet<Vec<u8>>,
     observed_count: &mut u64,
+    unsupported_count: &mut u64,
     events: &Sender<Event>,
 ) -> Result<(), CoreError> {
     if candidates.is_empty() {
@@ -211,11 +278,18 @@ fn flush_batch(
             inserted_asset_ids.push(insert_new(&transaction, plan, &candidate, timestamp)?);
         }
         *observed_count += 1;
+        if !candidate.servable {
+            *unsupported_count += 1;
+        }
     }
     transaction.execute(
         "UPDATE jobs SET progress_json = ?1, updated_at_ms = ?2 WHERE id = ?3",
         params![
-            serde_json::json!({"observedCount": observed_count}).to_string(),
+            serde_json::json!({
+                "observedCount": observed_count,
+                "unsupportedCount": unsupported_count
+            })
+            .to_string(),
             timestamp,
             plan.job_id
         ],
@@ -243,7 +317,7 @@ fn flush_batch(
             root_id: plan.root_id.clone(),
             job_id: plan.job_id.clone(),
             observed_count: *observed_count,
-            unsupported_count: 0,
+            unsupported_count: *unsupported_count,
             terminal: false,
         })
         .ok();
@@ -256,6 +330,7 @@ struct ExistingLocation {
     source_id: String,
     byte_size: Option<i64>,
     mtime_ms: Option<i64>,
+    fingerprint: Option<String>,
 }
 
 fn existing_location(
@@ -265,8 +340,12 @@ fn existing_location(
 ) -> Result<Option<ExistingLocation>, CoreError> {
     Ok(transaction
         .query_row(
-            "SELECT id, source_id, last_stat_size, last_stat_mtime_ms
-             FROM locations WHERE root_id = ?1 AND relative_path_bytes = ?2",
+            "SELECT l.id, l.source_id, l.last_stat_size, l.last_stat_mtime_ms,
+                    sr.quick_fingerprint
+             FROM locations l
+             JOIN sources s ON s.id = l.source_id
+             JOIN source_revisions sr ON sr.id = s.current_revision_id
+             WHERE l.root_id = ?1 AND l.relative_path_bytes = ?2",
             params![plan.root_id, candidate.relative_bytes],
             |row| {
                 Ok(ExistingLocation {
@@ -274,6 +353,7 @@ fn existing_location(
                     source_id: row.get(1)?,
                     byte_size: row.get(2)?,
                     mtime_ms: row.get(3)?,
+                    fingerprint: row.get(4)?,
                 })
             },
         )
@@ -321,6 +401,7 @@ fn relocated_location(
                             source_id: row.get(1)?,
                             byte_size: row.get(2)?,
                             mtime_ms: row.get(3)?,
+                            fingerprint: row.get(6)?,
                         },
                         row.get::<_, Vec<u8>>(4)?,
                         row.get::<_, i64>(5)?,
@@ -336,7 +417,7 @@ fn relocated_location(
     };
     if *revision_size != candidate.byte_size as i64
         || revision_fingerprint.as_deref() != Some(candidate.quick_fingerprint.as_str())
-        || !stored_path_is_absent(&plan.root_path, old_relative_bytes)
+        || !stored_path_is_absent(plan, old_relative_bytes)
     {
         return Ok(None);
     }
@@ -345,6 +426,7 @@ fn relocated_location(
         source_id: existing.source_id.clone(),
         byte_size: existing.byte_size,
         mtime_ms: existing.mtime_ms,
+        fingerprint: existing.fingerprint.clone(),
     }))
 }
 
@@ -375,12 +457,18 @@ fn refresh_existing(
     candidate: &FileCandidate,
     timestamp: i64,
 ) -> Result<(), CoreError> {
+    let location_state = if candidate.servable {
+        "present"
+    } else {
+        "unreadable"
+    };
     transaction.execute(
-        "UPDATE locations SET state = 'present', relative_path_display = ?1,
-             last_stat_size = ?2, last_stat_mtime_ms = ?3,
-             platform_file_id = ?4, platform_file_id_kind = ?5, updated_at_ms = ?6
-         WHERE id = ?7",
+        "UPDATE locations SET state = ?1, relative_path_display = ?2,
+             last_stat_size = ?3, last_stat_mtime_ms = ?4,
+             platform_file_id = ?5, platform_file_id_kind = ?6, updated_at_ms = ?7
+         WHERE id = ?8",
         params![
+            location_state,
             candidate.relative_display,
             candidate.byte_size as i64,
             candidate.mtime_ms,
@@ -390,9 +478,7 @@ fn refresh_existing(
             existing.location_id
         ],
     )?;
-    if existing.byte_size != Some(candidate.byte_size as i64)
-        || existing.mtime_ms != candidate.mtime_ms
-    {
+    if existing.fingerprint.as_deref() != Some(candidate.quick_fingerprint.as_str()) {
         let revision_id = Uuid::new_v4().to_string();
         insert_revision(
             transaction,
@@ -434,12 +520,17 @@ fn insert_new(
         params![source_id, plan.library_id, revision_id, timestamp],
     )?;
     insert_revision(transaction, &revision_id, &source_id, candidate, timestamp)?;
+    let location_state = if candidate.servable {
+        "present"
+    } else {
+        "unreadable"
+    };
     transaction.execute(
         "INSERT INTO locations (
             id, root_id, source_id, relative_path_bytes, relative_path_display,
             platform_file_id, platform_file_id_kind, state, last_stat_size,
             last_stat_mtime_ms, created_at_ms, updated_at_ms
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'present', ?8, ?9, ?10, ?10)",
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
         params![
             location_id,
             plan.root_id,
@@ -448,6 +539,7 @@ fn insert_new(
             candidate.relative_display,
             candidate.platform_file_id,
             candidate.platform_file_id_kind,
+            location_state,
             candidate.byte_size as i64,
             candidate.mtime_ms,
             timestamp
@@ -466,21 +558,6 @@ fn insert_new(
          ) VALUES (?1, ?2, ?3, 'whole', '{\"kind\":\"whole\"}', 'latest', ?4)",
         params![origin_id, asset_id, source_id, timestamp],
     )?;
-    for profile in ["grid_standard", "preview"] {
-        transaction.execute(
-            "INSERT INTO renditions (
-                id, asset_origin_id, source_revision_id, profile, provider,
-                provider_version, state, created_at_ms
-             ) VALUES (?1, ?2, ?3, ?4, 'original-common-still', '1', 'ready', ?5)",
-            params![
-                Uuid::new_v4().to_string(),
-                origin_id,
-                revision_id,
-                profile,
-                timestamp
-            ],
-        )?;
-    }
     Ok(asset_id)
 }
 
@@ -561,7 +638,12 @@ fn mark_unseen_missing(
     Ok(())
 }
 
-fn mark_completed(connection: &Connection, plan: &ScanPlan, count: u64) -> Result<(), CoreError> {
+fn mark_completed(
+    connection: &Connection,
+    plan: &ScanPlan,
+    count: u64,
+    unsupported_count: u64,
+) -> Result<(), CoreError> {
     let timestamp = now_ms() as i64;
     connection.execute(
         "UPDATE roots SET state = 'ready', updated_at_ms = ?1, last_seen_at_ms = ?1
@@ -572,7 +654,11 @@ fn mark_completed(connection: &Connection, plan: &ScanPlan, count: u64) -> Resul
         "UPDATE jobs SET state = 'completed', progress_json = ?1,
                          updated_at_ms = ?2, finished_at_ms = ?2 WHERE id = ?3",
         params![
-            serde_json::json!({"observedCount": count}).to_string(),
+            serde_json::json!({
+                "observedCount": count,
+                "unsupportedCount": unsupported_count
+            })
+            .to_string(),
             timestamp,
             plan.job_id
         ],
@@ -581,7 +667,12 @@ fn mark_completed(connection: &Connection, plan: &ScanPlan, count: u64) -> Resul
     Ok(())
 }
 
-fn mark_cancelled(connection: &Connection, plan: &ScanPlan, count: u64) -> Result<(), CoreError> {
+fn mark_cancelled(
+    connection: &Connection,
+    plan: &ScanPlan,
+    count: u64,
+    unsupported_count: u64,
+) -> Result<(), CoreError> {
     let timestamp = now_ms() as i64;
     connection.execute(
         "UPDATE roots SET state = 'connected', updated_at_ms = ?1 WHERE id = ?2",
@@ -591,7 +682,11 @@ fn mark_cancelled(connection: &Connection, plan: &ScanPlan, count: u64) -> Resul
         "UPDATE jobs SET state = 'cancelled', progress_json = ?1,
                          updated_at_ms = ?2, finished_at_ms = ?2 WHERE id = ?3",
         params![
-            serde_json::json!({"observedCount": count}).to_string(),
+            serde_json::json!({
+                "observedCount": count,
+                "unsupportedCount": unsupported_count
+            })
+            .to_string(),
             timestamp,
             plan.job_id
         ],
@@ -600,21 +695,39 @@ fn mark_cancelled(connection: &Connection, plan: &ScanPlan, count: u64) -> Resul
     Ok(())
 }
 
-fn mark_failed(plan: &ScanPlan, error: &CoreError) -> Result<(), CoreError> {
+fn mark_failed(plan: &ScanPlan, error: &CoreError) -> Result<String, CoreError> {
     let manifest = Manifest::read(&plan.package_path)?;
     let connection = schema::open_database(&plan.package_path.join("library.sqlite"), &manifest)?;
     let timestamp = now_ms() as i64;
-    connection.execute(
-        "UPDATE roots SET state = 'error', updated_at_ms = ?1 WHERE id = ?2",
-        params![timestamp, plan.root_id],
+    let (root_state, location_state) = match error {
+        CoreError::Io(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            ("offline_volume", Some("offline_root"))
+        }
+        CoreError::Io(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            ("needs_permission", Some("permission_denied"))
+        }
+        CoreError::Io(_) => ("unavailable", Some("unreadable")),
+        _ => ("error", None),
+    };
+    let transaction = connection.unchecked_transaction()?;
+    transaction.execute(
+        "UPDATE roots SET state = ?1, updated_at_ms = ?2 WHERE id = ?3",
+        params![root_state, timestamp, plan.root_id],
     )?;
-    connection.execute(
+    if let Some(location_state) = location_state {
+        transaction.execute(
+            "UPDATE locations SET state = ?1, updated_at_ms = ?2 WHERE root_id = ?3",
+            params![location_state, timestamp, plan.root_id],
+        )?;
+    }
+    transaction.execute(
         "UPDATE jobs SET state = 'failed', error_code = ?1,
                          updated_at_ms = ?2, finished_at_ms = ?2 WHERE id = ?3",
         params![error.to_protocol_error().code, timestamp, plan.job_id],
     )?;
-    bump_revision(&connection, timestamp)?;
-    Ok(())
+    bump_revision(&transaction, timestamp)?;
+    transaction.commit()?;
+    Ok(root_state.into())
 }
 
 fn record_event(
@@ -646,58 +759,149 @@ struct FileCandidate {
     extension: Option<String>,
     pixel_width: usize,
     pixel_height: usize,
+    servable: bool,
 }
 
 impl FileCandidate {
-    fn inspect(root: &Path, path: &Path) -> Result<Option<Self>, CoreError> {
-        let prefix = read_prefix(path, 16)?;
-        let Some(mime_type) = detect_common_still(&prefix) else {
+    #[cfg(unix)]
+    fn inspect_file(relative: PathBuf, mut file: File) -> Result<Option<Self>, CoreError> {
+        let extension = relative
+            .extension()
+            .and_then(|value| value.to_str())
+            .map(|value| value.to_ascii_lowercase());
+        let before = file.metadata()?;
+        let mut prefix = [0_u8; 64];
+        let prefix_len = file.read(&mut prefix)?;
+        file.seek(SeekFrom::Start(0))?;
+        let kind = classify_still(&prefix[..prefix_len], extension.as_deref());
+        let Some((mime_type, potentially_servable)) = kind else {
             return Ok(None);
         };
-        let relative = path
-            .strip_prefix(root)
-            .map_err(|_| CoreError::LocationMissing)?;
-        let metadata = path.metadata()?;
-        let dimensions = match imagesize::size(path) {
-            Ok(dimensions)
-                if dimensions.width > 0
-                    && dimensions.height > 0
-                    && dimensions.width <= 100_000
-                    && dimensions.height <= 100_000
-                    && dimensions.width.saturating_mul(dimensions.height) <= 500_000_000 =>
-            {
-                dimensions
-            }
-            _ => return Ok(None),
+        let dimensions = if potentially_servable {
+            imagesize::reader_size(BufReader::new(file.try_clone()?)).ok()
+        } else {
+            None
         };
-        let mtime_ms = metadata
-            .modified()
-            .ok()
-            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-            .map(|duration| duration.as_millis() as i64);
+        let servable = dimensions
+            .is_some_and(|dimensions| valid_dimensions(dimensions.width, dimensions.height));
+        let (pixel_width, pixel_height) = dimensions
+            .filter(|dimensions| valid_dimensions(dimensions.width, dimensions.height))
+            .map(|dimensions| (dimensions.width, dimensions.height))
+            .unwrap_or_default();
+        let fingerprint = full_fingerprint(&mut file, before.len())?;
+        let after = file.metadata()?;
+        if !same_file_observation(&before, &after) {
+            return Err(CoreError::SourceRevisionChanged);
+        }
+        let mtime_ms = modified_ms(&after);
         let (platform_file_id, platform_file_id_kind, platform_link_count) =
-            platform_identity(&metadata);
+            platform_identity(&after);
         Ok(Some(Self {
-            relative_bytes: relative_path_bytes(relative),
-            relative_display: relative.to_string_lossy().into_owned(),
-            byte_size: metadata.len(),
+            relative_bytes: relative_path_bytes(&relative),
+            relative_display: bounded_relative_display(&relative),
+            byte_size: after.len(),
             mtime_ms,
-            quick_fingerprint: quick_fingerprint(path, metadata.len())?,
+            quick_fingerprint: fingerprint,
             platform_file_id,
             platform_file_id_kind,
             platform_link_count,
             mime_type: mime_type.into(),
-            extension: path
-                .extension()
-                .and_then(|value| value.to_str())
-                .map(|value| value.to_ascii_lowercase()),
-            pixel_width: dimensions.width,
-            pixel_height: dimensions.height,
+            extension,
+            pixel_width,
+            pixel_height,
+            servable,
+        }))
+    }
+
+    #[cfg(not(unix))]
+    fn inspect_path(root: &Path, path: &Path) -> Result<Option<Self>, CoreError> {
+        let relative = path
+            .strip_prefix(root)
+            .map_err(|_| CoreError::LocationMissing)?;
+        let mut file = File::open(path)?;
+        let before = file.metadata()?;
+        let mut prefix = [0_u8; 64];
+        let prefix_len = file.read(&mut prefix)?;
+        file.seek(SeekFrom::Start(0))?;
+        let extension = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .map(|value| value.to_ascii_lowercase());
+        let Some((mime_type, potentially_servable)) =
+            classify_still(&prefix[..prefix_len], extension.as_deref())
+        else {
+            return Ok(None);
+        };
+        let dimensions = potentially_servable
+            .then(|| imagesize::reader_size(BufReader::new(file.try_clone())).ok())
+            .flatten();
+        let servable = dimensions
+            .is_some_and(|dimensions| valid_dimensions(dimensions.width, dimensions.height));
+        let (pixel_width, pixel_height) = dimensions
+            .filter(|dimensions| valid_dimensions(dimensions.width, dimensions.height))
+            .map(|dimensions| (dimensions.width, dimensions.height))
+            .unwrap_or_default();
+        let fingerprint = full_fingerprint(&mut file, before.len())?;
+        let metadata = file.metadata()?;
+        if before.len() != metadata.len() || modified_ms(&before) != modified_ms(&metadata) {
+            return Err(CoreError::SourceRevisionChanged);
+        }
+        let mtime_ms = modified_ms(&metadata);
+        let (platform_file_id, platform_file_id_kind, platform_link_count) =
+            platform_identity(&metadata);
+        Ok(Some(Self {
+            relative_bytes: relative_path_bytes(relative),
+            relative_display: bounded_relative_display(relative),
+            byte_size: metadata.len(),
+            mtime_ms,
+            quick_fingerprint: fingerprint,
+            platform_file_id,
+            platform_file_id_kind,
+            platform_link_count,
+            mime_type: mime_type.into(),
+            extension,
+            pixel_width,
+            pixel_height,
+            servable,
         }))
     }
 }
 
-fn stored_path_is_absent(root: &Path, relative_bytes: &[u8]) -> bool {
+#[cfg(unix)]
+fn read_directory_names(directory: &File) -> Result<Vec<OsString>, CoreError> {
+    let fresh = fresh_directory(directory)?;
+    let raw_fd = fresh.into_raw_fd();
+    // SAFETY: raw_fd is a newly owned directory fd transferred to DIR.
+    let stream = unsafe { libc::fdopendir(raw_fd) };
+    if stream.is_null() {
+        // SAFETY: fdopendir failed and did not take ownership.
+        unsafe { libc::close(raw_fd) };
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let mut names = Vec::new();
+    loop {
+        // SAFETY: stream remains valid until closed below; readdir's pointer is
+        // copied before the next call.
+        let entry = unsafe { libc::readdir(stream) };
+        if entry.is_null() {
+            break;
+        }
+        // SAFETY: d_name is a NUL-terminated array supplied by readdir.
+        let bytes = unsafe { CStr::from_ptr((*entry).d_name.as_ptr()) }.to_bytes();
+        if bytes == b"." || bytes == b".." {
+            continue;
+        }
+        names.push(OsString::from_vec(bytes.to_vec()));
+    }
+    // SAFETY: stream is owned by this function and closed exactly once.
+    if unsafe { libc::closedir(stream) } != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    names.sort();
+    Ok(names)
+}
+
+fn stored_path_is_absent(plan: &ScanPlan, relative_bytes: &[u8]) -> bool {
     #[cfg(unix)]
     let relative = PathBuf::from(OsString::from_vec(relative_bytes.to_vec()));
     #[cfg(not(unix))]
@@ -712,10 +916,20 @@ fn stored_path_is_absent(root: &Path, relative_bytes: &[u8]) -> bool {
     {
         return false;
     }
-    matches!(
-        fs::symlink_metadata(root.join(relative)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound
-    )
+    #[cfg(unix)]
+    {
+        matches!(
+            open_relative_file(&plan.root_directory, &relative),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound
+        )
+    }
+    #[cfg(not(unix))]
+    {
+        matches!(
+            fs::symlink_metadata(plan.root_path.join(relative)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound
+        )
+    }
 }
 
 #[cfg(unix)]
@@ -735,41 +949,85 @@ fn platform_identity(_metadata: &fs::Metadata) -> (Option<Vec<u8>>, Option<Strin
     (None, None, None)
 }
 
-fn detect_common_still(bytes: &[u8]) -> Option<&'static str> {
+fn classify_still(bytes: &[u8], extension: Option<&str>) -> Option<(&'static str, bool)> {
     if bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]) {
-        Some("image/png")
+        Some(("image/png", true))
     } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
-        Some("image/jpeg")
+        Some(("image/jpeg", true))
     } else if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
-        Some("image/webp")
+        Some(("image/webp", true))
+    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        Some(("image/gif", false))
+    } else if bytes.starts_with(b"BM") {
+        Some(("image/bmp", false))
+    } else if bytes.starts_with(b"II*\0") || bytes.starts_with(b"MM\0*") {
+        Some(("image/tiff", false))
+    } else if bytes.starts_with(b"8BPS") {
+        Some(("image/vnd.adobe.photoshop", false))
+    } else if bytes.len() >= 12
+        && &bytes[4..8] == b"ftyp"
+        && matches!(&bytes[8..12], b"avif" | b"avis")
+    {
+        Some(("image/avif", false))
+    } else if bytes.len() >= 12 && &bytes[4..8] == b"ftyp" {
+        Some(("image/heic", false))
+    } else if bytes
+        .iter()
+        .take(64)
+        .copied()
+        .collect::<Vec<_>>()
+        .windows(4)
+        .any(|window| window.eq_ignore_ascii_case(b"<svg"))
+    {
+        Some(("image/svg+xml", false))
     } else {
-        None
+        match extension {
+            Some("gif") => Some(("image/gif", false)),
+            Some("bmp") => Some(("image/bmp", false)),
+            Some("tif" | "tiff") => Some(("image/tiff", false)),
+            Some("psd") => Some(("image/vnd.adobe.photoshop", false)),
+            Some("avif") => Some(("image/avif", false)),
+            Some("heic" | "heif") => Some(("image/heic", false)),
+            Some("svg") => Some(("image/svg+xml", false)),
+            _ => None,
+        }
     }
 }
 
-fn quick_fingerprint(path: &Path, size: u64) -> Result<String, CoreError> {
-    let mut file = File::open(path)?;
-    let mut hasher = Sha256::new();
-    hasher.update(size.to_be_bytes());
-    let mut buffer = vec![0_u8; QUICK_FINGERPRINT_CHUNK as usize];
-    let first_read = file.read(&mut buffer)?;
-    hasher.update(&buffer[..first_read]);
-    if size > QUICK_FINGERPRINT_CHUNK {
-        file.seek(SeekFrom::Start(
-            size.saturating_sub(QUICK_FINGERPRINT_CHUNK),
-        ))?;
-        let last_read = file.read(&mut buffer)?;
-        hasher.update(&buffer[..last_read]);
-    }
-    Ok(format!("sha256-quick:{}", hex(&hasher.finalize())))
+fn valid_dimensions(width: usize, height: usize) -> bool {
+    width > 0
+        && height > 0
+        && width <= 100_000
+        && height <= 100_000
+        && width.saturating_mul(height) <= 500_000_000
 }
 
-fn hex(bytes: &[u8]) -> String {
-    const DIGITS: &[u8; 16] = b"0123456789abcdef";
-    let mut output = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        output.push(DIGITS[(byte >> 4) as usize] as char);
-        output.push(DIGITS[(byte & 0x0f) as usize] as char);
+fn modified_ms(metadata: &fs::Metadata) -> Option<i64> {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis() as i64)
+}
+
+#[cfg(unix)]
+fn same_file_observation(before: &fs::Metadata, after: &fs::Metadata) -> bool {
+    before.dev() == after.dev()
+        && before.ino() == after.ino()
+        && before.len() == after.len()
+        && modified_ms(before) == modified_ms(after)
+}
+
+fn bounded_relative_display(path: &Path) -> String {
+    const MAX_CHARS: usize = 1_024;
+    let value = path.to_string_lossy();
+    let count = value.chars().count();
+    if count <= MAX_CHARS {
+        return value.into_owned();
     }
-    output
+    let tail = value
+        .chars()
+        .skip(count - (MAX_CHARS - 1))
+        .collect::<String>();
+    format!("…{tail}")
 }

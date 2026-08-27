@@ -128,6 +128,43 @@ impl CommandEngine {
                 });
                 Ok(CommandResult::RootAdded { root_id, job_id })
             }
+            Command::ListRoots { session_id } => Ok(CommandResult::Roots {
+                items: self.session(&session_id)?.query_roots()?,
+            }),
+            Command::BindRoot {
+                session_id,
+                root_id,
+                authorized_path,
+            } => Ok(CommandResult::RootBound {
+                root: self
+                    .session(&session_id)?
+                    .reauthorize_root(&root_id, authorized_path)?,
+            }),
+            Command::ScanRoot {
+                session_id,
+                root_id,
+            } => {
+                let plan = self.session(&session_id)?.rescan_root(&root_id)?;
+                let job_id = plan.job_id.clone();
+                let cancelled = Arc::new(AtomicBool::new(false));
+                let worker_cancelled = Arc::clone(&cancelled);
+                let sender = self.event_sender.clone();
+                let handle =
+                    thread::spawn(move || discovery::scan_root(plan, worker_cancelled, sender));
+                self.jobs.insert(
+                    job_id.clone(),
+                    JobControl {
+                        session_id,
+                        cancelled,
+                        handle: Some(handle),
+                    },
+                );
+                self.queue_local_event(Event::RootStateChanged {
+                    root_id: root_id.clone(),
+                    state: "scanning".into(),
+                });
+                Ok(CommandResult::RootScanStarted { root_id, job_id })
+            }
             Command::QueryAssets {
                 session_id,
                 offset,
@@ -355,15 +392,20 @@ impl CommandEngine {
                 }))
             }
             Command::CancelJob { session_id, job_id } => {
-                self.session(&session_id)?;
-                let state = if let Some(job) = self.jobs.get(&job_id) {
+                let persisted_state = self.session(&session_id)?.job_state(&job_id)?;
+                let state = if matches!(
+                    persisted_state.as_deref(),
+                    Some("completed" | "failed" | "cancelled")
+                ) {
+                    CancellationState::AlreadyTerminal
+                } else if let Some(job) = self.jobs.get(&job_id) {
                     if job.session_id != session_id {
                         CancellationState::UnknownJob
                     } else {
                         job.cancelled.store(true, Ordering::Relaxed);
                         CancellationState::CancellationRequested
                     }
-                } else if self.session(&session_id)?.job_state(&job_id)?.is_some() {
+                } else if persisted_state.is_some() {
                     CancellationState::AlreadyTerminal
                 } else {
                     CancellationState::UnknownJob
