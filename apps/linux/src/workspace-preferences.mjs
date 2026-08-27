@@ -7,6 +7,7 @@ import { assertWorkspacePreferences, assertWorkspacePreferencesPatch } from "./b
 
 const DEFAULTS = Object.freeze({ interfaceScale: 1, thumbnailDensity: 220, previewZoom: 1 });
 const MAXIMUM_PREFERENCES_BYTES = 8 * 1024;
+const writeTails = new Map();
 
 export async function readPreferences(filePath) {
   let handle;
@@ -24,10 +25,20 @@ export async function readPreferences(filePath) {
   }
 }
 
-export async function writePreferences(filePath, patch) {
+export function writePreferences(filePath, patch, hooks = {}) {
+  const validatedPatch = assertWorkspacePreferencesPatch(patch);
+  const previous = writeTails.get(filePath) ?? Promise.resolve();
+  const operation = previous.catch(() => {}).then(() => writePreferencesAtomic(filePath, validatedPatch, hooks));
+  let tracked;
+  tracked = operation.finally(() => { if (writeTails.get(filePath) === tracked) writeTails.delete(filePath); });
+  writeTails.set(filePath, tracked);
+  return tracked;
+}
+
+async function writePreferencesAtomic(filePath, patch, { beforeRename } = {}) {
   const next = assertWorkspacePreferences({
     ...await readPreferences(filePath),
-    ...assertWorkspacePreferencesPatch(patch),
+    ...patch,
   });
   const directory = path.dirname(filePath);
   await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -39,7 +50,10 @@ export async function writePreferences(filePath, patch) {
     await handle.sync();
     await handle.close();
     handle = null;
+    await beforeRename?.(temporary);
     await rename(temporary, filePath);
+    const directoryHandle = await open(directory, constants.O_RDONLY | (constants.O_DIRECTORY ?? 0));
+    try { await directoryHandle.sync(); } finally { await directoryHandle.close(); }
     return next;
   } catch (error) {
     await handle?.close().catch(() => {});

@@ -264,6 +264,18 @@ test("host preferences are independent, partial, atomic, and reject symlink read
     assert.deepEqual(await writePreferences(file, { thumbnailDensity: 300 }), {
       interfaceScale: 1.25, thumbnailDensity: 300, previewZoom: 2,
     });
+    const [scaled, zoomed] = await Promise.all([
+      writePreferences(file, { interfaceScale: 1.5 }),
+      writePreferences(file, { previewZoom: 3 }),
+    ]);
+    assert.equal(scaled.interfaceScale, 1.5);
+    assert.deepEqual(zoomed, { interfaceScale: 1.5, thumbnailDensity: 300, previewZoom: 3 });
+    assert.deepEqual(await readPreferences(file), zoomed);
+    await assert.rejects(
+      writePreferences(file, { previewZoom: 4 }, { beforeRename: async () => { throw new Error("injected"); } }),
+      (error) => error.code === "WorkspacePreferencesUnavailable" && !error.message.includes(directory),
+    );
+    assert.deepEqual(await readPreferences(file), zoomed);
     const link = path.join(directory, "preferences-link.json");
     await symlink(file, link);
     await assert.rejects(readPreferences(link), (error) =>
