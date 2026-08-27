@@ -148,3 +148,14 @@ Do not rewrite or delete entries. Corrections append a superseding entry.
 **Fresh measurement:** focused and complete JavaScript seams passed locally. GitHub Actions run `33082121964` passed all five jobs at source tree `01835315338858e0ad73ade01e6a99f5d658299c`; the exact extracted pacman application completed its workspace/Core journey under both X11 and a real headless Wayland compositor, acknowledged close and exited cleanly. Exact-source Apple arm64 artifact `9650628469` and Linux x86_64 artifact `9650719750`, with their workflow-container digests, are recorded in `V1_SOURCE_READY_RECEIPT.md`.
 
 **Decision:** keep the fix and use run `33082121964` as the reviewed implementation evidence. Do not reinterpret compatible Ubuntu or Apple-Silicon CI as M1/L1/X1/C1 integration.
+
+
+## 2026-08-27 — V1 fast-forwarded to canonical main
+
+**Hypothesis:** V1 can replace the original skeleton `main` by a recoverable fast-forward because every task branch and `main` itself is contained in the verified completion history.
+
+**Change:** moved `main` from `622237237e4492292df91b8912f9109cb3a0bf1e` to `2158fbb99260697ba158afcb048bef621f087c82` using a non-forced ref update. No merge commit, history rewrite, tag, release, deployment or settings change occurred.
+
+**Fresh measurement:** GitHub branch readback returned the exact V1 SHA on `main`. Run `33120794811` then passed all five jobs on the actual `main` ref. Main-scoped artifacts are Apple arm64 `9666411956` (workflow ZIP SHA-256 `46466368be45f203592d30170aeedc1f6f8241f79e5ab415e9374831d085463e`) and Linux x86_64 `9666523446` (workflow ZIP SHA-256 `cf63aac91c147375739b4e11b497db49d4c265d9edd592a755a5686632d36af9`).
+
+**Decision:** treat `main` as canonical source-ready V1. Target integration and public release remain separate states. Close documentation on `main`, require exact-head CI, and delete only obsolete branches already proved to be ancestors.

@@ -6,9 +6,13 @@ One project gets one `.pitchlibrary` package. Apple-Silicon macOS is primary; Ga
 
 ## Status
 
-The V1 daily-use still-image Library is **source-ready**. Its canonical Core, shared editorial workspace, Root/reconnect workflow, real bounded renditions, manual curation, lexical query, flat Collections, bounded canonical proof and both native shell sources pass their public seams. Compatible runners assemble and exercise pacman/AppImage/tar packages under X11 and headless Wayland and compile/package the ad-hoc-signed Apple-Silicon app ZIP.
+The V1 daily-use still-image Library is **source-ready and canonical on `main`**. Canonical implementation commit [`2158fbb`](https://github.com/bomkino/reference-library/commit/2158fbb99260697ba158afcb048bef621f087c82) passed all five jobs in [exact-`main` CI run `33120794811`](https://github.com/bomkino/reference-library/actions/runs/33120794811).
 
-Nothing is yet target-integrated on representative Apple Silicon or Jenai's Garuda system. M1, L1, X1 and C1 remain explicit gates.
+The canonical Core, shared editorial workspace, Root/reconnect workflow, real bounded renditions, manual curation, lexical query, flat Collections, bounded canonical proof and both native shell sources pass their public seams. Compatible runners assemble and exercise pacman/AppImage/tar packages under X11 and headless Wayland and compile/package the ad-hoc-signed Apple-Silicon app ZIP.
+
+Nothing is yet target-integrated on representative Apple Silicon or Jenai's Garuda system. M1, L1, X1 and C1 remain explicit gates. No tag or public GitHub release exists.
+
+Read the [V1 main-integration receipt](docs/evidence/V1_MAIN_INTEGRATION_RECEIPT.md) and [V1 source-ready receipt](docs/evidence/V1_SOURCE_READY_RECEIPT.md) for exact evidence and claim boundaries.
 
 ## Repository shape
 

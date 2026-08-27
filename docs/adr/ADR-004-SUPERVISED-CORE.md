@@ -9,4 +9,4 @@ Use one supervised Rust Reference Core shared by SwiftUI/WebKit and Electron. Sh
 
 ## Evidence and remaining gate
 
-P03 proved paging, cancellation and restart topology with a dependency-free Go helper. C1, M1 and L1 must still prove real Rust/WAL recovery, signing, bundling, target launch and resource backpressure before acceptance.
+P03 first proved paging, cancellation and restart topology with a dependency-free Go helper. Production V1 now proves the supervised Rust process, typed framing, bounded paging/events/cancellation, real rendition work, two-crash WAL recovery, decoder hard-timeout kill/restart and opaque-resource backpressure at source and compatible-package seams. M1 and L1 must still prove installed target launch, lifecycle and resource behavior; C1 will accept or replace this ADR from M1/L1/X1 evidence.

@@ -96,3 +96,14 @@ git diff --check
 **Fresh measurement:** the focused test, 25 script, 26 workspace and 55 Linux tests passed locally. GitHub Actions run `33082121964` passed all five jobs at remote source `05b8f0e2ae1a0419426317d3183615a98f7179fe`, tree `01835315338858e0ad73ade01e6a99f5d658299c`, including the extracted pacman application journey under X11 and a real headless Wayland compositor, acknowledged close, clean exit, source-bound package receipts, pinned RustSec audit and warning-free Apple arm64 packaging. Artifacts `9650628469` and `9650719750` are retained through 26 September 2026.
 
 **Decision:** keep the causal harness fix and supersede run `33080333170` with `33082121964` as the final reviewed implementation measurement. Source-ready closure still requires the following evidence-only head to pass exact CI; M1, L1, X1 and C1 remain open.
+
+
+### 2026-08-27 — Canonical main integration
+
+**Hypothesis:** the exact green V1 head can become canonical without merge conflict, rewritten history or target overclaim when remote `main` is its direct ancestor.
+
+**Change:** verified `main` at `622237237e4492292df91b8912f9109cb3a0bf1e`, V1 at `2158fbb99260697ba158afcb048bef621f087c82`, merge base equal to old `main`, 118 commits ahead and zero behind; then fast-forwarded `main` with `force:false`.
+
+**Fresh measurement:** branch readback resolved `main` to `2158fbb99260697ba158afcb048bef621f087c82`. Exact-`main` GitHub Actions run `33120794811` passed all five jobs, including pinned RustSec, 81 Rust tests, 25 script tests, 26 workspace tests, 55 Linux tests, Apple arm64 packaging and extracted Linux X11/Wayland journeys. Main artifacts `9666411956` and `9666523446` are source-bound and retained through 26 September 2026.
+
+**Decision:** V1 is canonical on `main`. Keep M1, L1, X1 and C1 open; create no tag or public release. Update canonical docs, prove their exact main head, then remove only fully contained obsolete task branches.

@@ -10,8 +10,12 @@
 - **Rendition:** disposable thumbnail, preview or proxy.
 - **Job:** visible long-running work with honest progress and terminal state.
 - **Interface Scale:** application UI sizing; separate from thumbnail density and media zoom.
-- **Canonical dump:** deterministic semantic projection excluding grants, caches and expected volatile state.
+- **Canonical proof:** deterministic bounded digest/pages excluding grants, caches and expected volatile state.
 - **Source-ready:** source and available CI pass; target integration remains unproved.
 - **Target-integrated:** exact packaged journey passed on representative target hardware.
 
-T01 includes only whole-file Origins for common stills. Collections, Excerpts, similarity, duplicate review and source mutation remain outside this tracer.
+## Current scope
+
+V1 supports whole-file Origins for common still images, Root reconnect/rescan, real bounded renditions, manual review/title/note curation, lexical query/filter/sort, flat Collections, opaque Preview, native reveal and bounded cross-host canonical proof.
+
+Excerpts, similarity, exact-duplicate review, source move/copy/Trash, broad professional formats, nested/smart Collections, tags, ratings, saved searches, MCP and automatic update systems remain intentionally deferred.

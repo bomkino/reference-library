@@ -20,9 +20,9 @@ The local and synchronized GitHub implementation commits have different commit-o
 
 ## Result
 
-The V1 daily-use still-image Library is **source-ready**. V1-01 through V1-09 pass at their public source seams; compatible CI compiles both hosts, packages Apple arm64 and Linux x86_64 artifacts, and exercises the packaged Linux app under X11 and a real headless Wayland compositor. V1-10 is complete when this evidence head passes exact-source CI.
+The V1 daily-use still-image Library is **source-ready**. V1-01 through V1-09 pass at their public source seams; compatible CI compiles both hosts, packages Apple arm64 and Linux x86_64 artifacts, and exercises the packaged Linux app under X11 and a real headless Wayland compositor. V1-10 passed when exact evidence-head CI run [`33120123284`](https://github.com/bomkino/reference-library/actions/runs/33120123284) completed all five jobs.
 
-This is not installed target integration. M1, L1, X1 and C1 remain open. No merge, deployment, public release, force-push or repository-settings change occurred.
+This is not installed target integration. M1, L1, X1 and C1 remain open. No merge, deployment, public release, force-push or repository-settings change occurred during source-ready implementation; canonical main integration is recorded below.
 
 ## Causal source history
 
@@ -140,6 +140,10 @@ These are expiring CI artifacts, not installations or public releases. The workf
 - Ad-hoc signing is not Developer ID signing or notarization.
 - Post-V1 features remain absent by contract.
 
+## Canonical main integration
+
+The reviewed V1 implementation was fast-forwarded to `main` at `2158fbb99260697ba158afcb048bef621f087c82` without force. Exact-`main` GitHub Actions run [`33120794811`](https://github.com/bomkino/reference-library/actions/runs/33120794811) passed all five jobs. Canonical main artifacts are Apple arm64 `9666411956` and Linux x86_64 `9666523446`, retained through 26 September 2026. See `V1_MAIN_INTEGRATION_RECEIPT.md`.
+
 ## Next exact vertical slice
 
-Run M1 with artifact `9650628469` and its embedded source receipt. In parallel, L1 may run with artifact `9650719750`; do not claim X1 or close ADR-004/ADR-006 until both installed target receipts exist.
+Run M1 with artifact `9666411956` and its embedded source receipt. In parallel, L1 may run with artifact `9666523446`; do not claim X1 or close ADR-004/ADR-006 until both installed target receipts exist.
