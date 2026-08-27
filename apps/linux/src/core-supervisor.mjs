@@ -197,7 +197,8 @@ export class CoreSupervisor extends EventEmitter {
       this.#protocolFailure("Reference Core emitted an invalid resource correlation"); return false;
     }
     const authorization = this.#resourceAuthorizations.get(value.requestId);
-    if (!authorization || authorization.jobId || value.sessionId !== authorization.sessionId ||
+    if (!authorization || authorization.jobId ||
+        (value.sessionId !== undefined && value.sessionId !== authorization.sessionId) ||
         value.assetId !== authorization.assetId || value.profile !== authorization.profile) {
       this.#protocolFailure("Reference Core emitted a mismatched resource correlation"); return false;
     }

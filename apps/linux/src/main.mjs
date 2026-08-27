@@ -210,7 +210,7 @@ function registerNamedOperations() {
       sessionId, authorizedPath: choice, displayName: path.basename(choice),
     } }), "root_added");
     recovery.rememberRoot(result.rootId, choice);
-    return result;
+    return { session: publicSession(recovery.activeSession), ...result };
   }));
 
   ipcMain.handle(IPC.listRoots, trusted(async (_event, sessionId) => {
@@ -226,7 +226,7 @@ function registerNamedOperations() {
       sessionId, rootId, authorizedPath: choice,
     } }), "root_bound").root;
     recovery.rememberRoot(rootId, choice);
-    return root;
+    return { session: publicSession(recovery.activeSession), root };
   }));
 
   ipcMain.handle(IPC.scanRoot, trusted(async (_event, sessionId, rootId) => {
@@ -400,6 +400,11 @@ function deliver(event) {
     return;
   }
   mainWindow.webContents.send(IPC.event, event);
+}
+function publicSession(session) {
+  if (!session) throw new Error("SessionClosed");
+  const { sessionId, libraryId, schemaVersion, name } = session;
+  return { sessionId, libraryId, schemaVersion, name };
 }
 const RENDERER_EVENTS = new Set([
   "root_state_changed", "scan_progress_changed", "assets_inserted", "asset_updated",

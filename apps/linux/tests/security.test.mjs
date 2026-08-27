@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import path from "node:path";
 
@@ -100,4 +101,10 @@ test("preload exposes only fixed named IPC channels", () => {
   for (const channel of Object.values(IPC)) {
     assert.match(channel, /^reference-library:[a-z-]+$/);
   }
+});
+
+test("Root authority operations return an explicit replacement-session envelope", async () => {
+  const main = await readFile(new URL("../src/main.mjs", import.meta.url), "utf8");
+  assert.match(main, /return \{ session: publicSession\(recovery\.activeSession\), \.\.\.result \}/);
+  assert.match(main, /return \{ session: publicSession\(recovery\.activeSession\), root \}/);
 });

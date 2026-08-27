@@ -40,7 +40,7 @@ test("resource authorization requires exact async correlation", async () => {
   const params = resourceParams();
   const harness = fakeCore(({ envelope, send }) => {
     if (envelope.command.method !== "authorize_resource") return false;
-    send(resourceStarted(envelope.requestId, params, "job-1"));
+    send(resourceStarted(envelope.requestId, { assetId: params.assetId, profile: params.profile }, "job-1"));
     send(response(envelope.requestId, { result: "resource_authorized", value: descriptor(params) }));
     return true;
   });
