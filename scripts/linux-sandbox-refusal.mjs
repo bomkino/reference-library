@@ -18,7 +18,12 @@ export function assertPackagedRendererBoundary({ main, preload, hardening }) {
   assert.match(main, /connect-src 'none'/);
   assert.doesNotMatch(main, /--no-sandbox|disableSandbox|sandbox:\s*false/);
   assert.doesNotMatch(preload, /ipcRenderer\.(?:send|sendSync|postMessage)\s*\(/);
-  assert.doesNotMatch(preload, /require\s*\(|node:fs|node:child_process/);
+  const requiredModules = [...preload.matchAll(/require\(["']([^"']+)["']\)/g)]
+    .map((match) => match[1]);
+  assert.ok(requiredModules.length > 0, "sandbox preload must load Electron explicitly");
+  assert.deepEqual(new Set(requiredModules), new Set(["electron"]));
+  assert.doesNotMatch(preload, /node:fs|node:child_process/);
+  assert.doesNotMatch(preload, /(?:^|[;\n])\s*import\s/m);
   assert.match(preload, /contextBridge\.exposeInMainWorld\(["']referenceLibrary["']/);
   assert.equal(typeof hardening, "string");
   assert.match(hardening, /setWindowOpenHandler\(\(\)\s*=>\s*\(\{\s*action:\s*["']deny["']/);
@@ -55,7 +60,7 @@ export function assertNavigationGuardBehavior(installNavigationGuards) {
 
 export async function validatePackagedRendererBoundary(asarDirectory) {
   const mainPath = path.join(asarDirectory, "dist/main.mjs");
-  const preloadPath = path.join(asarDirectory, "dist/preload.mjs");
+  const preloadPath = path.join(asarDirectory, "dist/preload.cjs");
   const hardeningPath = path.join(asarDirectory, "dist/runtime-hardening.mjs");
   const [main, preload, hardening] = await Promise.all([
     readFile(mainPath, "utf8"),

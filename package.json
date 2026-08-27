@@ -23,6 +23,7 @@
     "electron": "44.0.0",
     "electron-builder": "26.15.3",
     "jsdom": "30.0.1",
+    "rolldown": "1.2.6",
     "typescript": "7.0.2",
     "vite": "8.2.2",
     "vitest": "4.1.11"

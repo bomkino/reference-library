@@ -112,7 +112,7 @@ export async function validateLinuxArtifactSet({ repository, releaseDirectory, e
   for (const required of [
     "package.json",
     "dist/main.mjs",
-    "dist/preload.mjs",
+    "dist/preload.cjs",
     "dist/workspace/index.html",
     "dist/legal/DEPENDENCY-LICENSES.json",
     "dist/legal/THIRD_PARTY-NOTICES.txt",

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cp, mkdir, mkdtemp, rm, unlink } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -85,6 +85,7 @@ test("packaged renderer boundary rejects sandbox bypasses and generic IPC", () =
     const header = "Content-Security-Policy default-src 'none'; connect-src 'none'";
   `;
   const preload = `
+    const { contextBridge, ipcRenderer } = require("electron");
     contextBridge.exposeInMainWorld("referenceLibrary", {
       openLibrary: () => ipcRenderer.invoke("reference-library:open")
     });
@@ -111,8 +112,14 @@ test("extracted package validation loads and exercises the bundled hardening mod
   const distribution = path.join(temporary, "dist");
   try {
     await mkdir(distribution);
-    await Promise.all(["main.mjs", "preload.mjs", "runtime-hardening.mjs"].map((name) =>
+    await Promise.all(["main.mjs", "runtime-hardening.mjs"].map((name) =>
       cp(path.join(repository, "apps/linux/src", name), path.join(distribution, name))));
+    await writeFile(path.join(distribution, "preload.cjs"), `
+      const { contextBridge, ipcRenderer } = require("electron");
+      contextBridge.exposeInMainWorld("referenceLibrary", {
+        openLibrary: () => ipcRenderer.invoke("reference-library:open")
+      });
+    `);
     const result = await validatePackagedRendererBoundary(temporary);
     assert.equal(result.status, "packaged_renderer_boundary_verified");
     await unlink(path.join(distribution, "runtime-hardening.mjs"));

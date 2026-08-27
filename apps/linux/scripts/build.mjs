@@ -1,6 +1,7 @@
 import { cp, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { build } from "rolldown";
 
 const applicationRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = path.resolve(applicationRoot, "../..");
@@ -12,9 +13,18 @@ export async function buildLinuxShell() {
   const modules = (await readdir(path.join(applicationRoot, "src")))
     .filter((entry) => entry.endsWith(".mjs"))
     .sort();
-  for (const source of modules) {
+  for (const source of modules.filter((entry) => entry !== "preload.mjs")) {
     await cp(path.join(applicationRoot, "src", source), path.join(distribution, source));
   }
+  await build({
+    input: path.join(applicationRoot, "src/preload.mjs"),
+    external: ["electron"],
+    output: {
+      file: path.join(distribution, "preload.cjs"),
+      format: "cjs",
+      sourcemap: false,
+    },
+  });
   await assertRuntimeImportClosure(distribution);
   for (const moduleName of modules.filter((entry) => !["main.mjs", "preload.mjs"].includes(entry))) {
     await import(`${pathToFileURL(path.join(distribution, moduleName)).href}?build-smoke=${Date.now()}`);
