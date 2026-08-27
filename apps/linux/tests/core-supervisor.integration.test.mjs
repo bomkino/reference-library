@@ -61,13 +61,13 @@ test("Electron supervisor exercises the framed T01 lifecycle and restart seam", 
     assert.equal(descriptor.assetId, asset.assetId);
     assert.equal(descriptor.contentLength, png.length);
 
-    const firstDump = expectResult(
+    const firstMeaning = expectResult(
       await core.request({
-        method: "canonical_dump",
+        method: "canonical_digest",
         params: { sessionId: created.sessionId },
       }),
-      "canonical_dump",
-    ).dump;
+      "canonical_digest",
+    );
     expectResult(
       await core.request({
         method: "close_library",
@@ -88,6 +88,10 @@ test("Electron supervisor exercises the framed T01 lifecycle and restart seam", 
       await core.request({ method: "open_library", params: { path: libraryPath } }),
       "session_opened",
     );
+    const reopenedRoot = await rootSummary(core, reopened.sessionId, added.rootId);
+    assert.equal(reopenedRoot.state, "needs_permission");
+    assert.equal(reopenedRoot.authorized, false);
+    assert.equal(reopenedRoot.activeJobId, null);
     await assert.rejects(core.request({ method: "test_crash" }), /stopped/i);
     await waitFor(() => events.some((event) => event.event === "core_needs_restart"));
 
@@ -97,14 +101,45 @@ test("Electron supervisor exercises the framed T01 lifecycle and restart seam", 
       "session_opened",
     );
     assert.notEqual(recovered.sessionId, reopened.sessionId);
-    const recoveredDump = expectResult(
+    const unboundRoot = await rootSummary(core, recovered.sessionId, added.rootId);
+    assert.equal(unboundRoot.state, "needs_permission");
+    assert.equal(unboundRoot.authorized, false);
+
+    const bound = expectResult(
+      await core.request({ method: "bind_root", params: {
+        sessionId: recovered.sessionId,
+        rootId: added.rootId,
+        authorizedPath: rootPath,
+      } }),
+      "root_bound",
+    ).root;
+    assert.equal(bound.rootId, added.rootId);
+    assert.equal(bound.state, "connected");
+    assert.equal(bound.authorized, true);
+    const scan = expectResult(
+      await core.request({ method: "scan_root", params: {
+        sessionId: recovered.sessionId,
+        rootId: added.rootId,
+      } }),
+      "root_scan_started",
+    );
+    const settled = await waitForRootScan(core, recovered.sessionId, added.rootId, scan.jobId);
+    assert.equal(settled.state, "ready");
+    assert.equal(settled.authorized, true);
+    assert.equal(settled.activeJobId, null);
+    assert.equal(settled.observedCount, 1);
+    await waitFor(() => events.some((event) =>
+      event.event === "scan_progress_changed" &&
+      event.value.jobId === scan.jobId && event.value.terminal === true));
+
+    const recoveredMeaning = expectResult(
       await core.request({
-        method: "canonical_dump",
+        method: "canonical_digest",
         params: { sessionId: recovered.sessionId },
       }),
-      "canonical_dump",
-    ).dump;
-    assert.deepEqual(recoveredDump, firstDump);
+      "canonical_digest",
+    );
+    assert.deepEqual(recoveredMeaning, firstMeaning);
     expectResult(
       await core.request({
         method: "close_library",
@@ -136,6 +171,35 @@ async function waitForAsset(core, sessionId) {
     return page.total === 1;
   });
   return page;
+}
+
+async function rootSummary(core, sessionId, rootId) {
+  const roots = expectResult(
+    await core.request({ method: "list_roots", params: { sessionId } }),
+    "roots",
+  ).items;
+  const root = roots.find((item) => item.rootId === rootId);
+  assert.ok(root, "retained Root must remain in the reopened Library");
+  return root;
+}
+
+async function waitForRootScan(core, sessionId, rootId, jobId) {
+  let settled;
+  await waitFor(async () => {
+    settled = await rootSummary(core, sessionId, rootId);
+    const jobs = expectResult(
+      await core.request({ method: "query_jobs", params: {
+        sessionId,
+        offset: 0,
+        limit: 100,
+        query: { rootId, states: ["completed"] },
+      } }),
+      "job_page",
+    ).items;
+    return settled.state === "ready" && settled.activeJobId === null &&
+      jobs.some((job) => job.jobId === jobId);
+  });
+  return settled;
 }
 
 function expectResult(result, expected) {
