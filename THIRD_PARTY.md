@@ -20,7 +20,9 @@ Current direct dependencies are implemented from their public APIs; no dependenc
 
 | Package | Version | Licence | Purpose | Source |
 |---|---:|---|---|---|
+| `image` | 0.25.10 | MIT OR Apache-2.0 | Bounded JPEG, PNG and WebP rendition decoding/downsampling | crates.io |
 | `imagesize` | 0.15.0 | MIT | Bounded common-still dimension probe | crates.io |
+| `libc` | 0.2.189 | MIT OR Apache-2.0 | No-follow descriptor-relative filesystem authority on Unix hosts | crates.io |
 | `rusqlite` | 0.40.2 | MIT | SQLite canonical state; bundled SQLite feature | crates.io |
 | `serde` | 1.0.229 | MIT OR Apache-2.0 | Typed protocol and manifest serialization | crates.io |
 | `serde_json` | 1.0.151 | MIT OR Apache-2.0 | Framed JSON and canonical values | crates.io |
