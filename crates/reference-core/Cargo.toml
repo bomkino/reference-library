@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 imagesize.workspace = true
+image.workspace = true
 libc.workspace = true
 reference-protocol = { path = "../reference-protocol" }
 rusqlite.workspace = true

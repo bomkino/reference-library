@@ -3,6 +3,7 @@ pub mod discovery;
 pub mod editorial;
 pub mod error;
 pub mod manifest;
+pub mod rendition;
 pub mod schema;
 pub mod server;
 pub mod session;
