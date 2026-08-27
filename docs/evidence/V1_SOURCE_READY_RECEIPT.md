@@ -26,7 +26,7 @@ This is not installed target integration. M1, L1, X1 and C1 remain open. No merg
 
 ## Causal source history
 
-The branch contains 93 causal source/review commits after the exact T02 base. The principal vertical slices are:
+The reviewed implementation contains 93 causal source/review commits after the exact T02 base. The principal vertical slices are:
 
 | Slice | Representative commits | Result |
 |---|---|---|
@@ -62,7 +62,7 @@ npm ci --ignore-scripts
 npm run typecheck
 npm test
 npm run build
-  pass: 24 script tests; 26 workspace tests; 55 Linux tests
+  pass: 25 script tests; 26 workspace tests; 55 Linux tests
   pass: production workspace and hardened Linux builds
 
 npm audit --audit-level=high
@@ -98,7 +98,7 @@ GitHub Actions run [`33082121964`](https://github.com/bomkino/reference-library/
 - repository boundary, deterministic icon and release metadata;
 - Rust format, all-target Clippy, 81 tests and both zero-diff semantic journeys;
 - pinned `cargo-audit` 0.22.2 loaded 1,226 RustSec advisories and scanned 78 locked Rust dependencies with no vulnerability finding;
-- TypeScript, 24 script, 26 workspace and 55 Linux tests, production builds, npm audit and the 74-package legal closure;
+- TypeScript, 25 script, 26 workspace and 55 Linux tests, production builds, npm audit and the 74-package legal closure;
 - Apple-Silicon Swift tests, warning-free release compilation, `aarch64-apple-darwin` Rust Core, extracted `.app`, entitlements/architecture/resources, ad-hoc codesign, checksums and exact-source receipt;
 - Linux pacman/AppImage/tar assembly, safe fresh extraction, executable/ASAR/helper/desktop/MIME/legal/version validation, renderer-boundary validation, reproduced `root:root:4755` Chromium sandbox, packaged app journeys under X11 and real headless Wayland, acknowledged renderer close and clean process exit, packaged-helper reopen, checksums and exact-source receipt.
 
