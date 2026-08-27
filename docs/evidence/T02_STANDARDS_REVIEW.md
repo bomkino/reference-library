@@ -61,3 +61,7 @@ The scanner adds fixed-size file identity metadata and one indexed-by-scope reco
 ## Conclusion
 
 The implementation prefers recoverable false negatives over corrupting false positives, keeps platform evidence outside shared document meaning, and introduces no new privileged seam. No standards repair is required before exact-head CI and receipt closure.
+
+## Exact-source CI follow-up
+
+GitHub Actions run `33040429601` passed repository, Rust, workspace/Linux source, Linux package and Apple-Silicon package jobs at review/receipt source `39c1a20f9ee1ef04af1774b69368dbe0d0ee8362`. Source-bound receipts and archive checks passed. **Finding:** no new Critical or High defect; compatible packaging is proved, target installation is not.

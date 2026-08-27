@@ -106,3 +106,10 @@ Do not rewrite or delete entries. Corrections append a superseding entry.
 **Change:** no implementation change; ran the complete repository/Rust/Node/semantic/audit/provenance matrix, assembled all Linux package formats, and performed Spec and Standards reviews against source tree `e6bfa93a528804e2498153f01bfedc2ff2f88f55`.
 **Fresh measurement:** 12 Rust, 6 workspace, 8 Linux and 2 receipt tests passed; semantic diff remained zero; npm full and production audits found zero vulnerabilities; the deterministic 473-package inventory was unchanged; compatible pacman/AppImage/tar artifacts assembled and their executable/core/ASAR paths verified. The first pacman attempt exposed an absent `bsdtar` command and was rerun successfully with the previously verified compatible binary. Reviews found no Critical or High source defect and no T02 contract deviation.
 **Decision:** keep the implementation unchanged. Mark it source-complete pending exact-head CI; retain M1, L1, X1 and C1 as open target evidence.
+
+## 2026-08-27 — T02 exact-source CI and artifacts
+
+**Hypothesis:** the locally reviewed T02 tree compiles and packages unchanged on the declared Ubuntu x86_64 and Apple-Silicon CI environments.
+**Change:** no source change; synchronized the four causal commits and ran CI at review/receipt source `39c1a20f9ee1ef04af1774b69368dbe0d0ee8362`.
+**Fresh measurement:** GitHub Actions run `33040429601` passed all five jobs. Linux artifact `9633709504` and macOS artifact `9633656547` are bound to the exact source and retained through 26 September 2026; their workflow-container digests are recorded in the T02 receipt.
+**Decision:** mark T02 source-ready and packaged in compatible environments. Do not claim M1, L1, X1 or C1, and do not merge, release or deploy.

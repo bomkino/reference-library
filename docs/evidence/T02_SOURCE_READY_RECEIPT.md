@@ -8,6 +8,7 @@ T02 base / verified T01 head: 858202c2bbf5f3427703ccf42414a1629d0f8a59
 Branch: codex/reference-library-t02-rename-reconciliation
 Reviewed implementation head: 3a55385afd21b32f2e7bb80a8b83661348e8d6b5
 Reviewed tree: e6bfa93a528804e2498153f01bfedc2ff2f88f55
+Spec/Standards review and CI source: 39c1a20f9ee1ef04af1774b69368dbe0d0ee8362
 Original repository main: 622237237e4492292df91b8912f9109cb3a0bf1e
 Local environment: Linux 6.18.35 x86_64
 Recorded: 27 August 2026 UTC
@@ -15,7 +16,7 @@ Recorded: 27 August 2026 UTC
 
 ## Result
 
-T02 is source-complete and locally verified. Exact-head CI is the final source-ready gate for this receipt. The bounded capability is external rename reconciliation: one unambiguous same-filesystem still rename preserves Source, SourceRevision, Location, AssetOrigin and Asset identity; insufficient evidence remains an explicit Missing Asset plus a distinct observation.
+T02 is **source-ready**. The bounded capability is external rename reconciliation: one unambiguous same-filesystem still rename preserves Source, SourceRevision, Location, AssetOrigin and Asset identity; insufficient evidence remains an explicit Missing Asset plus a distinct observation. Local public seams and exact source-bound CI passed.
 
 This is not target integration. M1, L1, X1 and C1 remain open. No merge, release, deployment, force-push or repository-settings change occurred.
 
@@ -26,6 +27,7 @@ This is not target integration. M1, L1, X1 and C1 remain open. No merge, release
 | `78edfc6` | Bind T02 contract and Design It Twice record from exact T01 head | Repository boundary and diff checks passed |
 | `0ca5648` | Implement strict core rename reconciliation and original-path reactivation | 12 Rust tests, format and Clippy passed |
 | `3a55385` | Preserve selection/Preview summaries and advertise capability without new authority | TypeScript, 6 workspace tests, 8 Linux tests and builds passed |
+| `39c1a20` | Perform Spec/Standards reviews and record full local evidence | Five-job exact-source CI passed |
 
 ## Files and architecture
 
@@ -92,6 +94,23 @@ Local compatible-package SHA-256 values at the reviewed tree:
 
 These are local compatible-environment measurements, not releases or Garuda installation evidence.
 
+## Exact source-bound CI and retained artifacts
+
+GitHub Actions run [`33040429601`](https://github.com/bomkino/reference-library/actions/runs/33040429601) passed all five jobs at review/receipt source `39c1a20f9ee1ef04af1774b69368dbe0d0ee8362`:
+
+- repository boundary;
+- Rust format, Clippy, 12 tests and zero-diff semantic round-trip;
+- TypeScript, receipt/workspace/Linux tests, production builds, dependency audit and licence inventory;
+- complete Linux pacman/AppImage/tar assembly, archive checks and exact-source receipt;
+- Apple-Silicon Swift tests, shared workspace build, `aarch64-apple-darwin` Rust core, ad-hoc codesign, `.app.zip` checksum and exact-source receipt.
+
+| CI artifact | ID | Size | Workflow-container digest | Expires |
+|---|---:|---:|---|---|
+| `reference-library-linux-x86_64-39c1a20f9ee1ef04af1774b69368dbe0d0ee8362` | `9633709504` | 338,687,387 bytes | `sha256:a7eae930fbf465d3cabccaa2a23f828dad1936a738cce7f2a8c96dabb4cded8b` | 26 September 2026 |
+| `reference-library-macos-arm64-39c1a20f9ee1ef04af1774b69368dbe0d0ee8362` | `9633656547` | 1,797,597 bytes | `sha256:ac1c477a56baf89c03081de9782302445621be3a4e5c81b947be86578062b21d` | 26 September 2026 |
+
+These are expiring CI artifacts, not installations, releases or target-integration evidence.
+
 ## Spec and Standards reviews
 
 - `T02_SPEC_REVIEW.md`: every bounded T02 requirement is satisfied at the available seam; conservative false negatives and the upgrade backfill requirement are explicit.
@@ -101,10 +120,10 @@ These are local compatible-environment measurements, not releases or Garuda inst
 
 | Area | Status | Remaining proof |
 |---|---|---|
-| T02 core reconciliation | Source-complete; local public seams pass | Exact-head Linux/macOS CI |
-| Shared editorial workspace | Source-complete; local source tests/build pass | Exact-head CI; M1/L1 UI behavior |
-| Electron/Linux bundle | Packaged in compatible Linux x86_64 environment | Exact-head CI artifact; L1 Garuda integration |
-| Swift/macOS bundle | Source unchanged by T02 except shared workspace/core | Exact-head Apple-Silicon CI package; M1 integration |
+| T02 core reconciliation | Source-ready; local and CI public seams pass | M1/L1 filesystem behavior |
+| Shared editorial workspace | Source-ready | M1/L1 assistive-tech and compositor behavior |
+| Electron/Linux bundle | Packaged in compatible Linux x86_64 environments; retained CI artifact | L1 Garuda integration |
+| Swift/macOS bundle | Compiled and packaged on Apple-Silicon CI; retained artifact | M1 target integration |
 | Shared document meaning | Host-neutral semantic diff 0 | X1 installed Mac–Garuda–Mac journey |
 
 ## Remaining gates

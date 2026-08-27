@@ -39,3 +39,7 @@ No app-initiated move/copy/Trash, source-operation journal execution, merge cont
 ## Conclusion
 
 T02 makes one conservative identity decision at the existing scan seam. Ambiguity remains visible instead of silently joining curation. No repair is required before exact-head CI and receipt closure.
+
+## Exact-source CI follow-up
+
+GitHub Actions run `33040429601` passed all five jobs at review/receipt source `39c1a20f9ee1ef04af1774b69368dbe0d0ee8362`, including the three Unix T02 fixtures on Ubuntu, Apple-Silicon Swift/package compilation, full Linux packages and source-bound receipts. **Finding:** T02 is source-ready. M1, L1, X1 and C1 remain open and no target-integration claim is added.
