@@ -4,7 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { authorizedResourceResponse, resourceStreamLimits } from "../src/resource-response.mjs";
+import {
+  activeResourceHandleCount,
+  authorizedResourceResponse,
+  resourceStreamLimits,
+} from "../src/resource-response.mjs";
 
 test("opaque resources stream the verified handle in bounded chunks", async () => {
   await withTemporary("bounded", async (directory) => {
@@ -13,6 +17,7 @@ test("opaque resources stream the verified handle in bounded chunks", async () =
     await writeFile(file, bytes);
     let closes = 0;
     const response = await authorizedResourceResponse(descriptor(file, bytes.length), {
+      cacheRoot: directory,
       onHandleClosed: () => { closes += 1; },
     });
     const chunks = await readChunks(response);
@@ -27,7 +32,7 @@ test("descriptor length changes fail closed without a native path in the error",
     const file = path.join(directory, "still.png");
     await writeFile(file, Buffer.alloc(32));
     await assert.rejects(
-      authorizedResourceResponse(descriptor(file, 31)),
+      authorizedResourceResponse(descriptor(file, 31), { cacheRoot: directory }),
       (error) => error.code === "ResourceChanged" && !error.message.includes(directory),
     );
   });
@@ -39,7 +44,10 @@ test("pre-open symbolic links are rejected", async () => {
     const link = path.join(directory, "link.png");
     await writeFile(target, Buffer.alloc(8, 1));
     await symlink(target, link);
-    await assert.rejects(authorizedResourceResponse(descriptor(link, 8)), { code: "ResourceOpenDenied" });
+    await assert.rejects(
+      authorizedResourceResponse(descriptor(link, 8), { cacheRoot: directory }),
+      { code: "ResourceOpenDenied" },
+    );
   });
 });
 
@@ -51,6 +59,7 @@ test("a same-size path replacement after fstat never changes delivered bytes", a
     await writeFile(candidate, Buffer.from("original"));
     await writeFile(replacement, Buffer.from("replaced"));
     const response = await authorizedResourceResponse(descriptor(candidate, 8), {
+      cacheRoot: directory,
       onHandleValidated: async () => {
         await rename(candidate, retained);
         await rename(replacement, candidate);
@@ -68,6 +77,7 @@ test("a symlink path swap after validation never redirects the verified handle",
     await writeFile(candidate, Buffer.from("trusted!"));
     await writeFile(other, Buffer.from("hostile!"));
     const response = await authorizedResourceResponse(descriptor(candidate, 8), {
+      cacheRoot: directory,
       onHandleValidated: async () => {
         await rename(candidate, retained);
         await symlink(other, candidate);
@@ -85,6 +95,7 @@ test("abort before reading closes the verified descriptor", async () => {
     let closes = 0;
     await assert.rejects(
       authorizedResourceResponse(descriptor(file, 32), {
+        cacheRoot: directory,
         signal: controller.signal,
         onHandleValidated: () => controller.abort(),
         onHandleClosed: () => { closes += 1; },
@@ -103,6 +114,7 @@ test("mid-stream abort closes the descriptor and does not finish", async () => {
     const controller = new AbortController();
     let closes = 0;
     const response = await authorizedResourceResponse(descriptor(file, bytes.length), {
+      cacheRoot: directory,
       signal: controller.signal,
       onHandleClosed: () => { closes += 1; },
     });
@@ -112,6 +124,37 @@ test("mid-stream abort closes the descriptor and does not finish", async () => {
     controller.abort();
     await assert.rejects(reader.read(), { name: "AbortError" });
     await waitFor(() => closes === 1);
+  });
+});
+
+test("resource paths outside the private Core cache fail before open", async () => {
+  await withTemporary("confinement", async (directory) => {
+    const cache = path.join(directory, "cache");
+    const outside = path.join(directory, "outside.png");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(cache));
+    await writeFile(outside, Buffer.alloc(8));
+    await assert.rejects(
+      authorizedResourceResponse(descriptor(outside, 8), { cacheRoot: cache }),
+      (error) => error.code === "ResourceCacheUnsafe" && !error.message.includes(directory),
+    );
+  });
+});
+
+test("concurrent verified handles are bounded and every reservation is released", async () => {
+  await withTemporary("handle-cap", async (directory) => {
+    const file = path.join(directory, "still.png");
+    await writeFile(file, Buffer.alloc(8));
+    const responses = await Promise.all(Array.from(
+      { length: resourceStreamLimits.maximumOpenResourceHandles },
+      () => authorizedResourceResponse(descriptor(file, 8), { cacheRoot: directory }),
+    ));
+    assert.equal(activeResourceHandleCount(), resourceStreamLimits.maximumOpenResourceHandles);
+    await assert.rejects(
+      authorizedResourceResponse(descriptor(file, 8), { cacheRoot: directory }),
+      { code: "ResourceHandleCapacityExceeded" },
+    );
+    await Promise.all(responses.map((response) => response.body.cancel()));
+    assert.equal(activeResourceHandleCount(), 0);
   });
 });
 
