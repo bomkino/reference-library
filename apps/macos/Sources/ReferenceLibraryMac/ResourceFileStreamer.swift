@@ -1,9 +1,38 @@
 import Darwin
 import Foundation
 
+actor ResourceStreamCapacity {
+    static let shared = ResourceStreamCapacity(limit: ResourceFileStreamer.maximumConcurrentStreams)
+
+    private let limit: Int
+    private var active = 0
+
+    init(limit: Int) {
+        precondition(limit > 0)
+        self.limit = limit
+    }
+
+    func acquire() -> Bool {
+        guard active < limit else { return false }
+        active += 1
+        return true
+    }
+
+    func release() {
+        precondition(active > 0)
+        active -= 1
+    }
+
+    func activeCount() -> Int { active }
+}
+
 enum ResourceFileStreamer {
-    static let maximumBytes = 512 * 1_024 * 1_024
+    static let maximumPreviewBytes = 512 * 1_024 * 1_024
+    static let maximumGridBytes = 8 * 1_024 * 1_024
     static let chunkBytes = 64 * 1_024
+    static let maximumConcurrentStreams = 16
+    static let maximumNativeInFlightBytes = maximumConcurrentStreams * chunkBytes
+    static let defaultPacingNanoseconds: UInt64 = 1_000_000
 
     enum Failure: LocalizedError {
         case denied, changed, readFailed
@@ -13,12 +42,58 @@ enum ResourceFileStreamer {
     static func stream(
         path: String,
         expectedSize: Int,
+        byteLimit: Int = maximumPreviewBytes,
         cacheRoot: URL = privateCacheRoot(),
+        capacity: ResourceStreamCapacity = .shared,
+        pacingNanoseconds: UInt64 = defaultPacingNanoseconds,
         afterValidation: (@Sendable () async throws -> Void)? = nil,
         onClose: (@Sendable () -> Void)? = nil,
+        onInFlightBytesChanged: (@Sendable (Int) -> Void)? = nil,
         consume: @escaping @Sendable (Data) async throws -> Void
     ) async throws {
-        guard expectedSize >= 0, expectedSize <= maximumBytes else { throw Failure.denied }
+        guard byteLimit > 0,
+              byteLimit <= maximumPreviewBytes,
+              expectedSize >= 0,
+              expectedSize <= byteLimit else { throw Failure.denied }
+        try Task.checkCancellation()
+        guard await capacity.acquire() else { throw Failure.denied }
+        do {
+            try Task.checkCancellation()
+            try await streamWithCapacity(
+                path: path,
+                expectedSize: expectedSize,
+                cacheRoot: cacheRoot,
+                pacingNanoseconds: pacingNanoseconds,
+                afterValidation: afterValidation,
+                onClose: onClose,
+                onInFlightBytesChanged: onInFlightBytesChanged,
+                consume: consume
+            )
+            await capacity.release()
+        } catch {
+            await capacity.release()
+            throw error
+        }
+    }
+
+    static func maximumBytes(for profile: String) -> Int? {
+        switch profile {
+        case "grid_standard": maximumGridBytes
+        case "preview": maximumPreviewBytes
+        default: nil
+        }
+    }
+
+    private static func streamWithCapacity(
+        path: String,
+        expectedSize: Int,
+        cacheRoot: URL,
+        pacingNanoseconds: UInt64,
+        afterValidation: (@Sendable () async throws -> Void)?,
+        onClose: (@Sendable () -> Void)?,
+        onInFlightBytesChanged: (@Sendable (Int) -> Void)?,
+        consume: @escaping @Sendable (Data) async throws -> Void
+    ) async throws {
         let descriptor = try openVerifiedDescriptor(
             path: path,
             expectedSize: expectedSize,
@@ -32,15 +107,42 @@ enum ResourceFileStreamer {
         while position < expectedSize {
             try Task.checkCancellation()
             let count = min(chunkBytes, expectedSize - position)
-            var bytes = [UInt8](repeating: 0, count: count)
-            let readCount = bytes.withUnsafeMutableBytes { pointer in
-                pread(descriptor, pointer.baseAddress, count, off_t(position))
+            onInFlightBytesChanged?(count)
+            do {
+                try await readAndConsume(
+                    descriptor: descriptor,
+                    position: position,
+                    count: count,
+                    consume: consume
+                )
+            } catch {
+                onInFlightBytesChanged?(0)
+                throw error
             }
-            guard readCount == count else { throw Failure.changed }
+            onInFlightBytesChanged?(0)
             position += count
-            try await consume(Data(bytes))
+            if position < expectedSize {
+                await Task.yield()
+                if pacingNanoseconds > 0 {
+                    try await Task.sleep(nanoseconds: pacingNanoseconds)
+                }
+            }
         }
         try Task.checkCancellation()
+    }
+
+    private static func readAndConsume(
+        descriptor: Int32,
+        position: Int,
+        count: Int,
+        consume: @escaping @Sendable (Data) async throws -> Void
+    ) async throws {
+        var chunk = Data(count: count)
+        let readCount = chunk.withUnsafeMutableBytes { pointer in
+            pread(descriptor, pointer.baseAddress, count, off_t(position))
+        }
+        guard readCount == count else { throw Failure.changed }
+        try await consume(chunk)
     }
 
     static func privateCacheRoot() -> URL {

@@ -10,16 +10,98 @@ final class ResourceFileStreamerTests: XCTestCase {
             try bytes.write(to: file)
             let chunks = LockedBox<[Data]>([])
             let closes = LockedBox(0)
+            let inFlight = LockedBox<[Int]>([])
+            let capacity = ResourceStreamCapacity(limit: 1)
             try await ResourceFileStreamer.stream(
                 path: file.path,
                 expectedSize: bytes.count,
                 cacheRoot: directory,
-                onClose: { closes.withValue { $0 += 1 } }
+                capacity: capacity,
+                pacingNanoseconds: 0,
+                onClose: { closes.withValue { $0 += 1 } },
+                onInFlightBytesChanged: { count in inFlight.withValue { $0.append(count) } }
             ) { chunk in chunks.withValue { $0.append(chunk) } }
             let delivered = chunks.read()
+            let observedInFlight = inFlight.read()
             XCTAssertEqual(Data(delivered.joined()), bytes)
             XCTAssertTrue(delivered.allSatisfy { $0.count <= ResourceFileStreamer.chunkBytes })
+            XCTAssertEqual(observedInFlight.last, 0)
+            XCTAssertTrue(observedInFlight.enumerated().allSatisfy { index, count in
+                index.isMultiple(of: 2)
+                    ? (count > 0 && count <= ResourceFileStreamer.chunkBytes)
+                    : count == 0
+            })
             XCTAssertEqual(closes.read(), 1)
+            let activeStreams = await capacity.activeCount()
+            XCTAssertEqual(activeStreams, 0)
+        }
+    }
+
+    func testProfileLimitsMatchCoreAndRejectBeforeOpening() async throws {
+        XCTAssertEqual(ResourceFileStreamer.maximumBytes(for: "grid_standard"), 8 * 1_024 * 1_024)
+        XCTAssertEqual(ResourceFileStreamer.maximumBytes(for: "preview"), 512 * 1_024 * 1_024)
+        XCTAssertNil(ResourceFileStreamer.maximumBytes(for: "original"))
+
+        try await withTemporary { directory in
+            let file = directory.appendingPathComponent("still.png")
+            try Data(repeating: 1, count: 9).write(to: file)
+            let closed = LockedBox(0)
+            await XCTAssertThrowsErrorAsync {
+                try await ResourceFileStreamer.stream(
+                    path: file.path,
+                    expectedSize: 9,
+                    byteLimit: 8,
+                    cacheRoot: directory,
+                    onClose: { closed.withValue { $0 += 1 } }
+                ) { _ in }
+            }
+            XCTAssertEqual(closed.read(), 0)
+        }
+    }
+
+    func testConcurrentStreamCapacityIsStrictAndReusable() async {
+        let capacity = ResourceStreamCapacity(limit: 1)
+        let first = await capacity.acquire()
+        let overflow = await capacity.acquire()
+        let activeAtLimit = await capacity.activeCount()
+        XCTAssertTrue(first)
+        XCTAssertFalse(overflow)
+        XCTAssertEqual(activeAtLimit, 1)
+
+        await capacity.release()
+        let acquiredAgain = await capacity.acquire()
+        XCTAssertTrue(acquiredAgain)
+        await capacity.release()
+        let finalCount = await capacity.activeCount()
+        XCTAssertEqual(finalCount, 0)
+    }
+
+    func testConsumerFailureClearsInFlightAccountingAndReleasesCapacity() async throws {
+        try await withTemporary { directory in
+            let file = directory.appendingPathComponent("still.png")
+            try Data(repeating: 3, count: 8).write(to: file)
+            let capacity = ResourceStreamCapacity(limit: 1)
+            let inFlight = LockedBox<[Int]>([])
+            let closes = LockedBox(0)
+
+            await XCTAssertThrowsErrorAsync {
+                try await ResourceFileStreamer.stream(
+                    path: file.path,
+                    expectedSize: 8,
+                    cacheRoot: directory,
+                    capacity: capacity,
+                    pacingNanoseconds: 0,
+                    onClose: { closes.withValue { $0 += 1 } },
+                    onInFlightBytesChanged: { count in inFlight.withValue { $0.append(count) } }
+                ) { _ in
+                    throw ResourceFileStreamer.Failure.readFailed
+                }
+            }
+
+            XCTAssertEqual(inFlight.read(), [8, 0])
+            XCTAssertEqual(closes.read(), 1)
+            let activeStreams = await capacity.activeCount()
+            XCTAssertEqual(activeStreams, 0)
         }
     }
 

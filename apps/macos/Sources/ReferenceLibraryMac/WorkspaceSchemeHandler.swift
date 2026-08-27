@@ -30,6 +30,10 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
         }
         let assetID = parts[0]
         let profile = parts[1]
+        guard let byteLimit = ResourceFileStreamer.maximumBytes(for: profile) else {
+            fail(urlSchemeTask, status: 403)
+            return
+        }
         let identifier = ObjectIdentifier(urlSchemeTask as AnyObject)
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -40,7 +44,7 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
                     profile: profile
                 )
                 guard descriptor.contentLength >= 0,
-                      descriptor.contentLength <= ResourceFileStreamer.maximumBytes,
+                      descriptor.contentLength <= byteLimit,
                       ["image/png", "image/jpeg", "image/webp"].contains(descriptor.mimeType) else {
                     throw SchemeFailure.resourceTooLarge
                 }
@@ -61,12 +65,16 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
                     try await ResourceFileStreamer.stream(
                         path: descriptor.nativePath,
                         expectedSize: descriptor.contentLength,
+                        byteLimit: byteLimit,
                         afterValidation: {
                             try Task.checkCancellation()
                             await MainActor.run { taskBox.task.didReceive(response) }
                         }
                     ) { chunk in
                         try Task.checkCancellation()
+                        // WKURLSchemeTask has no demand callback. Awaiting one MainActor handoff,
+                        // yielding, and pacing each 64 KiB chunk bounds the native producer; C1
+                        // must still measure WebKit's private consumer-side buffering on target.
                         await MainActor.run { taskBox.task.didReceive(chunk) }
                     }
                 }

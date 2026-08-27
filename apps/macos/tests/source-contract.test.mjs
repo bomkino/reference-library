@@ -45,8 +45,16 @@ test("resource delivery opens once without following links and streams bounded c
   assert.match(stream, /st_uid[\s\S]*0o022[\s\S]*st_nlink == 1/);
   assert.match(stream, /pread\(descriptor/);
   assert.match(stream, /chunkBytes = 64 \* 1_024/);
+  assert.match(stream, /maximumPreviewBytes = 512 \* 1_024 \* 1_024/);
+  assert.match(stream, /maximumGridBytes = 8 \* 1_024 \* 1_024/);
+  assert.match(stream, /maximumConcurrentStreams = 16/);
+  assert.match(stream, /maximumNativeInFlightBytes = maximumConcurrentStreams \* chunkBytes/);
+  assert.match(stream, /onInFlightBytesChanged\?\(count\)[\s\S]*readAndConsume\([\s\S]*onInFlightBytesChanged\?\(0\)/);
+  assert.match(stream, /func readAndConsume\([\s\S]*await consume\(chunk\)/);
   assert.doesNotMatch(handler, /resourceValues\(forKeys: \[\.fileSizeKey/);
   assert.match(handler, /stream\.cancel\(\)/);
+  assert.match(handler, /maximumBytes\(for: profile\)/);
+  assert.match(stream, /await Task\.yield\(\)[\s\S]*Task\.sleep/);
   assert.match(handler, /ResourceFileStreamer\.stream\([\s\S]*afterValidation:[\s\S]*didReceive\(response\)/);
 });
 

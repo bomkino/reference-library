@@ -272,6 +272,9 @@ final class AppModel: ObservableObject {
             assetID: assetID,
             profile: profile
         )
+        guard let maximumBytes = ResourceFileStreamer.maximumBytes(for: profile) else {
+            throw ModelFailure.invalidArgument
+        }
         let frame: Data
         do {
             frame = try await core.authorizeResource(sessionID: sessionID, assetID: assetID, profile: profile)
@@ -289,7 +292,7 @@ final class AppModel: ObservableObject {
             sessionID: sessionID,
             assetID: assetID,
             profile: profile,
-            maximumBytes: ResourceFileStreamer.maximumBytes
+            maximumBytes: maximumBytes
         )
         guard let nativePath = dictionary["nativePathForHandler"] as? String,
               let mimeType = dictionary["mimeType"] as? String,
