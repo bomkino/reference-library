@@ -79,11 +79,11 @@ jobs:
           node scripts/linux-sandbox-refusal.mjs
           --asar-directory "$RUNNER_TEMP/reference-linux-artifacts/asar"
           > release/linux/LINUX_RENDERER_BOUNDARY.json
-      - name: Rehearse packaged application under X11 without a sandbox bypass
+      - name: Rehearse deterministic packaged journey under X11
         run: >-
           node scripts/linux-packaged-runtime-smoke.mjs
           --application "$RUNNER_TEMP/reference-linux-artifacts/pacman/opt/Reference Library/reference-library"
-          --display x11 --minimum-ms 4000
+          --display x11 --timeout-ms 15000
           > release/linux/LINUX_X11_RUNTIME.json
       - name: Rehearse packaged application under headless Wayland
         shell: bash
@@ -107,7 +107,7 @@ jobs:
             > release/linux/LINUX_WAYLAND_SESSION.json
           node scripts/linux-packaged-runtime-smoke.mjs \
             --application "$RUNNER_TEMP/reference-linux-artifacts/pacman/opt/Reference Library/reference-library" \
-            --display wayland --minimum-ms 4000 \
+            --display wayland --timeout-ms 15000 \
             > release/linux/LINUX_WAYLAND_RUNTIME.json
       - name: Reopen through the extracted packaged helper
         run: >-

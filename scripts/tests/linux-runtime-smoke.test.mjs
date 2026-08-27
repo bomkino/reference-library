@@ -4,7 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { observeSustainedProcess } from "../linux-packaged-runtime-smoke.mjs";
+import {
+  assertPackagedJourneyObservation,
+  observeSustainedProcess,
+} from "../linux-packaged-runtime-smoke.mjs";
 import { observeWaylandSession } from "../linux-wayland-observation.mjs";
 import {
   assertNavigationGuardBehavior,
@@ -29,6 +32,24 @@ test("runtime smoke distinguishes a sustained process from an early package fail
     }),
     /exited before 300ms.*code=9/s,
   );
+});
+
+test("packaged journey requires workspace, bridge, host preferences, Core, and clean close inputs", () => {
+  const observation = {
+    url: "pitchdog-ui://app/index.html",
+    readyState: "complete",
+    heading: "Your project’s visual memory.",
+    bridgeVersion: 3,
+    preferences: { interfaceScale: 1, thumbnailDensity: 220, previewZoom: 1 },
+    capabilities: [
+      { name: "common-stills", state: "required_parity", reason: null },
+      { name: "source-mutation", state: "intentionally_absent", reason: "outside V1" },
+    ],
+  };
+  assert.deepEqual(assertPackagedJourneyObservation(observation), observation);
+  assert.throws(() => assertPackagedJourneyObservation({ ...observation, bridgeVersion: 2 }));
+  assert.throws(() => assertPackagedJourneyObservation({ ...observation, capabilities: [] }));
+  assert.throws(() => assertPackagedJourneyObservation({ ...observation, url: "file:///tmp/index.html" }));
 });
 
 test("Wayland observation proves a compositor socket rather than environment labels alone", async () => {
