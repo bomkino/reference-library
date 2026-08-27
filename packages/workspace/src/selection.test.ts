@@ -49,8 +49,11 @@ function asset(
     assetId,
     locationId: `location-${assetId}`,
     displayName,
+    relativeDisplayPath: `Stills/${displayName}`,
     availability,
     mediaFamily: "still",
     reviewState: "unreviewed",
+    customTitle: null,
+    revision: 1,
   };
 }

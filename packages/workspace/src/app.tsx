@@ -1,366 +1,339 @@
-import { useEffect, useMemo, useState } from "react";
-import type {
-  AssetSummary,
-  InterfaceScale,
-  ReferenceWorkspaceBridge,
-  SessionOpened,
-  WorkspaceEvent,
+import { useCallback, useEffect, useState } from "react";
+import {
+  BRIDGE_VERSION,
+  DEFAULT_ASSET_QUERY,
+  type AssetQuery,
+  type AssetSummary,
+  type CollectionSummary,
+  type InterfaceScale,
+  type ReferenceWorkspaceBridge,
+  type SessionOpened,
+  type RootSummary,
+  type WorkspaceEvent,
+  type WorkspacePreferences,
 } from "@pitchdog/reference-bridge";
+import { AssetInspector } from "./asset-inspector";
+import { AssetPreview } from "./asset-preview";
 import { ContactSheet } from "./contact-sheet";
+import { LibrarySidebar } from "./library-sidebar";
+import { QueryToolbar } from "./query-toolbar";
 import { refreshSelectedAsset } from "./selection";
+import { assetDraftErrors, useAssetEditor } from "./use-asset-editor";
 import { useAssetPager } from "./use-asset-pager";
+import { handleDialogKey } from "./dialog-keys";
+import { safeErrorMessage } from "./safe-errors";
 
 const INTERFACE_SCALES: InterfaceScale[] = [0.8, 1, 1.25, 1.5];
 
 export function App() {
   const bridge = window.referenceLibrary;
-  if (!bridge || bridge.version !== 1) {
-    return <FatalState message="Native Reference Library bridge is unavailable." />;
+  if (!bridge || bridge.version !== BRIDGE_VERSION) {
+    return <FatalState message="Native Reference Library bridge is unavailable or incompatible." />;
   }
   return <LibraryWorkspace bridge={bridge} />;
 }
 
 function LibraryWorkspace({ bridge }: { bridge: ReferenceWorkspaceBridge }) {
   const [session, setSession] = useState<SessionOpened | null>(null);
-  const [interfaceScale, setInterfaceScale] = useState<InterfaceScale>(1);
-  const [thumbnailSize, setThumbnailSize] = useState(220);
-  const [selected, setSelected] = useState<AssetSummary | null>(null);
-  const [preview, setPreview] = useState<AssetSummary | null>(null);
-  const [rootState, setRootState] = useState("No Root authorized");
   const [eventPulse, setEventPulse] = useState(0);
   const [busy, setBusy] = useState(false);
   const [shellError, setShellError] = useState<string | null>(null);
   const [needsRestart, setNeedsRestart] = useState(false);
+  const [openIntent, setOpenIntent] = useState<{ intentId: string; displayName: string } | null>(null);
 
-  useEffect(() => {
-    document.documentElement.style.setProperty("--ui-scale", String(interfaceScale));
-  }, [interfaceScale]);
-
-  useEffect(
-    () =>
-      bridge.subscribe((event: WorkspaceEvent) => {
-        if (event.event === "root_state_changed") setRootState(event.value.state);
-        if (event.event === "assets_inserted" || event.event === "job_updated") {
-          setEventPulse((value) => value + 1);
-        }
-        if (event.event === "core_needs_restart") {
-          setShellError("Reference Core stopped. Restart it to continue writing.");
-          setNeedsRestart(true);
-        }
-      }),
-    [bridge],
-  );
+  useEffect(() => bridge.subscribe((event: WorkspaceEvent) => {
+    if (event.event === "library_opened") {
+      setSession(event.value);
+      setOpenIntent(null);
+      setNeedsRestart(false);
+      setShellError(null);
+    }
+    if (event.event === "library_open_requested") setOpenIntent(event.value);
+    if (event.event === "library_closed") setSession((current) => current?.sessionId === event.value.sessionId ? null : current);
+    if (["root_state_changed", "scan_progress_changed", "assets_inserted", "asset_updated", "collections_changed", "job_updated"].includes(event.event)) {
+      setEventPulse((value) => value + 1);
+    }
+    if (event.event === "core_needs_restart") {
+      setShellError("Reference Core stopped. Restart it to continue.");
+      setNeedsRestart(true);
+    }
+  }), [bridge]);
 
   const openSession = async (mode: "create" | "open") => {
     setBusy(true);
     setShellError(null);
     try {
-      const opened =
-        mode === "create"
-          ? await bridge.createLibrary("Project Reference Library")
-          : await bridge.openLibrary();
-      if (opened) {
-        setSession(opened);
-        setSelected(null);
-        setRootState("No Root authorized");
-      }
-    } catch (reason) {
-      setShellError(messageFrom(reason));
-    } finally {
-      setBusy(false);
-    }
+      const opened = mode === "create" ? await bridge.createLibrary("Project Reference Library") : await bridge.openLibrary();
+      if (opened) setSession(opened);
+    } catch (reason) { setShellError(messageFrom(reason)); }
+    finally { setBusy(false); }
+  };
+
+  const restart = async () => {
+    setBusy(true);
+    try {
+      const reopened = await bridge.restartCore();
+      setSession(reopened);
+      setNeedsRestart(false);
+      setShellError(null);
+    } catch (reason) { setShellError(messageFrom(reason)); }
+    finally { setBusy(false); }
+  };
+
+  const resolveCleanIntent = async (decision: "discard" | "cancel") => {
+    if (!openIntent) return;
+    setBusy(true);
+    try {
+      const opened = await bridge.completeOpenIntent(openIntent.intentId, decision);
+      setOpenIntent(null);
+      if (opened) setSession(opened);
+    } catch (reason) { setShellError(messageFrom(reason)); }
+    finally { setBusy(false); }
   };
 
   if (!session) {
     return (
       <main className="document-empty">
         <section className="document-empty__card" aria-busy={busy}>
-          <p className="eyebrow">Reference Library</p>
-          <h1>Your project’s visual memory.</h1>
-          <p>Local. Manual. One Library per project.</p>
+          <p className="eyebrow">Reference Library</p><h1>Your project’s visual memory.</h1><p>Local. Manual. One Library per project.</p>
           <div className="button-row">
-            <button disabled={busy} onClick={() => void openSession("create")}>
-              New Library
-            </button>
-            <button className="button--secondary" disabled={busy} onClick={() => void openSession("open")}>
-              Open Library
-            </button>
+            <button disabled={busy || needsRestart} onClick={() => void openSession("create")}>New Library</button>
+            <button className="button--secondary" disabled={busy || needsRestart} onClick={() => void openSession("open")}>Open Library</button>
+            {needsRestart && <button autoFocus onClick={() => void restart()}>Restart Core</button>}
           </div>
           {busy && <p role="status">Waiting for destination…</p>}
           {shellError && <p className="error-state" role="alert">{shellError}</p>}
         </section>
+        {openIntent && <SimpleIntentDialog displayName={openIntent.displayName} onOpen={() => void resolveCleanIntent("discard")} onCancel={() => void resolveCleanIntent("cancel")} />}
       </main>
     );
   }
 
   return (
     <OpenWorkspace
+      key={session.sessionId}
       bridge={bridge}
       session={session}
-      interfaceScale={interfaceScale}
-      thumbnailSize={thumbnailSize}
-      selected={selected}
-      preview={preview}
-      rootState={rootState}
       eventPulse={eventPulse}
-      shellError={shellError}
+      openIntent={openIntent}
       needsRestart={needsRestart}
-      busy={busy}
-      setInterfaceScale={setInterfaceScale}
-      setThumbnailSize={setThumbnailSize}
-      setSelected={setSelected}
-      setPreview={setPreview}
-      setRootState={setRootState}
+      shellError={shellError}
       setShellError={setShellError}
-      onClose={async () => {
-        setBusy(true);
-        setShellError(null);
-        try {
-          await bridge.closeLibrary(session.sessionId);
-          setSession(null);
-          setSelected(null);
-          setPreview(null);
-          setRootState("No Root authorized");
-          setNeedsRestart(false);
-        } catch (reason) {
-          setShellError(messageFrom(reason));
-        } finally {
-          setBusy(false);
-        }
-      }}
-      onRestart={async () => {
-        setBusy(true);
-        try {
-          const reopened = await bridge.restartCore();
-          setSession(reopened);
-          setSelected(null);
-          setNeedsRestart(false);
-          setShellError(null);
-        } catch (reason) {
-          setShellError(messageFrom(reason));
-        } finally {
-          setBusy(false);
-        }
-      }}
+      onSession={setSession}
+      onRestarted={() => setNeedsRestart(false)}
+      onIntentComplete={() => setOpenIntent(null)}
     />
   );
 }
 
-interface OpenWorkspaceProps {
-  bridge: ReferenceWorkspaceBridge;
-  session: SessionOpened;
-  interfaceScale: InterfaceScale;
-  thumbnailSize: number;
-  selected: AssetSummary | null;
-  preview: AssetSummary | null;
-  rootState: string;
-  eventPulse: number;
-  shellError: string | null;
-  needsRestart: boolean;
-  busy: boolean;
-  setInterfaceScale(value: InterfaceScale): void;
-  setThumbnailSize(value: number): void;
-  setSelected(value: AssetSummary | null): void;
-  setPreview(value: AssetSummary | null): void;
-  setRootState(value: string): void;
-  setShellError(value: string | null): void;
-  onClose(): Promise<void>;
-  onRestart(): Promise<void>;
+interface PendingTransition {
+  label: string;
+  dirty: boolean;
+  proceed(choice: "save" | "discard"): Promise<void> | void;
+  cancel?(): Promise<void> | void;
+  focus: HTMLElement | null;
 }
 
-function OpenWorkspace(props: OpenWorkspaceProps) {
-  const pager = useAssetPager(props.bridge, props.session.sessionId, props.eventPulse);
-  const countLabel = useMemo(
-    () => `${pager.total.toLocaleString()} ${pager.total === 1 ? "Asset" : "Assets"}`,
-    [pager.total],
-  );
+function OpenWorkspace(props: {
+  bridge: ReferenceWorkspaceBridge;
+  session: SessionOpened;
+  eventPulse: number;
+  openIntent: { intentId: string; displayName: string } | null;
+  needsRestart: boolean;
+  shellError: string | null;
+  setShellError(value: string | null): void;
+  onSession(value: SessionOpened | null): void;
+  onRestarted(): void;
+  onIntentComplete(): void;
+}) {
+  const [interfaceScale, setInterfaceScale] = useState<InterfaceScale>(1);
+  const [thumbnailSize, setThumbnailSize] = useState(220);
+  const [previewZoom, setPreviewZoom] = useState(1);
+  const [query, setQuery] = useState<AssetQuery>({ ...DEFAULT_ASSET_QUERY });
+  const [selected, setSelected] = useState<AssetSummary | null>(null);
+  const [preview, setPreview] = useState<AssetSummary | null>(null);
+  const [collections, setCollections] = useState<CollectionSummary[]>([]);
+  const [roots, setRoots] = useState<RootSummary[]>([]);
+  const [pending, setPending] = useState<PendingTransition | null>(null);
+  const [busy, setBusy] = useState(false);
+  const pager = useAssetPager(props.bridge, props.session.sessionId, query, props.eventPulse);
+  const refreshSummary = pager.refreshSummary;
+  const editor = useAssetEditor(props.bridge, props.session.sessionId, selected, props.eventPulse, useCallback((detail) => {
+    refreshSummary(detail);
+    setSelected((current) => current?.assetId === detail.assetId ? {
+      ...current,
+      displayName: detail.customTitle ?? detail.originalDisplayName,
+      relativeDisplayPath: detail.relativeDisplayPath,
+      availability: detail.availability,
+      reviewState: detail.reviewState,
+      customTitle: detail.customTitle,
+      revision: detail.revision,
+    } : current);
+  }, [refreshSummary]));
 
   useEffect(() => {
-    const refreshedSelection = refreshSelectedAsset(props.selected, pager.items.values());
-    if (refreshedSelection !== props.selected) props.setSelected(refreshedSelection);
-    const refreshedPreview = refreshSelectedAsset(props.preview, pager.items.values());
-    if (refreshedPreview !== props.preview) props.setPreview(refreshedPreview);
-  }, [pager.items, props.preview, props.selected, props.setPreview, props.setSelected]);
+    let active = true;
+    void props.bridge.readPreferences().then((preferences) => {
+      if (!active) return;
+      setInterfaceScale(preferences.interfaceScale);
+      setThumbnailSize(preferences.thumbnailDensity);
+      setPreviewZoom(preferences.previewZoom);
+    }).catch((reason) => props.setShellError(messageFrom(reason)));
+    return () => { active = false; };
+  }, [props.bridge]);
 
-  const chooseRoot = async () => {
-    props.setShellError(null);
-    try {
-      const root = await props.bridge.chooseRoot(props.session.sessionId);
-      if (root) props.setRootState("scanning");
-    } catch (reason) {
-      props.setShellError(messageFrom(reason));
-    }
+  const writePreferences = (patch: Partial<WorkspacePreferences>) => {
+    void props.bridge.writePreferences(patch).catch((reason) => props.setShellError(messageFrom(reason)));
   };
+
+  useEffect(() => document.documentElement.style.setProperty("--ui-scale", String(interfaceScale)), [interfaceScale]);
+  useEffect(() => {
+    const refreshed = refreshSelectedAsset(selected, pager.items.values());
+    if (refreshed !== selected) setSelected(refreshed);
+    const refreshedPreview = refreshSelectedAsset(preview, pager.items.values());
+    if (refreshedPreview !== preview) setPreview(refreshedPreview);
+  }, [pager.items, preview, selected]);
+
+  const requestTransition = useCallback((label: string, proceed: PendingTransition["proceed"], cancel?: PendingTransition["cancel"]) => {
+    const focus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!editor.dirty) {
+      void Promise.resolve(proceed("discard"));
+      return;
+    }
+    setPending({ label, dirty: true, proceed, cancel, focus });
+  }, [editor.dirty]);
+
+  const resolveTransition = async (choice: "save" | "discard" | "cancel") => {
+    const transition = pending;
+    if (!transition) return;
+    if (choice === "cancel") {
+      setPending(null);
+      await transition.cancel?.();
+      requestAnimationFrame(() => transition.focus?.isConnected && transition.focus.focus());
+      return;
+    }
+    if (choice === "save" && !(await editor.save())) return;
+    if (choice === "discard") editor.discard();
+    setPending(null);
+    await transition.proceed(choice);
+  };
+
+  useEffect(() => {
+    if (!props.openIntent || pending) return;
+    const intent = props.openIntent;
+    const proceed = async (choice: "save" | "discard") => {
+      setBusy(true);
+      props.onIntentComplete();
+      try {
+        const opened = await props.bridge.completeOpenIntent(intent.intentId, choice);
+        if (opened) props.onSession(opened);
+      } catch (reason) { props.setShellError(messageFrom(reason)); }
+      finally { setBusy(false); }
+    };
+    const cancel = async () => {
+      props.onIntentComplete();
+      try { await props.bridge.completeOpenIntent(intent.intentId, "cancel"); }
+      catch (reason) { props.setShellError(messageFrom(reason)); }
+    };
+    if (editor.dirty) requestTransition(`Open “${intent.displayName}”`, proceed, cancel);
+    else setPending({ label: `Open “${intent.displayName}”`, dirty: false, proceed, cancel, focus: document.activeElement instanceof HTMLElement ? document.activeElement : null });
+  }, [props.openIntent, pending, requestTransition]);
+
+  const applyQuery = (next: AssetQuery) => requestTransition("Change the Asset view", () => { setQuery(next); setPreview(null); });
+  const chooseAsset = (asset: AssetSummary) => {
+    if (asset.assetId === selected?.assetId) return;
+    requestTransition(`Select ${asset.displayName}`, () => {
+      setSelected(asset);
+      requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-asset-id="${asset.assetId}"]`)?.focus({ preventScroll: true }));
+    });
+  };
+  const closeLibrary = () => requestTransition("Close this Library", async () => {
+    setBusy(true);
+    try { await props.bridge.closeLibrary(props.session.sessionId); props.onSession(null); }
+    catch (reason) { props.setShellError(messageFrom(reason)); }
+    finally { setBusy(false); }
+  });
+  const restartCore = () => requestTransition("Restart Reference Core", async () => {
+    setBusy(true);
+    try { const opened = await props.bridge.restartCore(); props.onSession(opened); props.onRestarted(); props.setShellError(null); }
+    catch (reason) { props.setShellError(messageFrom(reason)); }
+    finally { setBusy(false); }
+  });
 
   return (
     <main className="workspace-shell">
       <header className="topbar">
-        <div>
-          <p className="eyebrow">Editorial Contact Sheet</p>
-          <h1>{props.session.name}</h1>
-        </div>
+        <div><p className="eyebrow">Editorial Contact Sheet</p><h1>{props.session.name}</h1></div>
         <div className="topbar__controls">
-          <label>
-            Interface
-            <select
-              value={props.interfaceScale}
-              onChange={(event) =>
-                props.setInterfaceScale(Number(event.target.value) as InterfaceScale)
-              }
-            >
-              {INTERFACE_SCALES.map((scale) => (
-                <option key={scale} value={scale}>{Math.round(scale * 100)}%</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Thumbnail density
-            <input
-              aria-label="Thumbnail density"
-              max="340"
-              min="140"
-              step="20"
-              type="range"
-              value={props.thumbnailSize}
-              onChange={(event) => props.setThumbnailSize(Number(event.target.value))}
-            />
-          </label>
-          <button disabled={props.busy || props.needsRestart} onClick={() => void chooseRoot()}>
-            Add Root
-          </button>
-          <button
-            className="button--secondary"
-            disabled={props.busy}
-            onClick={() => void props.onClose()}
-          >
-            Close Library
-          </button>
+          <label>Interface<select value={interfaceScale} onChange={(event) => { const value = Number(event.target.value) as InterfaceScale; setInterfaceScale(value); writePreferences({ interfaceScale: value }); }}>{INTERFACE_SCALES.map((scale) => <option key={scale} value={scale}>{Math.round(scale * 100)}%</option>)}</select></label>
+          <label>Thumbnail density<input aria-label="Thumbnail density" max="340" min="140" step="20" type="range" value={thumbnailSize} onChange={(event) => { const value = Number(event.target.value); setThumbnailSize(value); writePreferences({ thumbnailDensity: value }); }} /></label>
+          <button className="button--secondary" disabled={busy} onClick={closeLibrary}>Close Library</button>
         </div>
+        <QueryToolbar query={query} roots={roots} disabled={busy || props.needsRestart} onChange={applyQuery} />
       </header>
-      <aside className="sidebar" aria-label="Library sources">
-        <div>
-          <p className="eyebrow">Library</p>
-          <p className="sidebar__count">{countLabel}</p>
-        </div>
-        <div className="source-status">
-          <span aria-hidden className={`status-dot status-dot--${props.rootState}`} />
-          <div>
-            <strong>Source Root</strong>
-            <span>{props.rootState}</span>
-          </div>
-        </div>
-      </aside>
+      <LibrarySidebar
+        bridge={props.bridge}
+        sessionId={props.session.sessionId}
+        total={pager.total}
+        selectedCollectionId={query.collectionId}
+        revisionPulse={props.eventPulse}
+        disabled={busy || props.needsRestart}
+        onCollectionChange={(collectionId) => applyQuery({ ...query, collectionId })}
+        onDeleteActiveCollection={(label, action) => requestTransition(label, async () => {
+          await action();
+          setQuery((current) => ({ ...current, collectionId: null }));
+          setPreview(null);
+        })}
+        onError={props.setShellError}
+        onCollectionInventory={setCollections}
+        onRootInventory={setRoots}
+      />
       <section className="workspace-main" aria-label="Assets">
-        {props.shellError && (
-          <div className="error-banner" role="alert">
-            <span>{props.shellError}</span>
-            {props.needsRestart && (
-              <button onClick={() => void props.onRestart()}>Restart Core</button>
-            )}
-          </div>
-        )}
-        {pager.error ? (
-          <WorkspaceState title="Library query failed" detail={pager.error} action="Retry" onAction={pager.refresh} />
-        ) : pager.loading && pager.total === 0 ? (
-          <WorkspaceState title="Opening contact sheet" detail="Reading the first bounded Asset window…" />
-        ) : pager.total === 0 ? (
-          <WorkspaceState
-            title="No stills yet"
-            detail="Add one Root containing JPEG, PNG or WebP images. Assets will appear progressively."
-            action="Add Root"
-            onAction={() => void chooseRoot()}
-          />
-        ) : (
-          <ContactSheet
-            bridge={props.bridge}
-            sessionId={props.session.sessionId}
-            total={pager.total}
-            items={pager.items}
-            thumbnailSize={props.thumbnailSize}
-            selectedAssetId={props.selected?.assetId ?? null}
-            ensureWindow={pager.ensureWindow}
-            onSelect={props.setSelected}
-            onPreview={props.setPreview}
-          />
-        )}
+        {props.shellError && <div className="error-banner" role="alert"><span>{props.shellError}</span>{props.needsRestart && <button onClick={restartCore}>Restart Core</button>}</div>}
+        {pager.error ? <WorkspaceState title="Library query failed" detail={pager.error} action="Retry" onAction={pager.refresh} />
+          : pager.loading && pager.total === 0 ? <WorkspaceState title="Opening contact sheet" detail="Reading the first bounded Asset window…" />
+          : pager.total === 0 ? <WorkspaceState
+              title={query.search || query.rootId || query.collectionId || query.reviewStates.length || query.availability.length ? "No Assets match this view" : "This Library has no Assets yet"}
+              detail={query.search || query.rootId || query.collectionId || query.reviewStates.length || query.availability.length ? "Clear or change the current filters, or rescan an authorized Root." : "Add one Root containing supported images. Assets appear progressively."}
+            />
+          : <ContactSheet bridge={props.bridge} sessionId={props.session.sessionId} total={pager.total} items={pager.items} thumbnailSize={thumbnailSize} selectedAssetId={selected?.assetId ?? null} ensureWindow={pager.ensureWindow} onSelect={chooseAsset} onPreview={setPreview} />}
       </section>
-      <aside className="inspector" aria-label="Inspector">
-        <h2>Summary</h2>
-        {props.selected ? (
-          <>
-            <p className="inspector__name">{props.selected.displayName}</p>
-            <dl>
-              <dt>Review</dt><dd>{props.selected.reviewState}</dd>
-              <dt>Availability</dt><dd>{props.selected.availability}</dd>
-              <dt>Media</dt><dd>{props.selected.mediaFamily}</dd>
-            </dl>
-            <button
-              className="button--secondary"
-              onClick={() => void props.bridge.revealLocation(
-                props.session.sessionId,
-                props.selected!.locationId,
-              ).catch((reason) => props.setShellError(messageFrom(reason)))}
-            >
-              Reveal Source
-            </button>
-          </>
-        ) : (
-          <p className="muted">Select an Asset. Inspector geometry stays put.</p>
-        )}
-      </aside>
-      <div className="selection-announcer" aria-live="polite">
-        {props.selected ? `Selected ${props.selected.displayName}` : "No Asset selected"}
-      </div>
-      {props.preview && (
-        <AssetPreview
-          asset={props.preview}
-          source={props.bridge.assetResourceUrl({
-            sessionId: props.session.sessionId,
-            assetId: props.preview.assetId,
-            profile: "preview",
-          })}
-          onClose={() => props.setPreview(null)}
-        />
-      )}
+      <AssetInspector
+        bridge={props.bridge}
+        sessionId={props.session.sessionId}
+        detail={editor.detail}
+        draft={editor.draft}
+        collections={collections}
+        loading={editor.loading}
+        saving={editor.saving}
+        dirty={editor.dirty}
+        error={editor.error}
+        onDraft={editor.setDraft}
+        onSave={editor.save}
+        onDiscard={editor.discard}
+        onReload={editor.reload}
+        onError={props.setShellError}
+      />
+      <div className="selection-announcer" aria-live="polite">{selected ? `Selected ${selected.displayName}` : "No Asset selected"}</div>
+      {preview && <AssetPreview asset={preview} source={props.bridge.assetResourceUrl({ sessionId: props.session.sessionId, assetId: preview.assetId, profile: "preview" })} initialZoom={previewZoom} onZoomChange={(value) => { setPreviewZoom(value); writePreferences({ previewZoom: value }); }} onClose={() => { const assetId = preview.assetId; setPreview(null); requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-asset-id="${assetId}"]`)?.focus()); }} />}
+      {pending && <TransitionDialog label={pending.label} dirty={pending.dirty} canSave={assetDraftErrors(editor.draft).length === 0} onChoice={(choice) => void resolveTransition(choice)} />}
     </main>
   );
 }
 
-function AssetPreview(props: { asset: AssetSummary; source: string; onClose(): void }) {
-  const [failed, setFailed] = useState(false);
-  const unavailable = props.asset.availability !== "present";
-  return (
-    <div className="preview" role="dialog" aria-modal="true" aria-label={`Preview ${props.asset.displayName}`}>
-      <button className="preview__close" autoFocus onClick={props.onClose}>Close Preview</button>
-      {failed || unavailable ? (
-        <div className="preview__error" role="alert">
-          <strong>Preview unavailable</strong>
-          <span>
-            {unavailable
-              ? `The source is ${props.asset.availability}. Its curation remains catalogued.`
-              : "The original remains catalogued. Its source was not changed."}
-          </span>
-        </div>
-      ) : (
-        <img alt={props.asset.displayName} src={props.source} onError={() => setFailed(true)} />
-      )}
-    </div>
-  );
+function TransitionDialog(props: { label: string; dirty: boolean; canSave: boolean; onChoice(choice: "save" | "discard" | "cancel"): void }) {
+  return <div className="confirmation" role="alertdialog" aria-modal="true" aria-labelledby="transition-title" onKeyDown={(event) => handleDialogKey(event, () => props.onChoice("cancel"))}>
+    <h2 id="transition-title">{props.dirty ? "Save Asset edits?" : props.label}</h2><p>{props.dirty ? `${props.label} would leave the current draft.` : "Reference Library received this native open request."}</p>
+    <div className="button-row">{props.dirty && <button disabled={!props.canSave} onClick={() => props.onChoice("save")}>Save and Continue</button>}<button className={props.dirty ? "button--secondary" : undefined} onClick={() => props.onChoice("discard")}>{props.dirty ? "Discard and Continue" : "Open"}</button><button autoFocus className="button--secondary" onClick={() => props.onChoice("cancel")}>Cancel</button></div>
+  </div>;
 }
 
-function WorkspaceState(props: {
-  title: string;
-  detail: string;
-  action?: string;
-  onAction?(): void;
-}) {
-  return (
-    <div className="workspace-state">
-      <h2>{props.title}</h2>
-      <p>{props.detail}</p>
-      {props.action && <button onClick={props.onAction}>{props.action}</button>}
-    </div>
-  );
+function SimpleIntentDialog(props: { displayName: string; onOpen(): void; onCancel(): void }) {
+  return <div className="confirmation" role="alertdialog" aria-modal="true" aria-labelledby="intent-title" onKeyDown={(event) => handleDialogKey(event, props.onCancel)}><h2 id="intent-title">Open another Library?</h2><p>Open “{props.displayName}”?</p><div className="button-row"><button onClick={props.onOpen}>Open</button><button autoFocus className="button--secondary" onClick={props.onCancel}>Cancel</button></div></div>;
+}
+
+function WorkspaceState(props: { title: string; detail: string; action?: string; onAction?(): void }) {
+  return <div className="workspace-state"><h2>{props.title}</h2><p>{props.detail}</p>{props.action && <button onClick={props.onAction}>{props.action}</button>}</div>;
 }
 
 function FatalState({ message }: { message: string }) {
@@ -368,5 +341,5 @@ function FatalState({ message }: { message: string }) {
 }
 
 function messageFrom(reason: unknown): string {
-  return reason instanceof Error ? reason.message : "Reference Library operation failed";
+  return safeErrorMessage(reason, "Reference Library operation failed.");
 }
