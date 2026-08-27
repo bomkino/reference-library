@@ -12,6 +12,7 @@ enum RendererErrorPolicy {
         "RootPermissionRequired": "The Source Root needs permission.",
         "RootIdentityMismatch": "The selected folder does not match this Source Root.",
         "AssetRevisionConflict": "The Asset changed. Refresh it before saving again.",
+        "QuerySnapshotChanged": "The Library changed while this page was loading. Refresh and try again.",
         "RenditionQueueFull": "Preview generation is busy. Try again shortly.",
         "ProtocolVersionUnsupported": "The native shell and Reference Core versions do not match."
     ]

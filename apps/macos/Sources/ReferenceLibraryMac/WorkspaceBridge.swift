@@ -62,6 +62,10 @@ final class WorkspaceBridge: NSObject, WKScriptMessageHandlerWithReply {
           if (!Number.isSafeInteger(input?.offset) || input.offset < 0) throw new TypeError('offset must be non-negative');
           if (!Number.isSafeInteger(input?.limit) || input.limit < 1 || input.limit > 250) throw new TypeError('limit must be 1...250');
           if (!projections.has(input?.projection)) throw new TypeError('unknown projection');
+          if (input?.expectedLibraryRevision !== undefined && input.expectedLibraryRevision !== null &&
+              (!Number.isSafeInteger(input.expectedLibraryRevision) || input.expectedLibraryRevision < 0)) {
+            throw new TypeError('expectedLibraryRevision must be a non-negative safe integer or null');
+          }
           return call('queryAssets', input);
         },
         getAsset: (sessionId, assetId) => call('getAsset', {

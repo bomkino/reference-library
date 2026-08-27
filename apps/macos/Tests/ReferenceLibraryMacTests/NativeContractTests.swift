@@ -29,6 +29,9 @@ final class NativeContractTests: XCTestCase {
             XCTAssertFalse(message.contains("/Users/"))
         }
         XCTAssertEqual(RendererErrorPolicy.message(code: "/Users/private"), "Reference Core could not complete the operation.")
+        let snapshot = RendererErrorPolicy.message(code: "QuerySnapshotChanged")
+        XCTAssertEqual(snapshot, "The Library changed while this page was loading. Refresh and try again.")
+        XCTAssertFalse(snapshot.contains("/Users/"))
     }
 
     @MainActor

@@ -623,6 +623,9 @@ final class AppModel: ObservableObject {
     private func queryAssets(_ payload: [String: Any]) async throws -> Any {
         let sessionID = try requireActiveSession(payload)
         let projection = try Self.string(payload, "projection")
+        let expectedLibraryRevision = try BridgeValidation.optionalLibraryRevision(
+            payload["expectedLibraryRevision"]
+        )
         guard Self.projections.contains(projection) else { throw ModelFailure.invalidArgument }
         var query = try Self.dictionary(payload["query"], "query")
         if let search = query["search"], !(search is NSNull) {
@@ -653,6 +656,7 @@ final class AppModel: ObservableObject {
                 "offset": try Self.integer(payload, "offset", minimum: 0, maximum: Int.max),
                 "limit": try Self.integer(payload, "limit", minimum: 1, maximum: 250),
                 "projection": projection,
+                "expectedLibraryRevision": expectedLibraryRevision ?? NSNull(),
                 "query": query
             ],
             expected: "asset_page",
@@ -780,6 +784,9 @@ final class AppModel: ObservableObject {
                 expected: expected
             )
         } catch let failure as CoreSupervisor.RequestFailure {
+            if failure.code == "QuerySnapshotChanged", failure.retryable {
+                throw ModelFailure.querySnapshotChanged
+            }
             throw ModelFailure.core(failure.code)
         } catch CoreSupervisor.Failure.capacityExceeded {
             throw ModelFailure.requestCapacityExceeded
@@ -1227,7 +1234,8 @@ final class AppModel: ObservableObject {
     ])
     private static let reviewStates = Set(["unreviewed", "keep", "maybe", "reject"])
     private static let availability = Set([
-        "present", "missing", "needs_permission", "offline_volume", "unreadable", "unavailable"
+        "present", "missing", "needs_permission", "offline_volume", "unreadable", "unavailable",
+        "unsupported"
     ])
     private static let sorts = Set([
         "created_ascending", "created_descending", "name_ascending", "name_descending", "review_state"
@@ -1271,6 +1279,7 @@ final class AppModel: ObservableObject {
         case coreRequestFailed
         case invalidArgument
         case requestCapacityExceeded
+        case querySnapshotChanged
         case core(String)
 
         var errorDescription: String? {
@@ -1288,6 +1297,8 @@ final class AppModel: ObservableObject {
             case .coreRequestFailed: "Reference Core could not complete the request."
             case .invalidArgument: "The native operation received an invalid argument."
             case .requestCapacityExceeded: "Too many Reference Library operations are active. Try again shortly."
+            case .querySnapshotChanged:
+                RendererErrorPolicy.message(code: "QuerySnapshotChanged")
             case let .core(code): RendererErrorPolicy.message(code: code)
             }
         }

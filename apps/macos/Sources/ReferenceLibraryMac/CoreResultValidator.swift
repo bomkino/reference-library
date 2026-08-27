@@ -5,7 +5,8 @@ enum CoreResultValidator {
     enum Failure: Error { case invalid }
 
     private static let availability = Set([
-        "present", "missing", "needs_permission", "offline_volume", "unreadable", "unavailable"
+        "present", "missing", "needs_permission", "offline_volume", "unreadable", "unavailable",
+        "unsupported"
     ])
     private static let reviewStates = Set(["unreviewed", "keep", "maybe", "reject"])
     private static let jobStates = Set([

@@ -101,4 +101,7 @@ test("Core results are structurally rebuilt before renderer delivery", async () 
   assert.match(validator, /relativePath[\s\S]*!value\.hasPrefix\("\/"\)/);
   assert.match(core, /Set\(payload\.keys\) == \["code", "message", "retryable"\]/);
   assert.match(model, /CoreSupervisor\.Failure\.capacityExceeded[\s\S]*requestCapacityExceeded/);
+  assert.match(model, /expectedLibraryRevision[\s\S]*QuerySnapshotChanged[\s\S]*failure\.retryable/);
+  assert.match(validator, /"unavailable",[\s\S]*"unsupported"/);
+  assert.match(await source("RendererErrorPolicy.swift"), /QuerySnapshotChanged/);
 });

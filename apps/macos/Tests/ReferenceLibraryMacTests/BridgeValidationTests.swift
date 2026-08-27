@@ -34,4 +34,19 @@ final class BridgeValidationTests: XCTestCase {
             )
         )
     }
+
+    func testOptionalLibraryRevisionIsExactNonnegativeSafeInteger() throws {
+        XCTAssertNil(try BridgeValidation.optionalLibraryRevision(nil))
+        XCTAssertNil(try BridgeValidation.optionalLibraryRevision(NSNull()))
+        let zero = try XCTUnwrap(BridgeValidation.optionalLibraryRevision(0))
+        let maximum = try XCTUnwrap(
+            BridgeValidation.optionalLibraryRevision(9_007_199_254_740_991)
+        )
+        XCTAssertEqual(zero.intValue, 0)
+        XCTAssertEqual(maximum.int64Value, 9_007_199_254_740_991)
+        let invalidValues: [Any] = [true, -1, 1.5, 9_007_199_254_740_992]
+        for invalid in invalidValues {
+            XCTAssertThrowsError(try BridgeValidation.optionalLibraryRevision(invalid))
+        }
+    }
 }

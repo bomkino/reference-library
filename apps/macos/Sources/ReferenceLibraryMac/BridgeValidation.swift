@@ -1,3 +1,4 @@
+import CoreFoundation
 import Foundation
 
 enum BridgeValidation {
@@ -22,6 +23,18 @@ enum BridgeValidation {
             throw ValidationError.invalidResourceURL
         }
         return url
+    }
+
+    static func optionalLibraryRevision(_ value: Any?) throws -> NSNumber? {
+        if value == nil || value is NSNull { return nil }
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID(),
+              number.doubleValue >= 0,
+              number.doubleValue <= 9_007_199_254_740_991,
+              number.doubleValue.rounded(.towardZero) == number.doubleValue else {
+            throw ValidationError.invalidArgument("expectedLibraryRevision")
+        }
+        return number
     }
 
     enum ValidationError: LocalizedError {

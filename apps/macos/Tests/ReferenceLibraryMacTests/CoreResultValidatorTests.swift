@@ -78,6 +78,17 @@ final class CoreResultValidatorTests: XCTestCase {
         ]))
     }
 
+    func testUnsupportedAvailabilityRemainsDistinctCatalogueTruth() throws {
+        var unsupported = assetSummary()
+        unsupported["availability"] = "unsupported"
+        let page = try CoreResultValidator.assetPage([
+            "offset": 0, "limit": 1, "total": 1, "items": [unsupported],
+            "nextOffset": NSNull(), "libraryRevision": 4
+        ])
+        let safe = try XCTUnwrap((page["items"] as? [[String: Any]])?.first)
+        XCTAssertEqual(safe["availability"] as? String, "unsupported")
+    }
+
     func testLegalBackslashUnicodeAndPunctuationRemainDisplayData() throws {
         let weirdName = "draft\\final – 你好 (100%) #1.png"
         var summary = assetSummary()
