@@ -85,3 +85,14 @@ git diff --check
 **Fresh measurement:** local format/Clippy and 81 Rust, 24 script, 26 workspace and 55 Linux tests passed; both npm audits reported zero vulnerabilities; the 74-package legal closure, repository/icon/release checks and T01/V1 zero-diff journeys passed. GitHub Actions run `33080333170` passed all five jobs at remote source `04c54f3337a084f84420d103923fc9df262b7ada`, tree `5afd2d576e6d7f1a0df6c7ff369f36c8d91951a2`, including RustSec scanning, warning-free Apple arm64 packaging and full pacman/AppImage/tar X11/Wayland runtime rehearsal. Exact-source artifacts `9649807083` and `9649934123` are retained through 26 September 2026.
 
 **Decision:** V1 source implementation is complete. Mark V1 source-ready only after this review/receipt head passes exact CI. Keep M1, L1, X1 and C1 open; do not merge, deploy or release.
+
+
+### 2026-08-27 — Superseding packaged Wayland close proof
+
+**Hypothesis:** the receipt-head Wayland failure was a proof-harness race because the renderer scheduled `window.close()` at zero delay and could close its DevTools socket before the command acknowledgement, while the same packaged source had passed the complete Wayland journey twice immediately before.
+
+**Change:** made the packaged journey await a DevTools acknowledgement before a 250 ms delayed window close and added a regression seam that rejects the zero-delay close. Product behavior and package contents remain unchanged.
+
+**Fresh measurement:** the focused test, 25 script, 26 workspace and 55 Linux tests passed locally. GitHub Actions run `33082121964` passed all five jobs at remote source `05b8f0e2ae1a0419426317d3183615a98f7179fe`, tree `01835315338858e0ad73ade01e6a99f5d658299c`, including the extracted pacman application journey under X11 and a real headless Wayland compositor, acknowledged close, clean exit, source-bound package receipts, pinned RustSec audit and warning-free Apple arm64 packaging. Artifacts `9650628469` and `9650719750` are retained through 26 September 2026.
+
+**Decision:** keep the causal harness fix and supersede run `33080333170` with `33082121964` as the final reviewed implementation measurement. Source-ready closure still requires the following evidence-only head to pass exact CI; M1, L1, X1 and C1 remain open.

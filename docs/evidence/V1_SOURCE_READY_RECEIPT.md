@@ -7,16 +7,16 @@ Repository: https://github.com/bomkino/reference-library
 Branch: codex/reference-library-v1-completion
 Start commit: 8afdfa1f84b5421f3423f6d0df6c07b48229f944
 Start tree: e2bc259dad72823db174efd065d272d368e9ee71
-Reviewed local implementation end: ecd2172a826fb7063ec839370f95700049401aa5
-Reviewed remote implementation end: 04c54f3337a084f84420d103923fc9df262b7ada
-Reviewed implementation tree: 5afd2d576e6d7f1a0df6c7ff369f36c8d91951a2
-Implementation CI: 33080333170
+Reviewed local implementation end: c0b78116f8d7326474819815fd52b4a1c57f82f4
+Reviewed remote implementation end: 05b8f0e2ae1a0419426317d3183615a98f7179fe
+Reviewed implementation tree: 01835315338858e0ad73ade01e6a99f5d658299c
+Implementation CI: 33082121964
 Local environment: Linux 6.18.35 x86_64
 Rust: 1.98.0; Node: 24.19.0; npm: 11.9.0; Python: 3.12.13
 Recorded: 27 August 2026 UTC
 ```
 
-The local and synchronized GitHub implementation commits have different commit-object SHAs because synchronization used Git data operations, but their tree `5afd2d576e6d7f1a0df6c7ff369f36c8d91951a2` is identical. The evidence-only review/receipt commit follows that implementation tree and changes no product behavior.
+The local and synchronized GitHub implementation commits have different commit-object SHAs because synchronization used Git data operations, but their tree `01835315338858e0ad73ade01e6a99f5d658299c` is identical. The evidence-only review/receipt commit follows that implementation tree and changes no product behavior.
 
 ## Result
 
@@ -26,7 +26,7 @@ This is not installed target integration. M1, L1, X1 and C1 remain open. No merg
 
 ## Causal source history
 
-The branch contains 91 causal implementation commits after the exact T02 base. The principal vertical slices are:
+The branch contains 93 causal source/review commits after the exact T02 base. The principal vertical slices are:
 
 | Slice | Representative commits | Result |
 |---|---|---|
@@ -36,7 +36,7 @@ The branch contains 91 causal implementation commits after the exact T02 base. T
 | Editorial domain and canonical proof | `4645d6e`, `fbc5020`, `e67c015`, `d4c6cb0`, `820b86b`, `fa12e86` | Manual curation, flat Collections, composed lexical paging and bounded neutral digest/pages |
 | Shared workspace | `6a2f45a`, `dc9becd`, `64ca4d0`, `bd6797f`, `dd996d0` | Daily-use Contact Sheet, stable selection/focus, independent controls and bounded event/page handling |
 | Native hosts and authority | `f7ad97e`, `04006ae`, `53079b1`, `3d107c1`, `01f1d52`, `dd7e72a`, `ecd2172` | Fixed bridges, package-open serialization, opaque streaming, session revocation and warning-clean host builds |
-| Compatible packaging/runtime | `087b9f8`, `4c3f4e7`, `03b3a7f`, `1cb0aaf`, `3686dba`, `7fb1c39` | Source-bound receipts, safe extraction, product icon, sandboxed X11/Wayland journeys and complete preload bundle |
+| Compatible packaging/runtime | `087b9f8`, `4c3f4e7`, `03b3a7f`, `1cb0aaf`, `3686dba`, `7fb1c39`, `c0b7811` | Source-bound receipts, safe extraction, product icon, sandboxed X11/Wayland journeys, acknowledged clean-close proof and complete preload bundle |
 | Closure proofs | `addb791`, `3b252ea`, `a2f8185`, `0a1690f` | Worst-case frames, hostile package inputs, honest Root rebind semantics and pinned RustSec audit |
 
 ## Files and architecture
@@ -93,19 +93,19 @@ The timeout proof reaches a dual-gated debug hook immediately before third-party
 
 ## Exact-source CI and compatible packages
 
-GitHub Actions run [`33080333170`](https://github.com/bomkino/reference-library/actions/runs/33080333170) passed all five jobs at synchronized source `04c54f3337a084f84420d103923fc9df262b7ada`, tree `5afd2d576e6d7f1a0df6c7ff369f36c8d91951a2`:
+GitHub Actions run [`33082121964`](https://github.com/bomkino/reference-library/actions/runs/33082121964) passed all five jobs at synchronized source `05b8f0e2ae1a0419426317d3183615a98f7179fe`, tree `01835315338858e0ad73ade01e6a99f5d658299c`:
 
 - repository boundary, deterministic icon and release metadata;
 - Rust format, all-target Clippy, 81 tests and both zero-diff semantic journeys;
 - pinned `cargo-audit` 0.22.2 loaded 1,226 RustSec advisories and scanned 78 locked Rust dependencies with no vulnerability finding;
 - TypeScript, 24 script, 26 workspace and 55 Linux tests, production builds, npm audit and the 74-package legal closure;
 - Apple-Silicon Swift tests, warning-free release compilation, `aarch64-apple-darwin` Rust Core, extracted `.app`, entitlements/architecture/resources, ad-hoc codesign, checksums and exact-source receipt;
-- Linux pacman/AppImage/tar assembly, safe fresh extraction, executable/ASAR/helper/desktop/MIME/legal/version validation, renderer-boundary validation, reproduced `root:root:4755` Chromium sandbox, packaged app journeys under X11 and real headless Wayland, packaged-helper reopen, checksums and exact-source receipt.
+- Linux pacman/AppImage/tar assembly, safe fresh extraction, executable/ASAR/helper/desktop/MIME/legal/version validation, renderer-boundary validation, reproduced `root:root:4755` Chromium sandbox, packaged app journeys under X11 and real headless Wayland, acknowledged renderer close and clean process exit, packaged-helper reopen, checksums and exact-source receipt.
 
 | CI artifact | ID | Size | Workflow-container SHA-256 | Expires |
 |---|---:|---:|---|---|
-| `reference-library-linux-x86_64-04c54f3337a084f84420d103923fc9df262b7ada` | `9649934123` | 340,882,404 bytes | `9458317e60b082be45ed12f7fa29140d569430e16fd4f47f8d7f011c8c32df3a` | 26 September 2026 |
-| `reference-library-macos-arm64-04c54f3337a084f84420d103923fc9df262b7ada` | `9649807083` | 2,758,280 bytes | `c2625ec90ed2726df05aca107b447696d712123e4f0c4347d9b96b4b03a8a357` | 26 September 2026 |
+| `reference-library-linux-x86_64-05b8f0e2ae1a0419426317d3183615a98f7179fe` | `9650719750` | 340,883,733 bytes | `0b09a8a880e4d84c459293f802f2cbbf72e9097bbdf369728f93bf6d0a21ab35` | 26 September 2026 |
+| `reference-library-macos-arm64-05b8f0e2ae1a0419426317d3183615a98f7179fe` | `9650628469` | 2,758,286 bytes | `ff76b5b5356300c791f82d0040ef2cbbb5c0b7a46370fac71d1a22435d1082de` | 26 September 2026 |
 
 These are expiring CI artifacts, not installations or public releases. The workflow-container digest binds the uploaded ZIP; each artifact also contains verified per-package `SHA256SUMS` and a source/tree/target-specific V1 build receipt.
 
@@ -142,4 +142,4 @@ These are expiring CI artifacts, not installations or public releases. The workf
 
 ## Next exact vertical slice
 
-Run M1 with artifact `9649807083` and its embedded source receipt. In parallel, L1 may run with artifact `9649934123`; do not claim X1 or close ADR-004/ADR-006 until both installed target receipts exist.
+Run M1 with artifact `9650628469` and its embedded source receipt. In parallel, L1 may run with artifact `9650719750`; do not claim X1 or close ADR-004/ADR-006 until both installed target receipts exist.

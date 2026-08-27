@@ -137,3 +137,14 @@ Do not rewrite or delete entries. Corrections append a superseding entry.
 **Fresh measurement:** local Rust 81, script 24, workspace 26 and Linux 55 tests passed; npm audits found zero vulnerabilities; semantic diff was zero. GitHub Actions run `33080333170` passed repository, Rust/RustSec, workspace/Linux source, Apple arm64 package and complete Linux package/runtime jobs at tree `5afd2d576e6d7f1a0df6c7ff369f36c8d91951a2`. Artifact IDs and SHA-256 container digests are recorded in `V1_SOURCE_READY_RECEIPT.md`.
 
 **Decision:** keep the source and compatible-runner result. Source-ready is not installed integration: M1, L1, X1 and C1 remain open, ADR-004/ADR-006 remain Proposed, and release publication still requires explicit authority.
+
+
+## 2026-08-27 — Superseding Wayland proof-harness closure
+
+**Hypothesis:** the receipt-head Wayland failure was caused by the zero-delay renderer-close proof racing its own DevTools acknowledgement, not by a packaged application crash.
+
+**Change:** delayed `window.close()` by 250 ms after an awaited DevTools command and added a public regression seam that rejects the previous zero-delay expression. No product source, sandbox setting, package payload or claim boundary changed.
+
+**Fresh measurement:** focused and complete JavaScript seams passed locally. GitHub Actions run `33082121964` passed all five jobs at source tree `01835315338858e0ad73ade01e6a99f5d658299c`; the exact extracted pacman application completed its workspace/Core journey under both X11 and a real headless Wayland compositor, acknowledged close and exited cleanly. Exact-source Apple arm64 artifact `9650628469` and Linux x86_64 artifact `9650719750`, with their workflow-container digests, are recorded in `V1_SOURCE_READY_RECEIPT.md`.
+
+**Decision:** keep the fix and use run `33082121964` as the reviewed implementation evidence. Do not reinterpret compatible Ubuntu or Apple-Silicon CI as M1/L1/X1/C1 integration.

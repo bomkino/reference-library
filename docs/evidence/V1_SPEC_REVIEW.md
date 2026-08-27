@@ -4,8 +4,8 @@
 
 ```text
 Contract: docs/specs/V1_EXECUTION_CONTRACT.md
-Reviewed implementation SHA: b40241793fafa7d1d4e35851c9cf38673f7e1093
-Reviewed implementation tree: 796c4063148861723555eafc1712d28895253c13
+Reviewed implementation SHA: c0b78116f8d7326474819815fd52b4a1c57f82f4
+Reviewed implementation tree: 01835315338858e0ad73ade01e6a99f5d658299c
 Branch: codex/reference-library-v1-completion
 Reviewed: 27 August 2026 UTC
 ```
@@ -25,7 +25,7 @@ V1-01 through V1-09 satisfy their source and compatible-runner acceptance clause
 | V1-05 lexical query | Pass | Blank/default behavior, Unicode, literal `%`, `_` and `\\`, composed search+Root+review+availability+Collection+sort across three snapshot-pinned pages, change invalidation, 100,000-Asset Core bounds and bounded DOM all pass. |
 | V1-06 flat Collections | Pass | CRUD and membership are optimistic, bounded and atomic; duplicate membership is idempotent; empty, NUL, oversized and case-fold duplicate names fail; empty/duplicate/oversized batches and wrong sessions do not partially write; delete retains Assets/Sources/originals; canonical parity passes. |
 | V1-07 workspace | Pass, source | Editorial Contact Sheet remains the resting surface; Interface Scale, density and Preview zoom are independent; the complete keyboard journey, roving focus, stable selection, accessible names/states/announcements, explicit loading/empty/no-results/error/unsupported/Missing states and event-storm bounds pass. VoiceOver/Orca/compositor behavior remains M1/L1. |
-| V1-08 package/runtime | Pass, compatible environments | Package-open intents are validated and serialized. Exact-source CI safely extracts pacman/AppImage/tar, validates modes/ASAR/helper/desktop/MIME/legal payloads, reproduces the setuid sandbox, launches the packaged app under X11 and a real headless Wayland socket, reopens via the packaged helper, and builds/validates the arm64 `.app.zip`. This is not Garuda or installed-Mac integration. |
+| V1-08 package/runtime | Pass, compatible environments | Package-open intents are validated and serialized. Exact-source CI safely extracts pacman/AppImage/tar, validates modes/ASAR/helper/desktop/MIME/legal payloads, reproduces the setuid sandbox, launches the packaged app under X11 and a real headless Wayland socket, observes the workspace/Core journey plus acknowledged close and clean process exit, reopens via the packaged helper, and builds/validates the arm64 `.app.zip`. This is not Garuda or installed-Mac integration. |
 | V1-09 canonical proof | Pass | Snapshot-bound digest and diagnostic pages are deterministic, byte/framing bounded and sufficient to isolate mismatches. Grants, paths, platform IDs, jobs, caches and preferences are excluded. Curation and Collection edits change the digest. The 100,000-Asset proof stays bounded and the host-neutral three-leg journey returns zero semantic diff. |
 
 ## Scope and claim audit
