@@ -5,8 +5,10 @@ use std::{
 };
 
 use image::{DynamicImage, ImageFormat, Rgb, RgbImage};
-use reference_core::{discovery::scan_root, error::CoreError, session::LibrarySession};
-use reference_protocol::{AssetProjection, ResourceProfile};
+use reference_core::{
+    discovery::scan_root, error::CoreError, rendition::run_job, session::LibrarySession,
+};
+use reference_protocol::{AssetProjection, Event, JobQuery, JobState, ResourceProfile};
 use uuid::Uuid;
 
 struct Project {
@@ -172,6 +174,137 @@ fn changed_or_symlink_swapped_source_fails_closed_without_hiding_asset() {
         1
     );
     session.close().unwrap();
+}
+
+#[test]
+fn same_key_cancellation_cannot_remove_a_successful_publication() {
+    let (_project, mut session) = Project::new();
+    let asset = session
+        .query_assets(0, 1, AssetProjection::ContactSheetStandard)
+        .unwrap()
+        .items
+        .remove(0);
+    let (_, success_plan) = session
+        .start_resource_authorization(&asset.asset_id, ResourceProfile::GridStandard)
+        .unwrap();
+    let (_, cancelled_plan) = session
+        .start_resource_authorization(&asset.asset_id, ResourceProfile::GridStandard)
+        .unwrap();
+    let (sender, _receiver) = mpsc::channel();
+    let success_sender = sender.clone();
+    let success = std::thread::spawn(move || {
+        run_job(
+            success_plan,
+            Arc::new(AtomicBool::new(false)),
+            success_sender,
+        )
+    });
+    let cancelled = std::thread::spawn(move || {
+        run_job(cancelled_plan, Arc::new(AtomicBool::new(true)), sender)
+    });
+    let descriptor = success.join().unwrap().unwrap();
+    assert!(matches!(
+        cancelled.join().unwrap(),
+        Err(CoreError::RenditionCancelled)
+    ));
+    let target = PathBuf::from(&descriptor.native_path_for_handler);
+    assert!(imagesize::size(&target).is_ok());
+    assert!(!target.parent().unwrap().read_dir().unwrap().any(|entry| {
+        entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .ends_with(".tmp")
+    }));
+    cleanup_library_cache(&target, &session.opened().library_id);
+    session.close().unwrap();
+}
+
+#[test]
+fn terminal_rendition_job_retention_is_bounded_without_deleting_scan_history() {
+    let (_project, mut session) = Project::new();
+    let asset = session
+        .query_assets(0, 1, AssetProjection::ContactSheetStandard)
+        .unwrap()
+        .items
+        .remove(0);
+    let mut resource_path = None;
+    for _ in 0..140 {
+        let (_, plan) = session
+            .start_resource_authorization(&asset.asset_id, ResourceProfile::GridStandard)
+            .unwrap();
+        let (sender, _receiver) = mpsc::channel();
+        let descriptor = run_job(plan, Arc::new(AtomicBool::new(false)), sender).unwrap();
+        resource_path = Some(PathBuf::from(descriptor.native_path_for_handler));
+    }
+    let first = session.query_jobs(0, 100, &JobQuery::default()).unwrap();
+    let second = session.query_jobs(100, 100, &JobQuery::default()).unwrap();
+    assert_eq!(first.total, 129);
+    assert_eq!(first.items.len() + second.items.len(), 129);
+    assert!(
+        first
+            .items
+            .iter()
+            .chain(second.items.iter())
+            .any(|job| job.job_kind == "initial_scan")
+    );
+    cleanup_library_cache(
+        resource_path.as_deref().unwrap(),
+        &session.opened().library_id,
+    );
+    session.close().unwrap();
+}
+
+#[test]
+fn rendition_persistence_failure_requires_restart_without_false_terminal_event() {
+    let (project, mut session) = Project::new();
+    let asset = session
+        .query_assets(0, 1, AssetProjection::ContactSheetStandard)
+        .unwrap()
+        .items
+        .remove(0);
+    let (job_id, plan) = session
+        .start_resource_authorization(&asset.asset_id, ResourceProfile::GridStandard)
+        .unwrap();
+    session.close().unwrap();
+
+    let database = project.library.join("library.sqlite");
+    let preserved = project.library.join("library.sqlite.preserved");
+    fs::rename(&database, &preserved).unwrap();
+    fs::create_dir(&database).unwrap();
+    let (sender, receiver) = mpsc::channel();
+    assert!(run_job(plan, Arc::new(AtomicBool::new(false)), sender).is_err());
+    let events = receiver.try_iter().collect::<Vec<_>>();
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, Event::CoreNeedsRestart { .. }))
+    );
+    assert!(!events.iter().any(|event| matches!(
+        event,
+        Event::JobUpdated { job_id: emitted, state }
+            if emitted == &job_id && matches!(state.as_str(), "completed" | "failed" | "cancelled")
+    )));
+
+    fs::remove_dir(&database).unwrap();
+    fs::rename(&preserved, &database).unwrap();
+    let mut reopened = LibrarySession::open(&project.library).unwrap();
+    let recovered = reopened
+        .query_jobs(
+            0,
+            10,
+            &JobQuery {
+                root_id: None,
+                states: vec![JobState::Failed],
+            },
+        )
+        .unwrap();
+    assert!(
+        recovered.items.iter().any(|job| {
+            job.job_id == job_id && job.error_code.as_deref() == Some("CoreRestarted")
+        })
+    );
+    reopened.close().unwrap();
 }
 
 fn write_png(path: &Path, width: u32, height: u32, seed: u8) {

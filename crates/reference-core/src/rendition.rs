@@ -5,7 +5,7 @@ use std::{
     io::{BufReader, Cursor, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::{
-        Arc, Mutex, OnceLock,
+        Arc, Mutex, OnceLock, Weak,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
@@ -16,7 +16,9 @@ use reference_protocol::{Event, ResourceDescriptor, ResourceProfile};
 use rusqlite::params;
 use uuid::Uuid;
 
-use crate::{error::CoreError, manifest::Manifest, now_ms, schema, session::full_fingerprint};
+use crate::{
+    error::CoreError, manifest::Manifest, now_ms, schema, session::full_fingerprint_cancellable,
+};
 
 pub const GRID_PROVIDER_VERSION: &str = "still-grid-v1";
 pub const PREVIEW_PROVIDER_VERSION: &str = "verified-preview-v1";
@@ -53,6 +55,13 @@ pub fn authorize(
     if plan.source_length > MAX_SOURCE_BYTES {
         return Err(CoreError::ResourceTooLarge);
     }
+    validate_source_evidence(
+        &mut plan.source_file,
+        plan.source_length,
+        &plan.expected_fingerprint,
+        cancelled,
+        started,
+    )?;
     let cache_root = private_cache_root(&plan.package_path)?;
     let (provider, extension, mime_type) = match plan.profile {
         ResourceProfile::GridStandard => (GRID_PROVIDER_VERSION, "png", "image/png"),
@@ -71,7 +80,13 @@ pub fn authorize(
     let lock = key_lock(&target);
     let _guard = lock.lock().map_err(|_| CoreError::RenditionCacheFailure)?;
     checkpoint(cancelled, started)?;
-    if validate_cached(&target, plan.profile, &plan.expected_fingerprint)? {
+    if validate_cached(
+        &target,
+        plan.profile,
+        &plan.expected_fingerprint,
+        cancelled,
+        started,
+    )? {
         return descriptor(&plan, target, mime_type);
     }
     if target.exists() {
@@ -108,7 +123,10 @@ pub fn authorize(
         let _ = fs::remove_file(&temporary);
         return Err(error);
     }
-    checkpoint(cancelled, started)?;
+    if let Err(error) = checkpoint(cancelled, started) {
+        let _ = fs::remove_file(&temporary);
+        return Err(error);
+    }
     fs::rename(&temporary, &target).map_err(|_| CoreError::RenditionCacheFailure)?;
     File::open(target.parent().ok_or(CoreError::RenditionCacheFailure)?)
         .and_then(|directory| directory.sync_all())
@@ -119,33 +137,64 @@ pub fn authorize(
 pub fn run_job(
     plan: ResourcePlan,
     cancelled: Arc<AtomicBool>,
-    events: std::sync::mpsc::Sender<Event>,
+    events: impl crate::discovery::EventSink,
 ) -> Result<ResourceDescriptor, CoreError> {
-    let job_id = plan
-        .job_id
-        .clone()
-        .ok_or(CoreError::RenditionCacheFailure)?;
-    update_job(&plan, "running", None)?;
-    events
-        .send(Event::JobUpdated {
-            job_id: job_id.clone(),
-            state: "running".into(),
-        })
-        .ok();
-    let result = authorize(clone_plan(&plan)?, &cancelled);
+    run_job_outcome(plan, cancelled, events).result
+}
+
+pub struct ResourceJobOutcome {
+    pub result: Result<ResourceDescriptor, CoreError>,
+    pub terminal_persisted: bool,
+}
+
+pub fn run_job_outcome(
+    plan: ResourcePlan,
+    cancelled: Arc<AtomicBool>,
+    events: impl crate::discovery::EventSink,
+) -> ResourceJobOutcome {
+    let job_id = plan.job_id.clone().ok_or(CoreError::RenditionCacheFailure);
+    let Ok(job_id) = job_id else {
+        return ResourceJobOutcome {
+            result: Err(CoreError::RenditionCacheFailure),
+            terminal_persisted: false,
+        };
+    };
+    if let Err(error) = update_job(&plan, "running", None) {
+        events.emit(Event::CoreNeedsRestart {
+            reason: error.to_protocol_error().code,
+        });
+        return ResourceJobOutcome {
+            result: Err(error),
+            terminal_persisted: false,
+        };
+    }
+    events.emit(Event::JobUpdated {
+        job_id: job_id.clone(),
+        state: "running".into(),
+    });
+    let result = clone_plan(&plan).and_then(|plan| authorize(plan, &cancelled));
     let (state, error_code) = match &result {
         Ok(_) => ("completed", None),
         Err(CoreError::RenditionCancelled) => ("cancelled", None),
         Err(error) => ("failed", Some(error.to_protocol_error().code)),
     };
-    update_job(&plan, state, error_code.as_deref())?;
-    events
-        .send(Event::JobUpdated {
-            job_id,
-            state: state.into(),
-        })
-        .ok();
-    result
+    if let Err(error) = update_job(&plan, state, error_code.as_deref()) {
+        events.emit(Event::CoreNeedsRestart {
+            reason: error.to_protocol_error().code,
+        });
+        return ResourceJobOutcome {
+            result: Err(error),
+            terminal_persisted: false,
+        };
+    }
+    events.emit(Event::JobUpdated {
+        job_id,
+        state: state.into(),
+    });
+    ResourceJobOutcome {
+        result,
+        terminal_persisted: true,
+    }
 }
 
 fn clone_plan(plan: &ResourcePlan) -> Result<ResourcePlan, CoreError> {
@@ -233,7 +282,13 @@ fn publish_preview_snapshot(
     if copied != expected_length || source.metadata()?.len() != before.len() {
         return Err(CoreError::SourceRevisionChanged);
     }
-    if full_fingerprint(source, expected_length)? != expected_fingerprint {
+    if full_fingerprint_cancellable(
+        source,
+        expected_length,
+        Some(cancelled),
+        Some(started + DEADLINE),
+    )? != expected_fingerprint
+    {
         return Err(CoreError::SourceRevisionChanged);
     }
     checkpoint(cancelled, started)?;
@@ -251,9 +306,7 @@ fn publish_grid(
     started: Instant,
 ) -> Result<(), CoreError> {
     let before = source.metadata()?;
-    if before.len() != expected_length
-        || full_fingerprint(source, expected_length)? != expected_fingerprint
-    {
+    if before.len() != expected_length {
         return Err(CoreError::SourceRevisionChanged);
     }
     checkpoint(cancelled, started)?;
@@ -294,7 +347,14 @@ fn publish_grid(
     let mut output = private_temporary(temporary)?;
     output.write_all(encoded.get_ref())?;
     output.sync_all()?;
-    if source.metadata()?.len() != before.len() {
+    if source.metadata()?.len() != before.len()
+        || full_fingerprint_cancellable(
+            source,
+            expected_length,
+            Some(cancelled),
+            Some(started + DEADLINE),
+        )? != expected_fingerprint
+    {
         return Err(CoreError::SourceRevisionChanged);
     }
     Ok(())
@@ -398,6 +458,8 @@ fn validate_cached(
     path: &Path,
     profile: ResourceProfile,
     expected_fingerprint: &str,
+    cancelled: &AtomicBool,
+    started: Instant,
 ) -> Result<bool, CoreError> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(value) => value,
@@ -421,9 +483,41 @@ fn validate_cached(
         }
         ResourceProfile::Preview => {
             let mut file = File::open(path)?;
-            Ok(full_fingerprint(&mut file, metadata.len())? == expected_fingerprint)
+            Ok(full_fingerprint_cancellable(
+                &mut file,
+                metadata.len(),
+                Some(cancelled),
+                Some(started + DEADLINE),
+            )? == expected_fingerprint)
         }
     }
+}
+
+fn validate_source_evidence(
+    source: &mut File,
+    expected_length: u64,
+    expected_fingerprint: &str,
+    cancelled: &AtomicBool,
+    started: Instant,
+) -> Result<(), CoreError> {
+    checkpoint(cancelled, started)?;
+    let before = source.metadata()?;
+    if before.len() != expected_length
+        || full_fingerprint_cancellable(
+            source,
+            expected_length,
+            Some(cancelled),
+            Some(started + DEADLINE),
+        )? != expected_fingerprint
+    {
+        return Err(CoreError::SourceRevisionChanged);
+    }
+    checkpoint(cancelled, started)?;
+    let after = source.metadata()?;
+    if after.len() != before.len() {
+        return Err(CoreError::SourceRevisionChanged);
+    }
+    Ok(())
 }
 
 fn verify_signature(file: &mut File, format: ImageFormat) -> Result<(), CoreError> {
@@ -477,14 +571,16 @@ fn checkpoint(cancelled: &AtomicBool, started: Instant) -> Result<(), CoreError>
     }
 }
 fn key_lock(path: &Path) -> Arc<Mutex<()>> {
-    static LOCKS: OnceLock<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>> = OnceLock::new();
+    static LOCKS: OnceLock<Mutex<HashMap<PathBuf, Weak<Mutex<()>>>>> = OnceLock::new();
     let mut locks = LOCKS
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
         .expect("rendition lock registry poisoned");
-    Arc::clone(
-        locks
-            .entry(path.to_path_buf())
-            .or_insert_with(|| Arc::new(Mutex::new(()))),
-    )
+    locks.retain(|_, lock| lock.strong_count() > 0);
+    if let Some(lock) = locks.get(path).and_then(Weak::upgrade) {
+        return lock;
+    }
+    let lock = Arc::new(Mutex::new(()));
+    locks.insert(path.to_path_buf(), Arc::downgrade(&lock));
+    lock
 }

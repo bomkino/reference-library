@@ -6,7 +6,7 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
-        mpsc::Sender,
+        mpsc::{Sender, SyncSender},
     },
     time::UNIX_EPOCH,
 };
@@ -32,10 +32,13 @@ use crate::{
     manifest::Manifest,
     now_ms, schema,
     session::{
-        bump_revision, fresh_directory, full_fingerprint, open_relative_file, openat,
+        bump_revision, fresh_directory, full_fingerprint_cancellable, open_relative_file, openat,
         relative_path_bytes,
     },
 };
+
+#[cfg(not(unix))]
+use crate::session::full_fingerprint;
 
 const INSERT_BATCH: usize = 32;
 
@@ -50,25 +53,49 @@ pub struct ScanPlan {
     pub root_directory: Arc<File>,
 }
 
-pub fn scan_root(plan: ScanPlan, cancelled: Arc<AtomicBool>, events: Sender<Event>) {
+pub trait EventSink {
+    fn emit(&self, event: Event);
+}
+
+impl EventSink for Sender<Event> {
+    fn emit(&self, event: Event) {
+        self.send(event).ok();
+    }
+}
+
+impl EventSink for SyncSender<Event> {
+    fn emit(&self, event: Event) {
+        // The database is the durable source of job/Root truth. A full event
+        // queue must never block a scanner that CloseLibrary is joining.
+        let _ = self.try_send(event);
+    }
+}
+
+pub fn scan_root(plan: ScanPlan, cancelled: Arc<AtomicBool>, events: impl EventSink) {
     let outcome = run_scan(&plan, &cancelled, &events);
     if let Err(error) = outcome {
-        let state = mark_failed(&plan, &error).unwrap_or_else(|_| "error".into());
-        let _ = events.send(Event::RootStateChanged {
-            root_id: plan.root_id.clone(),
-            state,
-        });
-        let _ = events.send(Event::JobUpdated {
-            job_id: plan.job_id,
-            state: "failed".into(),
-        });
+        match mark_failed(&plan, &error) {
+            Ok(state) => {
+                events.emit(Event::RootStateChanged {
+                    root_id: plan.root_id.clone(),
+                    state,
+                });
+                events.emit(Event::JobUpdated {
+                    job_id: plan.job_id,
+                    state: "failed".into(),
+                });
+            }
+            Err(persistence_error) => events.emit(Event::CoreNeedsRestart {
+                reason: persistence_error.to_protocol_error().code,
+            }),
+        }
     }
 }
 
 fn run_scan(
     plan: &ScanPlan,
     cancelled: &AtomicBool,
-    events: &Sender<Event>,
+    events: &dyn EventSink,
 ) -> Result<(), CoreError> {
     let manifest = Manifest::read(&plan.package_path)?;
     let mut connection =
@@ -123,13 +150,18 @@ fn run_scan(
             #[cfg(unix)]
             let candidate = {
                 let name_bytes = name.as_bytes();
-                if let Ok(child) = openat(
+                match openat(
                     &directory.1,
                     name_bytes,
                     libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
                 ) {
-                    stack.push((directory.0.join(&name), child));
-                    continue;
+                    Ok(child) => {
+                        stack.push((directory.0.join(&name), child));
+                        continue;
+                    }
+                    Err(error) if error.raw_os_error() == Some(libc::ELOOP) => continue,
+                    Err(error) if error.raw_os_error() == Some(libc::ENOTDIR) => {}
+                    Err(error) => return Err(error.into()),
                 }
                 match openat(
                     &directory.1,
@@ -137,9 +169,27 @@ fn run_scan(
                     libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
                 ) {
                     Ok(file) if file.metadata()?.is_file() => {
-                        FileCandidate::inspect_file(directory.0.join(&name), file)?
+                        match FileCandidate::inspect_file(directory.0.join(&name), file, cancelled)
+                        {
+                            Ok(candidate) => candidate,
+                            Err(CoreError::RenditionCancelled) => {
+                                finish_cancelled(
+                                    &mut connection,
+                                    plan,
+                                    &mut batch,
+                                    &mut seen,
+                                    &mut observed_count,
+                                    &mut unsupported_count,
+                                    events,
+                                )?;
+                                return Ok(());
+                            }
+                            Err(error) => return Err(error),
+                        }
                     }
-                    _ => None,
+                    Ok(_) => None,
+                    Err(error) if error.raw_os_error() == Some(libc::ELOOP) => None,
+                    Err(error) => return Err(error.into()),
                 }
             };
             #[cfg(not(unix))]
@@ -185,27 +235,21 @@ fn run_scan(
     )?;
     mark_unseen_missing(&mut connection, plan, &seen)?;
     mark_completed(&connection, plan, observed_count, unsupported_count)?;
-    events
-        .send(Event::ScanProgressChanged {
-            root_id: plan.root_id.clone(),
-            job_id: plan.job_id.clone(),
-            observed_count,
-            unsupported_count,
-            terminal: true,
-        })
-        .ok();
-    events
-        .send(Event::RootStateChanged {
-            root_id: plan.root_id.clone(),
-            state: "ready".into(),
-        })
-        .ok();
-    events
-        .send(Event::JobUpdated {
-            job_id: plan.job_id.clone(),
-            state: "completed".into(),
-        })
-        .ok();
+    events.emit(Event::ScanProgressChanged {
+        root_id: plan.root_id.clone(),
+        job_id: plan.job_id.clone(),
+        observed_count,
+        unsupported_count,
+        terminal: true,
+    });
+    events.emit(Event::RootStateChanged {
+        root_id: plan.root_id.clone(),
+        state: "ready".into(),
+    });
+    events.emit(Event::JobUpdated {
+        job_id: plan.job_id.clone(),
+        state: "completed".into(),
+    });
     Ok(())
 }
 
@@ -216,7 +260,7 @@ fn finish_cancelled(
     seen: &mut BTreeSet<Vec<u8>>,
     observed_count: &mut u64,
     unsupported_count: &mut u64,
-    events: &Sender<Event>,
+    events: &dyn EventSink,
 ) -> Result<(), CoreError> {
     flush_batch(
         connection,
@@ -228,27 +272,21 @@ fn finish_cancelled(
         events,
     )?;
     mark_cancelled(connection, plan, *observed_count, *unsupported_count)?;
-    events
-        .send(Event::ScanProgressChanged {
-            root_id: plan.root_id.clone(),
-            job_id: plan.job_id.clone(),
-            observed_count: *observed_count,
-            unsupported_count: *unsupported_count,
-            terminal: true,
-        })
-        .ok();
-    events
-        .send(Event::RootStateChanged {
-            root_id: plan.root_id.clone(),
-            state: "connected".into(),
-        })
-        .ok();
-    events
-        .send(Event::JobUpdated {
-            job_id: plan.job_id.clone(),
-            state: "cancelled".into(),
-        })
-        .ok();
+    events.emit(Event::ScanProgressChanged {
+        root_id: plan.root_id.clone(),
+        job_id: plan.job_id.clone(),
+        observed_count: *observed_count,
+        unsupported_count: *unsupported_count,
+        terminal: true,
+    });
+    events.emit(Event::RootStateChanged {
+        root_id: plan.root_id.clone(),
+        state: "connected".into(),
+    });
+    events.emit(Event::JobUpdated {
+        job_id: plan.job_id.clone(),
+        state: "cancelled".into(),
+    });
     Ok(())
 }
 
@@ -259,7 +297,7 @@ fn flush_batch(
     seen: &mut BTreeSet<Vec<u8>>,
     observed_count: &mut u64,
     unsupported_count: &mut u64,
-    events: &Sender<Event>,
+    events: &dyn EventSink,
 ) -> Result<(), CoreError> {
     if candidates.is_empty() {
         return Ok(());
@@ -304,23 +342,19 @@ fn flush_batch(
     )?;
     transaction.commit()?;
     if !inserted_asset_ids.is_empty() {
-        events
-            .send(Event::AssetsInserted {
-                root_id: plan.root_id.clone(),
-                asset_ids: inserted_asset_ids,
-                library_revision: revision,
-            })
-            .ok();
-    }
-    events
-        .send(Event::ScanProgressChanged {
+        events.emit(Event::AssetsInserted {
             root_id: plan.root_id.clone(),
-            job_id: plan.job_id.clone(),
-            observed_count: *observed_count,
-            unsupported_count: *unsupported_count,
-            terminal: false,
-        })
-        .ok();
+            asset_ids: inserted_asset_ids,
+            library_revision: revision,
+        });
+    }
+    events.emit(Event::ScanProgressChanged {
+        root_id: plan.root_id.clone(),
+        job_id: plan.job_id.clone(),
+        observed_count: *observed_count,
+        unsupported_count: *unsupported_count,
+        terminal: false,
+    });
     Ok(())
 }
 
@@ -764,7 +798,11 @@ struct FileCandidate {
 
 impl FileCandidate {
     #[cfg(unix)]
-    fn inspect_file(relative: PathBuf, mut file: File) -> Result<Option<Self>, CoreError> {
+    fn inspect_file(
+        relative: PathBuf,
+        mut file: File,
+        cancelled: &AtomicBool,
+    ) -> Result<Option<Self>, CoreError> {
         let extension = relative
             .extension()
             .and_then(|value| value.to_str())
@@ -788,7 +826,8 @@ impl FileCandidate {
             .filter(|dimensions| valid_dimensions(dimensions.width, dimensions.height))
             .map(|dimensions| (dimensions.width, dimensions.height))
             .unwrap_or_default();
-        let fingerprint = full_fingerprint(&mut file, before.len())?;
+        let fingerprint =
+            full_fingerprint_cancellable(&mut file, before.len(), Some(cancelled), None)?;
         let after = file.metadata()?;
         if !same_file_observation(&before, &after) {
             return Err(CoreError::SourceRevisionChanged);
@@ -880,10 +919,18 @@ fn read_directory_names(directory: &File) -> Result<Vec<OsString>, CoreError> {
     }
     let mut names = Vec::new();
     loop {
+        clear_errno();
         // SAFETY: stream remains valid until closed below; readdir's pointer is
         // copied before the next call.
         let entry = unsafe { libc::readdir(stream) };
         if entry.is_null() {
+            let errno = current_errno();
+            if errno != 0 {
+                // SAFETY: stream is owned by this function and closed once on
+                // this error path.
+                unsafe { libc::closedir(stream) };
+                return Err(std::io::Error::from_raw_os_error(errno).into());
+            }
             break;
         }
         // SAFETY: d_name is a NUL-terminated array supplied by readdir.
@@ -899,6 +946,36 @@ fn read_directory_names(directory: &File) -> Result<Vec<OsString>, CoreError> {
     }
     names.sort();
     Ok(names)
+}
+
+#[cfg(unix)]
+fn clear_errno() {
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    // SAFETY: the platform function returns this thread's errno pointer.
+    unsafe {
+        *libc::__errno_location() = 0;
+    }
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    // SAFETY: the platform function returns this thread's errno pointer.
+    unsafe {
+        *libc::__error() = 0;
+    }
+}
+
+#[cfg(unix)]
+fn current_errno() -> i32 {
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    // SAFETY: the platform function returns this thread's errno pointer.
+    unsafe {
+        return *libc::__errno_location();
+    }
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    // SAFETY: the platform function returns this thread's errno pointer.
+    unsafe {
+        return *libc::__error();
+    }
+    #[allow(unreachable_code)]
+    0
 }
 
 fn stored_path_is_absent(plan: &ScanPlan, relative_bytes: &[u8]) -> bool {

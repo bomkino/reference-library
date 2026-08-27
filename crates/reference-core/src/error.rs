@@ -33,6 +33,8 @@ pub enum CoreError {
     RootNotFound,
     #[error("Root already has a scan in progress")]
     RootScanInProgress,
+    #[error("Root scan capacity is currently full")]
+    RootScanCapacityReached,
     #[error("selected directory does not match the Root's known file evidence")]
     RootIdentityMismatch,
     #[error("query page size {0} exceeds limit")]
@@ -101,6 +103,7 @@ impl CoreError {
             Self::RootPermissionRequired => ("RootPermissionRequired", true),
             Self::RootNotFound => ("RootNotFound", false),
             Self::RootScanInProgress => ("RootScanInProgress", true),
+            Self::RootScanCapacityReached => ("RootScanCapacityReached", true),
             Self::RootIdentityMismatch => ("RootIdentityMismatch", false),
             Self::QueryPageTooLarge(_) | Self::QueryInvalid(_) => ("QueryInvalid", false),
             Self::AssetNotFound => ("AssetNotFound", false),

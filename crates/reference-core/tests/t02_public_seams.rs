@@ -51,7 +51,15 @@ fn external_rename_preserves_source_location_asset_and_revision_identity() {
     let resource = session
         .authorize_resource(&after_asset.asset_id, ResourceProfile::Preview)
         .unwrap();
-    assert!(resource.native_path_for_handler.ends_with("renamed.png"));
+    assert!(!resource.native_path_for_handler.ends_with("renamed.png"));
+    assert_ne!(
+        PathBuf::from(&resource.native_path_for_handler),
+        project.root_path().join("renamed.png")
+    );
+    assert_eq!(
+        fs::read(&resource.native_path_for_handler).unwrap(),
+        fs::read(project.root_path().join("renamed.png")).unwrap()
+    );
     let revealed = session.resolve_location(&after_asset.location_id).unwrap();
     assert!(revealed.native_path_for_shell.ends_with("renamed.png"));
 

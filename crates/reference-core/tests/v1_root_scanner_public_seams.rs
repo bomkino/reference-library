@@ -2,14 +2,21 @@ use std::{
     fs::{self, File, FileTimes},
     io::{Seek, SeekFrom, Write},
     path::{Path, PathBuf},
-    sync::{Arc, atomic::AtomicBool, mpsc},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
+    thread,
     time::{Duration, SystemTime},
 };
 
 use reference_core::{
     discovery::scan_root, error::CoreError, manifest::Manifest, schema, session::LibrarySession,
 };
-use reference_protocol::{AssetProjection, AssetQuery, AssetSort, JobQuery, JobState, ReviewState};
+use reference_protocol::{
+    AssetProjection, AssetQuery, AssetSort, Event, JobQuery, JobState, ReviewState,
+};
 use rusqlite::params;
 use uuid::Uuid;
 
@@ -270,6 +277,123 @@ fn retained_root_descriptor_never_indexes_replacement_or_symlinked_ancestor_byte
     assert_eq!(page.total, 1);
     assert_eq!(page.items[0].display_name, "inside.png");
     session.close().unwrap();
+}
+
+#[test]
+fn scan_cancellation_interrupts_streaming_evidence_and_is_restartable() {
+    let project = Project::new();
+    let root = project.root("Root");
+    fs::create_dir(&root).unwrap();
+    let source = root.join("large.png");
+    fs::write(&source, decode_hex(PNG_HEX)).unwrap();
+    File::options()
+        .write(true)
+        .open(&source)
+        .unwrap()
+        .set_len(256 * 1024 * 1024)
+        .unwrap();
+
+    let mut session = LibrarySession::create(&project.library, "Cancellation".into()).unwrap();
+    let plan = session.add_root(&root, "Root".into()).unwrap();
+    let root_id = plan.root_id.clone();
+    let job_id = plan.job_id.clone();
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let worker_cancelled = Arc::clone(&cancelled);
+    let (sender, _receiver) = mpsc::channel();
+    let worker = thread::spawn(move || scan_root(plan, worker_cancelled, sender));
+    thread::sleep(Duration::from_millis(20));
+    cancelled.store(true, Ordering::Release);
+    worker.join().unwrap();
+
+    let jobs = session
+        .query_jobs(
+            0,
+            10,
+            &JobQuery {
+                root_id: Some(root_id.clone()),
+                states: vec![JobState::Cancelled],
+            },
+        )
+        .unwrap();
+    assert_eq!(jobs.items.len(), 1);
+    assert_eq!(jobs.items[0].job_id, job_id);
+    assert_eq!(session.query_roots().unwrap()[0].state, "connected");
+
+    fs::write(&source, decode_hex(PNG_HEX)).unwrap();
+    run(session.rescan_root(&root_id).unwrap());
+    assert_eq!(session.query_roots().unwrap()[0].state, "ready");
+    session.close().unwrap();
+}
+
+#[test]
+fn add_root_does_not_reuse_identity_for_a_replacement_at_the_same_path() {
+    let project = Project::new();
+    let root = project.root("Root");
+    fs::create_dir(&root).unwrap();
+    fs::write(root.join("alpha.png"), decode_hex(PNG_HEX)).unwrap();
+    let mut session = LibrarySession::create(&project.library, "Replacement".into()).unwrap();
+    let first = session.add_root(&root, "First".into()).unwrap();
+    let first_root_id = first.root_id.clone();
+    run(first);
+
+    fs::rename(&root, project.root("Old Root")).unwrap();
+    fs::create_dir(&root).unwrap();
+    fs::write(root.join("outside.png"), decode_hex(PNG_HEX)).unwrap();
+    let replacement = session.add_root(&root, "Replacement".into()).unwrap();
+    assert_ne!(replacement.root_id, first_root_id);
+    run(replacement);
+    assert_eq!(session.query_roots().unwrap().len(), 2);
+    session.close().unwrap();
+}
+
+#[test]
+fn scanner_persistence_failure_emits_restart_truth_not_a_false_terminal_event() {
+    let project = Project::new();
+    let root = project.root("Root");
+    fs::create_dir(&root).unwrap();
+    fs::write(root.join("alpha.png"), decode_hex(PNG_HEX)).unwrap();
+    let mut session = LibrarySession::create(&project.library, "Persistence".into()).unwrap();
+    let plan = session.add_root(&root, "Root".into()).unwrap();
+    let job_id = plan.job_id.clone();
+    session.close().unwrap();
+
+    let database = project.library.join("library.sqlite");
+    let preserved = project.library.join("library.sqlite.preserved");
+    fs::rename(&database, &preserved).unwrap();
+    fs::create_dir(&database).unwrap();
+    let (sender, receiver) = mpsc::channel();
+    scan_root(plan, Arc::new(AtomicBool::new(false)), sender);
+    let events = receiver.try_iter().collect::<Vec<_>>();
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, Event::CoreNeedsRestart { .. }))
+    );
+    assert!(!events.iter().any(|event| matches!(
+        event,
+        Event::JobUpdated { job_id: emitted, state }
+            if emitted == &job_id && matches!(state.as_str(), "completed" | "failed" | "cancelled")
+    )));
+
+    fs::remove_dir(&database).unwrap();
+    fs::rename(&preserved, &database).unwrap();
+    let mut reopened = LibrarySession::open(&project.library).unwrap();
+    let recovered = reopened
+        .query_jobs(
+            0,
+            10,
+            &JobQuery {
+                root_id: None,
+                states: vec![JobState::Failed],
+            },
+        )
+        .unwrap();
+    assert!(
+        recovered.items.iter().any(|job| {
+            job.job_id == job_id && job.error_code.as_deref() == Some("CoreRestarted")
+        })
+    );
+    reopened.close().unwrap();
 }
 
 fn run(plan: reference_core::discovery::ScanPlan) {

@@ -3,12 +3,12 @@ use std::{
     io::{Read, Write},
     path::PathBuf,
     sync::{
-        Arc, Mutex,
+        Arc, Condvar, Mutex,
         atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver, Sender, SyncSender, TryRecvError},
     },
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use reference_protocol::{
@@ -16,10 +16,17 @@ use reference_protocol::{
     HelloResult, PROTOCOL_VERSION, ServerFrame, read_frame, write_frame,
 };
 
-use crate::{discovery, error::CoreError, session::LibrarySession};
+use crate::{
+    discovery::{self, EventSink},
+    error::CoreError,
+    session::LibrarySession,
+};
 
 const RENDITION_WORKERS: usize = 2;
 const MAX_RENDITION_WORK: usize = 10;
+const WORKER_STOP_TIMEOUT: Duration = Duration::from_secs(35);
+
+type Completion = Arc<(Mutex<bool>, Condvar)>;
 
 enum Input {
     Request(ClientFrame),
@@ -31,24 +38,34 @@ struct JobControl {
     session_id: String,
     cancelled: Arc<AtomicBool>,
     handle: Option<JoinHandle<()>>,
+    kind: JobKind,
+    completion: Option<Completion>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum JobKind {
+    Scan,
+    Resource,
 }
 
 struct ResourceWork {
     request_id: String,
     plan: crate::rendition::ResourcePlan,
     cancelled: Arc<AtomicBool>,
+    completion: Completion,
 }
 
 struct AsyncResponse {
     request_id: String,
     job_id: String,
     result: Result<reference_protocol::ResourceDescriptor, CoreError>,
+    terminal_persisted: bool,
 }
 
 pub struct CommandEngine {
     sessions: HashMap<String, LibrarySession>,
     jobs: HashMap<String, JobControl>,
-    event_sender: Sender<Event>,
+    event_sender: SyncSender<Event>,
     event_receiver: Receiver<Event>,
     event_sequence: u64,
     resource_sender: SyncSender<ResourceWork>,
@@ -58,7 +75,7 @@ pub struct CommandEngine {
 
 impl CommandEngine {
     pub fn new() -> Self {
-        let (event_sender, event_receiver) = mpsc::channel();
+        let (event_sender, event_receiver) = mpsc::sync_channel(1_024);
         let (resource_sender, resource_receiver) =
             mpsc::sync_channel::<ResourceWork>(MAX_RENDITION_WORK - RENDITION_WORKERS);
         let resource_receiver = Arc::new(Mutex::new(resource_receiver));
@@ -79,13 +96,23 @@ impl CommandEngine {
                         }
                     };
                     let job_id = work.plan.job_id.clone().unwrap_or_default();
-                    let result =
-                        crate::rendition::run_job(work.plan, work.cancelled, events.clone());
+                    let completion = Arc::clone(&work.completion);
+                    let outcome = crate::rendition::run_job_outcome(
+                        work.plan,
+                        work.cancelled,
+                        events.clone(),
+                    );
+                    let (completed, wake) = &*completion;
+                    if let Ok(mut completed) = completed.lock() {
+                        *completed = true;
+                        wake.notify_all();
+                    }
                     if sender
                         .send(AsyncResponse {
                             request_id: work.request_id,
                             job_id,
-                            result,
+                            result: outcome.result,
+                            terminal_persisted: outcome.terminal_persisted,
                         })
                         .is_err()
                     {
@@ -120,16 +147,24 @@ impl CommandEngine {
             .session(&session_id)?
             .start_resource_authorization(&asset_id, profile)?;
         let cancelled = Arc::new(AtomicBool::new(false));
-        self.queue_local_event(Event::ResourceAuthorizationStarted {
+        let started = Event::ResourceAuthorizationStarted {
             request_id: request_id.clone(),
             job_id: job_id.clone(),
             asset_id,
             profile,
-        });
+        };
+        if self.event_sender.try_send(started).is_err() {
+            let error = CoreError::RenditionQueueFull;
+            self.session(&session_id)?
+                .fail_resource_job(&job_id, &error)?;
+            return Err(error);
+        }
+        let completion = Arc::new((Mutex::new(false), Condvar::new()));
         let work = ResourceWork {
             request_id,
             plan,
             cancelled: Arc::clone(&cancelled),
+            completion: Arc::clone(&completion),
         };
         if self.resource_sender.try_send(work).is_err() {
             let error = CoreError::RenditionQueueFull;
@@ -143,6 +178,8 @@ impl CommandEngine {
                 session_id,
                 cancelled,
                 handle: None,
+                kind: JobKind::Resource,
+                completion: Some(completion),
             },
         );
         self.resource_inflight += 1;
@@ -191,7 +228,7 @@ impl CommandEngine {
                 Ok(CommandResult::SessionOpened(opened))
             }
             Command::CloseLibrary { session_id } => {
-                self.stop_jobs_for_session(&session_id);
+                self.stop_jobs_for_session(&session_id)?;
                 let mut session = self
                     .sessions
                     .remove(&session_id)
@@ -204,6 +241,15 @@ impl CommandEngine {
                 authorized_path,
                 display_name,
             } => {
+                if self
+                    .jobs
+                    .values()
+                    .filter(|job| job.kind == JobKind::Scan)
+                    .count()
+                    >= 2
+                {
+                    return Err(CoreError::RootScanCapacityReached);
+                }
                 let session = self.session(&session_id)?;
                 let plan = session.add_root(authorized_path, display_name)?;
                 let root_id = plan.root_id.clone();
@@ -219,6 +265,8 @@ impl CommandEngine {
                         session_id,
                         cancelled,
                         handle: Some(handle),
+                        kind: JobKind::Scan,
+                        completion: None,
                     },
                 );
                 self.queue_local_event(Event::RootStateChanged {
@@ -243,6 +291,15 @@ impl CommandEngine {
                 session_id,
                 root_id,
             } => {
+                if self
+                    .jobs
+                    .values()
+                    .filter(|job| job.kind == JobKind::Scan)
+                    .count()
+                    >= 2
+                {
+                    return Err(CoreError::RootScanCapacityReached);
+                }
                 let plan = self.session(&session_id)?.rescan_root(&root_id)?;
                 let job_id = plan.job_id.clone();
                 let cancelled = Arc::new(AtomicBool::new(false));
@@ -256,6 +313,8 @@ impl CommandEngine {
                         session_id,
                         cancelled,
                         handle: Some(handle),
+                        kind: JobKind::Scan,
+                        completion: None,
                     },
                 );
                 self.queue_local_event(Event::RootStateChanged {
@@ -518,7 +577,7 @@ impl CommandEngine {
                 std::process::exit(91);
             }
             Command::Shutdown => {
-                self.stop_all_jobs();
+                self.stop_all_jobs()?;
                 for (_, mut session) in self.sessions.drain() {
                     session.close()?;
                 }
@@ -537,35 +596,68 @@ impl CommandEngine {
     }
 
     fn queue_local_event(&self, event: Event) {
-        self.event_sender.send(event).ok();
+        self.event_sender.emit(event);
     }
 
-    fn stop_jobs_for_session(&mut self, session_id: &str) {
+    fn stop_jobs_for_session(&mut self, session_id: &str) -> Result<(), CoreError> {
         let job_ids = self
             .jobs
             .iter()
             .filter(|(_, job)| job.session_id == session_id)
             .map(|(id, _)| id.clone())
             .collect::<Vec<_>>();
-        for job_id in job_ids {
-            if let Some(mut job) = self.jobs.remove(&job_id) {
+        for job_id in &job_ids {
+            if let Some(job) = self.jobs.get(job_id) {
                 job.cancelled.store(true, Ordering::Relaxed);
-                if let Some(handle) = job.handle.take() {
-                    let _ = handle.join();
+            }
+        }
+        for job_id in &job_ids {
+            if let Some(job) = self.jobs.get_mut(job_id)
+                && job.kind == JobKind::Scan
+                && let Some(handle) = job.handle.take()
+            {
+                let _ = handle.join();
+            }
+        }
+        let deadline = Instant::now() + WORKER_STOP_TIMEOUT;
+        for job_id in &job_ids {
+            let Some(completion) = self
+                .jobs
+                .get(job_id)
+                .and_then(|job| job.completion.as_ref())
+            else {
+                continue;
+            };
+            let (completed, wake) = &**completion;
+            let mut completed = completed
+                .lock()
+                .map_err(|_| CoreError::RenditionCacheFailure)?;
+            while !*completed {
+                let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+                    return Err(CoreError::RenditionTimedOut);
+                };
+                let (next, timeout) = wake
+                    .wait_timeout(completed, remaining)
+                    .map_err(|_| CoreError::RenditionCacheFailure)?;
+                completed = next;
+                if timeout.timed_out() && !*completed {
+                    return Err(CoreError::RenditionTimedOut);
                 }
             }
         }
+        Ok(())
     }
 
-    fn stop_all_jobs(&mut self) {
+    fn stop_all_jobs(&mut self) -> Result<(), CoreError> {
         let session_ids = self
             .jobs
             .values()
             .map(|job| job.session_id.clone())
             .collect::<Vec<_>>();
         for session_id in session_ids {
-            self.stop_jobs_for_session(&session_id);
+            self.stop_jobs_for_session(&session_id)?;
         }
+        Ok(())
     }
 
     fn take_event(&mut self) -> Option<Event> {
@@ -575,7 +667,9 @@ impl CommandEngine {
     fn take_async_response(&mut self) -> Option<ServerFrame> {
         let response = self.async_receiver.try_recv().ok()?;
         self.resource_inflight = self.resource_inflight.saturating_sub(1);
-        self.jobs.remove(&response.job_id);
+        if response.terminal_persisted {
+            self.jobs.remove(&response.job_id);
+        }
         Some(match response.result {
             Ok(descriptor) => ServerFrame::Response {
                 protocol_version: PROTOCOL_VERSION,
@@ -594,6 +688,10 @@ impl CommandEngine {
         self.event_sequence += 1;
         if let Event::JobUpdated { job_id, state } = &event
             && matches!(state.as_str(), "completed" | "failed" | "cancelled")
+            && self
+                .jobs
+                .get(job_id)
+                .is_some_and(|job| job.kind == JobKind::Scan)
             && let Some(mut job) = self.jobs.remove(job_id)
             && let Some(handle) = job.handle.take()
         {
@@ -684,7 +782,7 @@ pub fn run_server(
                 write_frame(&mut writer, &frame).map_err(|e| e.to_string())?;
             }
             Ok(Input::Eof) => {
-                engine.stop_all_jobs();
+                let _ = engine.stop_all_jobs();
                 break;
             }
             Err(TryRecvError::Empty) => thread::sleep(Duration::from_millis(4)),

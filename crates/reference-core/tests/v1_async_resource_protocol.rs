@@ -189,6 +189,29 @@ fn authorization_is_correlated_cancellable_and_does_not_block_dispatch() {
     assert!(started_job.is_some());
     assert!(capabilities_before_terminal);
     assert!(cancelled_response);
+
+    for index in 0..11 {
+        core.send(
+            &format!("flood-{index}"),
+            Command::AuthorizeResource {
+                session_id: opened.session_id.clone(),
+                asset_id: asset_id.clone(),
+                profile: ResourceProfile::Preview,
+            },
+        );
+    }
+    let mut overload_seen = false;
+    while !overload_seen {
+        if let ServerFrame::Error {
+            request_id, error, ..
+        } = core.next()
+            && request_id.starts_with("flood-")
+            && error.code == "RenditionQueueFull"
+        {
+            assert!(error.retryable);
+            overload_seen = true;
+        }
+    }
     core.send("shutdown", Command::Shutdown);
     assert!(matches!(core.response("shutdown"), CommandResult::Shutdown));
     assert!(core.child.wait().unwrap().success());

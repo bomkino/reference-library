@@ -5,7 +5,10 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     path::{Component, Path, PathBuf},
-    sync::{Arc, atomic::AtomicBool},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 #[cfg(unix)]
@@ -976,6 +979,15 @@ fn validate_root_evidence(
 }
 
 pub(crate) fn full_fingerprint(file: &mut File, size: u64) -> Result<String, CoreError> {
+    full_fingerprint_cancellable(file, size, None, None)
+}
+
+pub(crate) fn full_fingerprint_cancellable(
+    file: &mut File,
+    size: u64,
+    cancelled: Option<&AtomicBool>,
+    deadline: Option<std::time::Instant>,
+) -> Result<String, CoreError> {
     use sha2::{Digest, Sha256};
     use std::io::{Seek, SeekFrom};
 
@@ -984,6 +996,12 @@ pub(crate) fn full_fingerprint(file: &mut File, size: u64) -> Result<String, Cor
     hasher.update(size.to_be_bytes());
     let mut buffer = [0_u8; 64 * 1024];
     loop {
+        if cancelled.is_some_and(|flag| flag.load(Ordering::Acquire)) {
+            return Err(CoreError::RenditionCancelled);
+        }
+        if deadline.is_some_and(|deadline| std::time::Instant::now() > deadline) {
+            return Err(CoreError::RenditionTimedOut);
+        }
         let read = file.read(&mut buffer)?;
         if read == 0 {
             break;
