@@ -99,3 +99,10 @@ Do not rewrite or delete entries. Corrections append a superseding entry.
 **Change:** loaded Asset pages now rebind selection and Preview by stable Asset ID; a Missing Preview renders an explicit unavailable state while retaining curation. The core advertises external rename reconciliation without adding a command or source-mutation capability.
 **Fresh measurement:** `npm run check` passed TypeScript, 6 workspace tests, 8 Linux shell tests and both production builds. The new selection fixture kept identity while refreshing renamed and Missing summaries and preserved an unloaded selection. Existing opaque-resource and supervisor tests remained green.
 **Decision:** keep ID-based summary refresh inside the workspace. Do not add a reconciliation panel or mutation control to T02.
+
+## 2026-08-27 — T02 full local verification and reviews
+
+**Hypothesis:** the isolated T02 delta can satisfy every available source seam and compatible package check without weakening T01 or claiming the rescheduled target gates.
+**Change:** no implementation change; ran the complete repository/Rust/Node/semantic/audit/provenance matrix, assembled all Linux package formats, and performed Spec and Standards reviews against source tree `e6bfa93a528804e2498153f01bfedc2ff2f88f55`.
+**Fresh measurement:** 12 Rust, 6 workspace, 8 Linux and 2 receipt tests passed; semantic diff remained zero; npm full and production audits found zero vulnerabilities; the deterministic 473-package inventory was unchanged; compatible pacman/AppImage/tar artifacts assembled and their executable/core/ASAR paths verified. The first pacman attempt exposed an absent `bsdtar` command and was rerun successfully with the previously verified compatible binary. Reviews found no Critical or High source defect and no T02 contract deviation.
+**Decision:** keep the implementation unchanged. Mark it source-complete pending exact-head CI; retain M1, L1, X1 and C1 as open target evidence.
