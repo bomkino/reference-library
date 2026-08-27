@@ -59,6 +59,14 @@ final class WorkspaceWebView: WKWebView, WKNavigationDelegate, WKUIDelegate {
         evaluateJavaScript("window.__referenceLibraryReceiveEvent?.(\(eventJSON))")
     }
 
+    func cancelAssetRequestsNow(sessionID: String? = nil) {
+        _ = schemeHandler.cancelAssetRequests(sessionID: sessionID)
+    }
+
+    func cancelAndDrainAssetRequests(sessionID: String? = nil) async {
+        await schemeHandler.cancelAndDrainAssetRequests(sessionID: sessionID)
+    }
+
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,

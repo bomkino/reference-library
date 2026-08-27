@@ -2,10 +2,15 @@ import Foundation
 import WebKit
 
 final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
+    private struct AssetTaskEntry {
+        let sessionID: String
+        let registration: SchemeTaskRegistration
+    }
+
     private static let maximumAssetTasks = 32
     private weak var model: AppModel?
     private let taskLock = NSLock()
-    private var assetTasks: [ObjectIdentifier: SchemeTaskRegistration] = [:]
+    private var assetTasks: [ObjectIdentifier: AssetTaskEntry] = [:]
 
     init(model: AppModel) {
         self.model = model
@@ -37,7 +42,11 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
         }
         let identifier = ObjectIdentifier(urlSchemeTask as AnyObject)
         let registration = SchemeTaskRegistration()
-        guard storeAssetTask(registration, identifier: identifier) else {
+        guard storeAssetTask(
+            registration,
+            sessionID: sessionID,
+            identifier: identifier
+        ) else {
             fail(urlSchemeTask, status: 429)
             return
         }
@@ -67,6 +76,7 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
                         "X-Content-Type-Options": "nosniff"
                     ]
                 )!
+                guard registration.markStreaming() else { throw CancellationError() }
                 let stream = Task.detached(priority: .userInitiated) {
                     try await ResourceFileStreamer.stream(
                         path: descriptor.nativePath,
@@ -74,14 +84,20 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
                         byteLimit: byteLimit,
                         afterValidation: {
                             try Task.checkCancellation()
-                            await MainActor.run { taskBox.task.didReceive(response) }
+                            try await MainActor.run {
+                                try Task.checkCancellation()
+                                taskBox.task.didReceive(response)
+                            }
                         }
                     ) { chunk in
                         try Task.checkCancellation()
                         // WKURLSchemeTask has no demand callback. Awaiting one MainActor handoff,
                         // yielding, and pacing each 64 KiB chunk bounds the native producer; C1
                         // must still measure WebKit's private consumer-side buffering on target.
-                        await MainActor.run { taskBox.task.didReceive(chunk) }
+                        try await MainActor.run {
+                            try Task.checkCancellation()
+                            taskBox.task.didReceive(chunk)
+                        }
                     }
                 }
                 try await withTaskCancellationHandler {
@@ -101,11 +117,27 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
 
     func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {
         let identifier = ObjectIdentifier(urlSchemeTask as AnyObject)
-        takeAssetTask(identifier)?.cancel()
+        takeAssetTask(identifier)?.registration.cancel()
+    }
+
+    func cancelAssetRequests(sessionID: String? = nil) -> [Task<Void, Never>] {
+        taskLock.lock()
+        let identifiers = assetTasks.compactMap { identifier, entry in
+            sessionID == nil || entry.sessionID == sessionID ? identifier : nil
+        }
+        let registrations = identifiers.compactMap { assetTasks.removeValue(forKey: $0)?.registration }
+        taskLock.unlock()
+        return registrations.compactMap { $0.cancel() }
+    }
+
+    func cancelAndDrainAssetRequests(sessionID: String? = nil) async {
+        let tasks = cancelAssetRequests(sessionID: sessionID)
+        for task in tasks { await task.value }
     }
 
     private func storeAssetTask(
         _ registration: SchemeTaskRegistration,
+        sessionID: String,
         identifier: ObjectIdentifier
     ) -> Bool {
         taskLock.lock()
@@ -114,7 +146,10 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
               assetTasks.count < Self.maximumAssetTasks else {
             return false
         }
-        assetTasks[identifier] = registration
+        assetTasks[identifier] = AssetTaskEntry(
+            sessionID: sessionID,
+            registration: registration
+        )
         return true
     }
 
@@ -124,7 +159,7 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
         taskLock.unlock()
     }
 
-    private func takeAssetTask(_ identifier: ObjectIdentifier) -> SchemeTaskRegistration? {
+    private func takeAssetTask(_ identifier: ObjectIdentifier) -> AssetTaskEntry? {
         taskLock.lock()
         let task = assetTasks.removeValue(forKey: identifier)
         taskLock.unlock()
@@ -233,6 +268,7 @@ final class SchemeTaskRegistration: @unchecked Sendable {
     private var waiter: CheckedContinuation<Bool, Never>?
     private var attached = false
     private var cancelled = false
+    private var streaming = false
 
     func waitUntilAttached() async -> Bool {
         await withCheckedContinuation { continuation in
@@ -263,12 +299,23 @@ final class SchemeTaskRegistration: @unchecked Sendable {
         waiter?.resume(returning: !shouldCancel)
     }
 
-    func cancel() {
+    func markStreaming() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard attached, !cancelled else { return false }
+        streaming = true
+        return true
+    }
+
+    @discardableResult
+    func cancel() -> Task<Void, Never>? {
         lock.lock()
         cancelled = true
         let task = self.task
+        let drain = streaming ? task : nil
         lock.unlock()
         task?.cancel()
+        return drain
     }
 }
 

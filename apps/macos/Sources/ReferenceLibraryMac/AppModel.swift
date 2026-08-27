@@ -69,6 +69,7 @@ final class AppModel: ObservableObject {
     func stop() async {
         _ = beginTransition()
         writesFrozen = true
+        await cancelAndDrainAssetRequests()
         await core.stop()
         grants.deactivateAll()
         clearActiveLibrary()
@@ -756,8 +757,10 @@ final class AppModel: ObservableObject {
     private func restartCore() async throws -> Any? {
         let path = activeLibraryPath
         let libraryID = activeLibraryID
+        let previousSessionID = activeSessionID
         let epoch = beginTransition()
         activeSessionID = nil
+        await cancelAndDrainAssetRequests(sessionID: previousSessionID)
         do {
             guard let path, let libraryID else {
                 await core.stop()
@@ -866,6 +869,7 @@ final class AppModel: ObservableObject {
         }
         try requireCurrentTransition(epoch)
         if let sessionID = activeSessionID {
+            await cancelAndDrainAssetRequests(sessionID: sessionID)
             _ = try? await cleanupCoreCommand(
                 method: "close_library",
                 params: ["sessionId": sessionID],
@@ -955,6 +959,7 @@ final class AppModel: ObservableObject {
     private func failClosedAuthority() async {
         _ = beginTransition()
         writesFrozen = true
+        await cancelAndDrainAssetRequests()
         await core.stop()
         grants.deactivateAll()
         clearActiveLibrary()
@@ -964,6 +969,7 @@ final class AppModel: ObservableObject {
 
     private func closeActiveLibraryForSwitch() async throws {
         guard let sessionID = activeSessionID else {
+            await cancelAndDrainAssetRequests()
             grants.deactivateAll()
             clearActiveLibrary()
             return
@@ -973,6 +979,7 @@ final class AppModel: ObservableObject {
 
     private func closeActiveLibrary(sessionID: String) async throws {
         let epoch = beginTransition()
+        await cancelAndDrainAssetRequests(sessionID: sessionID)
         do {
             let value = try await requestValue(
                 method: "close_library",
@@ -1040,6 +1047,7 @@ final class AppModel: ObservableObject {
             _ = beginTransition()
             writesFrozen = true
             coreStatus = "Reference Core stopped"
+            workspace?.cancelAssetRequestsNow(sessionID: activeSessionID)
         }
         if let workspace {
             workspace.deliver(eventJSON: event.json)
@@ -1066,6 +1074,11 @@ final class AppModel: ObservableObject {
         } else {
             AppModelEventPolicy.appendPending(json, to: &pendingWorkspaceEvents)
         }
+    }
+
+    private func cancelAndDrainAssetRequests(sessionID: String? = nil) async {
+        guard let workspace else { return }
+        await workspace.cancelAndDrainAssetRequests(sessionID: sessionID)
     }
 
     private static func string(_ payload: [String: Any], _ name: String) throws -> String {

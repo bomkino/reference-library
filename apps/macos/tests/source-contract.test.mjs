@@ -55,7 +55,9 @@ test("resource delivery opens once without following links and streams bounded c
   assert.match(handler, /stream\.cancel\(\)/);
   assert.match(handler, /maximumAssetTasks = 32/);
   assert.match(handler, /SchemeTaskRegistration[\s\S]*waitUntilAttached/);
-  assert.match(handler, /storeAssetTask\(registration[\s\S]*registration\.attach\(task\)/);
+  assert.match(handler, /guard storeAssetTask\([\s\S]*registration,[\s\S]*registration\.attach\(task\)/);
+  assert.match(handler, /AssetTaskEntry[\s\S]*sessionID[\s\S]*cancelAndDrainAssetRequests/);
+  assert.match(await source("AppModel.swift"), /closeActiveLibrary[\s\S]*cancelAndDrainAssetRequests\(sessionID: sessionID\)/);
   assert.match(handler, /maximumBytes\(for: profile\)/);
   assert.match(stream, /await Task\.yield\(\)[\s\S]*Task\.sleep/);
   assert.match(handler, /ResourceFileStreamer\.stream\([\s\S]*afterValidation:[\s\S]*didReceive\(response\)/);
