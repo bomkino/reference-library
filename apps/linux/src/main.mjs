@@ -51,6 +51,8 @@ const startupCandidates = collectLibraryOpenArguments(process.argv.slice(1));
 let mainWindow = null;
 let preferencePath = null;
 let rendererReady = false;
+let automaticRecoveryEnabled = false;
+let shuttingDown = false;
 const pendingRendererEvents = [];
 
 const forbiddenSwitch = forbiddenSandboxArgument(process.argv.slice(1));
@@ -74,6 +76,7 @@ core.on("event", (event) => {
   if (event.event === "core_needs_restart") {
     recovery.markCoreFailure();
     deliver(rendererSafeCoreRestartEvent());
+    if (automaticRecoveryEnabled && !shuttingDown) void performRecovery().catch(() => {});
     return;
   }
   if (RENDERER_EVENTS.has(event.event)) deliver(event);
@@ -85,6 +88,7 @@ async function startApplication() {
   preferencePath = path.join(app.getPath("userData"), "workspace-preferences.json");
   await core.start();
   recovery.markCoreReady();
+  automaticRecoveryEnabled = true;
   createWindow();
   await receiveExternalArguments(startupCandidates);
 }
@@ -315,16 +319,23 @@ function registerNamedOperations() {
     return expectResult(await core.request({ method: "canonical_dump", params: { sessionId } }), "canonical_dump").dump;
   }));
   ipcMain.handle(IPC.restartCore, trusted(async () => {
-    const opened = await recovery.recover({
-      restartCore: () => core.restart(),
-      openLibrary: (libraryPath) => openCoreLibrary(libraryPath),
-      bindRoot: (sessionId, rootId, authorizedPath) => bindCoreRoot(sessionId, rootId, authorizedPath),
-      closeLibrary: (sessionId) => core.request({ method: "close_library", params: { sessionId } }),
-    });
-    if (opened) deliver({ event: "library_opened", value: opened });
-    drainOpenIntent();
-    return opened;
+    return performRecovery();
   }));
+}
+
+async function performRecovery() {
+  const opened = await recovery.recover({
+    runTransition: (operation) => libraryTransitions.run(operation),
+    restartCore: () => core.restart(),
+    openLibrary: (libraryPath) => openCoreLibrary(libraryPath),
+    bindRoot: (sessionId, rootId, authorizedPath) => bindCoreRoot(sessionId, rootId, authorizedPath),
+    closeLibrary: async (sessionId) => {
+      expectResult(await core.request({ method: "close_library", params: { sessionId } }), "library_closed");
+    },
+  });
+  if (opened) deliver({ event: "library_opened", value: opened });
+  drainOpenIntent();
+  return opened;
 }
 
 async function replaceActiveLibrary({ libraryPath, createName }) {

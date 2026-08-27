@@ -136,7 +136,30 @@ test("recovery reopens one Library and rebinds only retained Roots", async () =>
   ]);
 });
 
-test("failed recovery closes a provisional session and keeps writes frozen", async () => {
+test("an unavailable Root does not abort Library recovery or discard its authority target", async () => {
+  const recovery = new LibraryRecoveryCoordinator();
+  recovery.markCoreReady();
+  recovery.adoptSession(opened(SESSION), "/private/Project.pitchlibrary");
+  recovery.rememberRoot(ROOT, "/private/Stills");
+  const availableRoot = "2c5b5df0-6eb5-43ec-a57d-0fbd2eb4ca40";
+  recovery.rememberRoot(availableRoot, "/private/Available");
+  const rebound = [];
+  const result = await recovery.recover({
+    restartCore: async () => {},
+    openLibrary: async () => opened("b4c27ebf-1dd5-4a03-9b8b-4eebd43947a1"),
+    bindRoot: async (_sessionId, rootId) => {
+      if (rootId === ROOT) throw Object.assign(new Error("/private/Stills"), { code: "RootPermissionRequired" });
+      rebound.push(rootId);
+    },
+  });
+  assert.equal(result.sessionId, "b4c27ebf-1dd5-4a03-9b8b-4eebd43947a1");
+  assert.equal(recovery.writesFrozen, false);
+  assert.deepEqual(recovery.unavailableRootIds, [ROOT]);
+  assert.deepEqual(rebound, [availableRoot]);
+  assert.equal(recovery.retainedRootCount, 2);
+});
+
+test("a second Core failure during Root bind closes provisional recovery and freezes writes", async () => {
   const recovery = new LibraryRecoveryCoordinator();
   recovery.markCoreReady();
   recovery.adoptSession(opened(SESSION), "/private/Project.pitchlibrary");
@@ -145,12 +168,37 @@ test("failed recovery closes a provisional session and keeps writes frozen", asy
   await assert.rejects(recovery.recover({
     restartCore: async () => {},
     openLibrary: async () => opened("b4c27ebf-1dd5-4a03-9b8b-4eebd43947a1"),
-    bindRoot: async () => { throw new Error("private path detail"); },
+    bindRoot: async () => { recovery.markCoreFailure(); throw new Error("transport stopped"); },
     closeLibrary: async (sessionId) => closed.push(sessionId),
-  }), /private path detail/);
+  }), /failed again/);
   assert.equal(recovery.activeSession, null);
   assert.equal(recovery.writesFrozen, true);
   assert.deepEqual(closed, ["b4c27ebf-1dd5-4a03-9b8b-4eebd43947a1"]);
+});
+
+test("recovery is single-flight and the complete operation occupies one transition", async () => {
+  const recovery = readyRecovery();
+  const transitions = new LibraryOpenQueue();
+  const calls = [];
+  let releaseTransition;
+  const preceding = transitions.run(() => new Promise((resolve) => {
+    calls.push("preceding"); releaseTransition = resolve;
+  }));
+  const options = {
+    runTransition: (operation) => transitions.run(operation),
+    restartCore: async () => calls.push("restart"),
+    openLibrary: async () => { calls.push("open"); return opened("b4c27ebf-1dd5-4a03-9b8b-4eebd43947a1"); },
+    bindRoot: async () => calls.push("bind"),
+  };
+  const first = recovery.recover(options);
+  const second = recovery.recover(options);
+  assert.equal(first, second);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls, ["preceding"]);
+  releaseTransition();
+  await preceding;
+  await Promise.all([first, second]);
+  assert.deepEqual(calls, ["preceding", "restart", "open", "bind"]);
 });
 
 test("host preferences are independent, partial, atomic, and reject symlink reads", async () => {
