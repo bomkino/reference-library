@@ -170,3 +170,14 @@ Do not rewrite or delete entries. Corrections append a superseding entry.
 **Fresh measurement:** the repair bootstrap passed the expanded repository-boundary check and `git diff --check`. Full Rust, Node, Linux-package and macOS-package evidence remains required on the exact branch head before integration.
 
 **Decision:** keep the narrow lifecycle and maintenance repairs only if the complete five-job workflow passes. Preserve the existing source-ready/target-integrated distinction; M1, L1, X1 and C1 remain open.
+
+
+## 2026-08-28 — Finished rendition controls release after persistence failure
+
+**Hypothesis:** a completed resource worker whose terminal job-state write failed was removed from in-flight capacity but retained in the Core job map indefinitely.
+
+**Change:** release the completed in-memory resource control unconditionally after consuming its response. The persistence failure remains an error and already emits `CoreNeedsRestart`. Add a focused regression covering the failed-persistence path.
+
+**Fresh measurement:** the focused Core regression and repository boundary must pass before this repair is committed; the complete five-job workflow remains the integration gate.
+
+**Decision:** use one lifecycle invariant for scan and rendition workers: finished work never occupies live in-memory control state, while durable-state failures remain explicit restart conditions.
