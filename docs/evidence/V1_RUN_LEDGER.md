@@ -75,3 +75,13 @@ git diff --check
 **Fresh measurement:** `node --check` passed for the collector and V1 journey; the three new collector tests passed; after an offline locked dependency install and T02 Core build, `npm test` passed 5 script, 6 workspace and 8 Linux tests; repository boundary and diff checks passed.
 
 **Decision:** keep the harness as integration-ready source evidence. Do not claim V1-09 or host parity until the V1 Core commands exist and the full journey passes; do not claim X1 from host-neutral labels.
+
+### 2026-08-27 — V1 source and compatible-runtime closure
+
+**Hypothesis:** the frozen V1 ledger can be closed without target overclaim only when every public seam, worst-case bound, host adapter, package runtime and neutral semantic projection passes freshly from one exact source tree.
+
+**Change:** completed sequential editorial/Collection migrations, Root lifecycle and typed error matrix, real bounded renditions with supervised hard-timeout recovery, manual curation, composed lexical query, flat Collections, independent workspace controls, package-open serialization, session-owned opaque streams, safe compatible packaging, X11/Wayland rehearsals, bounded canonical proof, deterministic product identity and pinned RustSec auditing. Added no post-V1 capability.
+
+**Fresh measurement:** local format/Clippy and 81 Rust, 24 script, 26 workspace and 55 Linux tests passed; both npm audits reported zero vulnerabilities; the 74-package legal closure, repository/icon/release checks and T01/V1 zero-diff journeys passed. GitHub Actions run `33080333170` passed all five jobs at remote source `04c54f3337a084f84420d103923fc9df262b7ada`, tree `5afd2d576e6d7f1a0df6c7ff369f36c8d91951a2`, including RustSec scanning, warning-free Apple arm64 packaging and full pacman/AppImage/tar X11/Wayland runtime rehearsal. Exact-source artifacts `9649807083` and `9649934123` are retained through 26 September 2026.
+
+**Decision:** V1 source implementation is complete. Mark V1 source-ready only after this review/receipt head passes exact CI. Keep M1, L1, X1 and C1 open; do not merge, deploy or release.

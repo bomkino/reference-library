@@ -14,9 +14,11 @@ Run M1 and L1 on representative targets, then X1 across those installed builds a
 
 External common-still rename reconciliation preserves Source, Location and Asset identity only from strict unique host identity plus matching current-Revision evidence. Ambiguous or insufficient evidence preserves Missing and catalogues the observation separately. Exact T02 source `8afdfa1f84b5421f3423f6d0df6c07b48229f944` is source-ready and packaged in compatible environments; target gates remain open.
 
-## Active source-only product slice: V1 daily-use still Library
+## Source-ready: V1 daily-use still Library
 
-On `codex/reference-library-v1-completion`, execute the frozen `docs/specs/V1_EXECUTION_CONTRACT.md` ledger one causal vertical slice at a time. V1 adds safe editorial/Collection schema evolution, Root lifecycle, bounded real renditions, manual curation, lexical query/filtering, flat Collections, independent Preview controls, honest package-open/runtime rehearsal and bounded neutral canonical proof. No item is complete until its named public seam passes freshly.
+The frozen `docs/specs/V1_EXECUTION_CONTRACT.md` source ledger is complete on `codex/reference-library-v1-completion`: safe editorial/Collection schema evolution, Root lifecycle, bounded real renditions, manual curation, lexical query/filtering, flat Collections, independent Preview controls, package-open/runtime rehearsal and bounded neutral canonical proof all pass fresh public seams. Compatible CI packages the Apple arm64 and Linux x86_64 artifacts and exercises the packaged Linux app under X11 and headless Wayland.
+
+This is source and compatible-runner evidence only. The active frontier is M1 and L1 on representative machines, followed by the exact-build X1 round trip and C1 architecture decision. A public release additionally requires explicit release authority.
 
 ## Explicitly deferred
 

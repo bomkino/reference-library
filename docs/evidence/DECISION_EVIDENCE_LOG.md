@@ -127,3 +127,13 @@ Do not rewrite or delete entries. Corrections append a superseding entry.
 **Change:** specified the V1 Electron → Swift → Electron host-neutral journey; added a reusable digest/page collector, standalone cursor/count/snapshot tests and an integration script that carries manual curation plus flat Collection membership across host labels. The T01 harness and Core production source remain unchanged.
 **Fresh measurement:** `node --check` passed both new scripts; 3 collector tests passed; the complete baseline `npm test` passed 5 script, 6 workspace and 8 Linux tests after building the T02 Core; repository boundary and diff checks passed.
 **Decision:** keep the harness ready for ordered integration after the V1 Core public seam. Host-neutral success remains source evidence only and cannot close M1, L1 or X1.
+
+## 2026-08-27 — V1 daily-use Library source closure
+
+**Hypothesis:** V1 is source-ready only if the exact reviewed tree proves durable identity and recovery, bounded daily-use editorial work, contained privileged hosts, real compatible-package runtime and neutral same-document meaning without converting CI into target evidence.
+
+**Change:** closed V1-01 through V1-09 with causal implementation and adversarial public-seam proofs; added pinned RustSec auditing, warning-clean Swift compilation, Spec/Standards reviews and an exact-source receipt. Preserved every constitutional prohibition and deferred feature boundary.
+
+**Fresh measurement:** local Rust 81, script 24, workspace 26 and Linux 55 tests passed; npm audits found zero vulnerabilities; semantic diff was zero. GitHub Actions run `33080333170` passed repository, Rust/RustSec, workspace/Linux source, Apple arm64 package and complete Linux package/runtime jobs at tree `5afd2d576e6d7f1a0df6c7ff369f36c8d91951a2`. Artifact IDs and SHA-256 container digests are recorded in `V1_SOURCE_READY_RECEIPT.md`.
+
+**Decision:** keep the source and compatible-runner result. Source-ready is not installed integration: M1, L1, X1 and C1 remain open, ADR-004/ADR-006 remain Proposed, and release publication still requires explicit authority.

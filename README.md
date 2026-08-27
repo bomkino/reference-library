@@ -6,7 +6,7 @@ One project gets one `.pitchlibrary` package. Apple-Silicon macOS is primary; Ga
 
 ## Status
 
-T01, the first production tracer, is **source-ready**. Core, workspace and both native shell sources pass CI; compatible runners assemble the Linux package directory and the ad-hoc-signed Apple-Silicon app ZIP.
+The V1 daily-use still-image Library is **source-ready**. Its canonical Core, shared editorial workspace, Root/reconnect workflow, real bounded renditions, manual curation, lexical query, flat Collections, bounded canonical proof and both native shell sources pass their public seams. Compatible runners assemble and exercise pacman/AppImage/tar packages under X11 and headless Wayland and compile/package the ad-hoc-signed Apple-Silicon app ZIP.
 
 Nothing is yet target-integrated on representative Apple Silicon or Jenai's Garuda system. M1, L1, X1 and C1 remain explicit gates.
 
@@ -19,7 +19,7 @@ Nothing is yet target-integrated on representative Apple Silicon or Jenai's Garu
 - `docs/`: product, architecture, security and evidence records
 - `fixtures/`: tiny committed fixtures; large fixtures are generated
 
-Read `AGENTS.md`, `CONTEXT.md` and `docs/specs/TRACER_T01.md` before changing source.
+Read `AGENTS.md`, `CONTEXT.md` and `docs/specs/V1_EXECUTION_CONTRACT.md` before changing source.
 
 ## Licence
 
