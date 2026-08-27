@@ -10,6 +10,7 @@ const MAX_CAPTURE_BYTES = 256 * 1024;
 const FATAL_SANDBOX = /No usable sandbox|SUID sandbox helper binary.*not configured|Running as root without --no-sandbox|FATAL:.*sandbox/i;
 const DEFAULT_JOURNEY_TIMEOUT_MS = 15_000;
 const CLEAN_EXIT_TIMEOUT_MS = 10_000;
+const WINDOW_CLOSE_DELAY_MS = 250;
 
 export async function observeSustainedProcess({
   command,
@@ -130,7 +131,7 @@ export async function observePackagedJourney({ command, args = [], env = process
     const client = await connectDevtools(target.webSocketDebuggerUrl, timeoutMs);
     try {
       await waitForPackagedJourneyObservation(client, timeoutMs);
-      await evaluate(client, "setTimeout(() => window.close(), 0); true", false);
+      await requestCleanWindowClose(client);
     } finally {
       client.close();
     }
@@ -164,6 +165,14 @@ export async function observePackagedJourney({ command, args = [], env = process
       if (!stopped && child.exitCode === null && child.signalCode === null) terminateProcessGroup(child, "SIGKILL");
     }
   }
+}
+
+export async function requestCleanWindowClose(client) {
+  return evaluate(
+    client,
+    `setTimeout(() => window.close(), ${WINDOW_CLOSE_DELAY_MS}); true`,
+    false,
+  );
 }
 
 async function waitForPackagedJourneyObservation(client, timeoutMs) {

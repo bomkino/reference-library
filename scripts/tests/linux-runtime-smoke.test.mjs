@@ -7,6 +7,7 @@ import { test } from "node:test";
 import {
   assertPackagedJourneyObservation,
   observeSustainedProcess,
+  requestCleanWindowClose,
 } from "../linux-packaged-runtime-smoke.mjs";
 import { observeWaylandSession } from "../linux-wayland-observation.mjs";
 import {
@@ -50,6 +51,21 @@ test("packaged journey requires workspace, bridge, host preferences, Core, and c
   assert.throws(() => assertPackagedJourneyObservation({ ...observation, bridgeVersion: 2 }));
   assert.throws(() => assertPackagedJourneyObservation({ ...observation, capabilities: [] }));
   assert.throws(() => assertPackagedJourneyObservation({ ...observation, url: "file:///tmp/index.html" }));
+});
+
+test("packaged journey acknowledges the close request before closing its DevTools renderer", async () => {
+  const commands = [];
+  const result = await requestCleanWindowClose({
+    async send(method, params) {
+      commands.push({ method, params });
+      return { result: { value: true } };
+    },
+  });
+  assert.equal(result, true);
+  assert.equal(commands.length, 1);
+  assert.equal(commands[0].method, "Runtime.evaluate");
+  assert.match(commands[0].params.expression, /setTimeout\(\(\) => window\.close\(\), 250\)/);
+  assert.doesNotMatch(commands[0].params.expression, /window\.close\(\), 0\)/);
 });
 
 test("Wayland observation proves a compositor socket rather than environment labels alone", async () => {
