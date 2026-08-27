@@ -5,6 +5,7 @@ const CORE_MESSAGES = Object.freeze({
   LibraryLockedByOtherWriter: "This Library is open in another writer.",
   LibraryDatabaseIntegrityInvalid: "This Library failed integrity checks and was preserved unchanged. Open a backup or copy; no repair was attempted.",
   LibraryMigrationLedgerInvalid: "This Library migration ledger is invalid and was preserved unchanged. Open a backup or copy; no repair was attempted.",
+  LibraryIntegrityFailedPreserved: "This Library failed integrity checks and was preserved unchanged. Open a backup or copy; no repair was attempted.",
   SessionClosed: "The Library session is closed.",
   RootPermissionRequired: "The Source Root needs permission.",
   RootNotFound: "The Source Root was not found.",

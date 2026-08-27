@@ -177,11 +177,21 @@ test("sandbox bypass flags are refused exactly", () => {
 });
 
 test("integrity failures are fixed, preserved, and path-free", () => {
-  for (const code of ["LibraryDatabaseIntegrityInvalid", "LibraryMigrationLedgerInvalid"]) {
+  for (const code of [
+    "LibraryDatabaseIntegrityInvalid", "LibraryMigrationLedgerInvalid", "LibraryIntegrityFailedPreserved",
+  ]) {
     const result = rendererSafeError(Object.assign(new Error("/private/Project.pitchlibrary"), { code }));
     assert.match(result.message, /preserved unchanged/);
     assert.doesNotMatch(result.message, /private/);
   }
+});
+
+test("job query states exclude the cancellation command disposition", async () => {
+  const { assertJobQuery } = await import("../src/bridge-contract.mjs");
+  assert.throws(() => assertJobQuery({
+    sessionId: SESSION, offset: 0, limit: 10,
+    query: { rootId: null, states: ["cancellation_requested"] },
+  }), /Unknown states value/);
 });
 
 function opened(sessionId) {

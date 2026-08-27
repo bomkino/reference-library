@@ -3,11 +3,15 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import path from "node:path";
 
+import { validateCoreEvent, validateCoreResult, validateProtocolError } from "./core-wire-validation.mjs";
+
 const PROTOCOL_VERSION = 1;
 const MAX_FRAME_BYTES = 1024 * 1024;
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const STOP_GRACE_MS = 2_000;
 const RESOURCE_RETRY_DELAYS_MS = Object.freeze([25, 75]);
+const MAX_PENDING_REQUESTS = 256;
+const MAX_RESOURCE_AUTHORIZATIONS = 32;
 
 export class CoreSupervisor extends EventEmitter {
   #child = null;
@@ -16,7 +20,9 @@ export class CoreSupervisor extends EventEmitter {
   #resourceAuthorizations = new Map();
   #stopping = false;
   #failedGeneration = false;
+  #generation = null;
   #lastEventSequence = 0;
+  #writeTail = Promise.resolve();
   #corePath;
   #clientName;
   #enableTestCommands;
@@ -38,19 +44,25 @@ export class CoreSupervisor extends EventEmitter {
     this.#failedGeneration = false;
     this.#buffer = Buffer.alloc(0);
     this.#lastEventSequence = 0;
+    this.#writeTail = Promise.resolve();
+    const generation = randomUUID();
     const child = this.#spawn(this.#corePath, [], {
       stdio: ["pipe", "pipe", "pipe"],
       env: sanitizedEnvironment(this.#enableTestCommands),
       windowsHide: true,
     });
     this.#child = child;
-    child.stdout.on("data", (chunk) => this.#receive(chunk));
+    this.#generation = generation;
+    child.stdout.on("data", (chunk) => this.#receive(chunk, generation));
     child.stderr.on("data", (chunk) => {
+      if (this.#generation !== generation) return;
       const message = String(chunk).trim();
       if (message) this.emit("diagnostic", message.slice(0, 2_048));
     });
-    child.once("error", () => this.#protocolFailure("Reference Core could not start"));
-    child.once("exit", () => { if (!this.#stopping) this.#protocolFailure("Reference Core stopped"); });
+    child.once("error", () => this.#protocolFailure("Reference Core could not start", generation));
+    child.once("exit", () => {
+      if (this.#generation === generation && !this.#stopping) this.#protocolFailure("Reference Core stopped", generation);
+    });
     try {
       const hello = await this.request({
         method: "hello",
@@ -60,7 +72,7 @@ export class CoreSupervisor extends EventEmitter {
         throw new Error("Reference Core protocol negotiation failed");
       }
     } catch (error) {
-      this.#protocolFailure("Reference Core protocol negotiation failed");
+      this.#protocolFailure("Reference Core protocol negotiation failed", generation);
       throw error;
     }
   }
@@ -69,6 +81,7 @@ export class CoreSupervisor extends EventEmitter {
 
   async stop() {
     const child = this.#child;
+    const generation = this.#generation;
     if (!child) return;
     this.#stopping = true;
     const exited = new Promise((resolve) => child.once("exit", resolve));
@@ -83,23 +96,27 @@ export class CoreSupervisor extends EventEmitter {
       child.kill("SIGKILL");
       await Promise.race([exited, delay(STOP_GRACE_MS)]);
     }
-    if (this.#child === child) this.#clearChild(new Error("Reference Core stopped"));
+    if (this.#child === child) this.#clearChild(new Error("Reference Core stopped"), generation);
     this.#stopping = false;
   }
 
   request(command, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, options = {}) {
     const child = this.#child;
     if (!child?.stdin?.writable) return Promise.reject(new Error("Reference Core is not running"));
+    if (this.#pending.size >= MAX_PENDING_REQUESTS) {
+      return Promise.reject(safeSupervisorError("CoreRequestCapacityExceeded", "Reference Core request capacity was reached"));
+    }
+    const generation = this.#generation;
     const requestId = options.requestId ?? randomUUID();
     const frame = encodeFrame({ protocolVersion: PROTOCOL_VERSION, requestId, command });
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        if (this.#pending.has(requestId)) this.#protocolFailure("Reference Core request timed out");
+        if (this.#pending.get(requestId)?.generation === generation) {
+          this.#protocolFailure("Reference Core request timed out", generation);
+        }
       }, timeoutMs);
-      this.#pending.set(requestId, { resolve, reject, timeout });
-      child.stdin.write(frame, (error) => {
-        if (error && this.#pending.has(requestId)) this.#protocolFailure("Reference Core transport failed");
-      });
+      this.#pending.set(requestId, { resolve, reject, timeout, generation, method: command?.method });
+      this.#enqueueWrite(child, generation, requestId, frame);
     });
   }
 
@@ -107,6 +124,9 @@ export class CoreSupervisor extends EventEmitter {
     assertResourceRequest(params);
     for (let attempt = 0; ; attempt += 1) {
       if (signal?.aborted) throw abortError();
+      if (this.#resourceAuthorizations.size >= MAX_RESOURCE_AUTHORIZATIONS) {
+        throw safeSupervisorError("ResourceAuthorizationCapacityExceeded", "Preview request capacity was reached");
+      }
       const requestId = randomUUID();
       const authorization = { ...params, requestId, jobId: null, aborted: false };
       this.#resourceAuthorizations.set(requestId, authorization);
@@ -121,8 +141,13 @@ export class CoreSupervisor extends EventEmitter {
         const response = await withAbort(request, signal);
         if (authorization.aborted || signal?.aborted) throw abortError();
         if (!authorization.jobId) {
-          this.#protocolFailure("Reference Core omitted resource job correlation");
+          this.#protocolFailure("Reference Core omitted resource job correlation", this.#generation);
           throw new Error("Reference Core omitted resource job correlation");
+        }
+        if (response.value.sessionId !== params.sessionId || response.value.assetId !== params.assetId ||
+            response.value.profile !== params.profile) {
+          this.#protocolFailure("Reference Core returned a mismatched resource descriptor", this.#generation);
+          throw new Error("Reference Core returned a mismatched resource descriptor");
         }
         return response;
       } catch (error) {
@@ -144,28 +169,41 @@ export class CoreSupervisor extends EventEmitter {
     try { await this.request({ method: "cancel_job", params: { sessionId, jobId } }, 2_000); } catch {}
   }
 
-  #receive(chunk) {
+  #enqueueWrite(child, generation, requestId, frame) {
+    const write = this.#writeTail.then(async () => {
+      if (this.#generation !== generation || this.#pending.get(requestId)?.generation !== generation) return;
+      await new Promise((resolve, reject) => child.stdin.write(frame, (error) => error ? reject(error) : resolve()));
+    });
+    this.#writeTail = write.catch((error) => {
+      if (this.#pending.get(requestId)?.generation === generation) {
+        this.#protocolFailure("Reference Core transport failed", generation);
+      }
+      return error;
+    });
+  }
+
+  #receive(chunk, generation) {
+    if (this.#generation !== generation) return;
     if (!Buffer.isBuffer(chunk)) chunk = Buffer.from(chunk);
     this.#buffer = Buffer.concat([this.#buffer, chunk]);
     while (this.#buffer.length >= 4) {
       const length = this.#buffer.readUInt32BE(0);
-      if (length === 0 || length > MAX_FRAME_BYTES) { this.#protocolFailure("Reference Core emitted an invalid frame"); return; }
+      if (length === 0 || length > MAX_FRAME_BYTES) { this.#protocolFailure("Reference Core emitted an invalid frame", generation); return; }
       if (this.#buffer.length < 4 + length) return;
       const payload = this.#buffer.subarray(4, 4 + length);
       this.#buffer = this.#buffer.subarray(4 + length);
       let frame;
       try { frame = JSON.parse(payload.toString("utf8")); }
-      catch { this.#protocolFailure("Reference Core emitted invalid JSON"); return; }
+      catch { this.#protocolFailure("Reference Core emitted invalid JSON", generation); return; }
       if (!isRecord(frame) || frame.protocolVersion !== PROTOCOL_VERSION || typeof frame.kind !== "string") {
-        this.#protocolFailure("Reference Core emitted an invalid frame"); return;
+        this.#protocolFailure("Reference Core emitted an invalid frame", generation); return;
       }
       if (frame.kind === "event") {
-        if (!isRecord(frame.event) || typeof frame.event.event !== "string") {
-          this.#protocolFailure("Reference Core emitted an invalid event"); return;
-        }
         if (!Number.isSafeInteger(frame.sequence) || frame.sequence <= this.#lastEventSequence) {
-          this.#protocolFailure("Reference Core emitted an invalid event sequence"); return;
+          this.#protocolFailure("Reference Core emitted an invalid event sequence", generation); return;
         }
+        try { validateCoreEvent(frame.event); }
+        catch { this.#protocolFailure("Reference Core emitted an invalid event", generation); return; }
         this.#lastEventSequence = frame.sequence;
         if (frame.event.event === "resource_authorization_started") {
           if (!this.#receiveResourceAuthorization(frame.event.value)) return;
@@ -173,48 +211,51 @@ export class CoreSupervisor extends EventEmitter {
         continue;
       }
       if (frame.kind !== "response" && frame.kind !== "error") {
-        this.#protocolFailure("Reference Core emitted an unknown frame kind"); return;
+        this.#protocolFailure("Reference Core emitted an unknown frame kind", generation); return;
       }
       if (typeof frame.requestId !== "string" || !this.#pending.has(frame.requestId)) {
-        this.#protocolFailure("Reference Core replied to an unknown request"); return;
+        this.#protocolFailure("Reference Core replied to an unknown request", generation); return;
       }
       const pending = this.#pending.get(frame.requestId);
-      clearTimeout(pending.timeout);
-      this.#pending.delete(frame.requestId);
+      if (pending.generation !== generation) return;
       if (frame.kind === "error") {
-        if (!isRecord(frame.error) || typeof frame.error.code !== "string") {
-          this.#protocolFailure("Reference Core emitted an invalid error"); return;
-        }
+        try { validateProtocolError(frame.error); }
+        catch { this.#protocolFailure("Reference Core emitted an invalid error", generation); return; }
+        clearTimeout(pending.timeout);
+        this.#pending.delete(frame.requestId);
         const error = new Error("Reference Core request failed");
         error.code = frame.error.code;
         error.retryable = Boolean(frame.error.retryable);
         pending.reject(error);
-      } else if (!isRecord(frame.result)) {
-        this.#protocolFailure("Reference Core emitted an invalid response"); return;
-      } else pending.resolve(frame.result);
+      } else {
+        try { validateCoreResult(pending.method, frame.result); }
+        catch { this.#protocolFailure("Reference Core emitted an invalid response", generation); return; }
+        clearTimeout(pending.timeout);
+        this.#pending.delete(frame.requestId);
+        pending.resolve(frame.result);
+      }
     }
   }
 
   #receiveResourceAuthorization(value) {
     if (!isRecord(value) || typeof value.requestId !== "string" || typeof value.jobId !== "string") {
-      this.#protocolFailure("Reference Core emitted an invalid resource correlation"); return false;
+      this.#protocolFailure("Reference Core emitted an invalid resource correlation", this.#generation); return false;
     }
     const authorization = this.#resourceAuthorizations.get(value.requestId);
     if (!authorization || authorization.jobId ||
-        (value.sessionId !== undefined && value.sessionId !== authorization.sessionId) ||
         value.assetId !== authorization.assetId || value.profile !== authorization.profile) {
-      this.#protocolFailure("Reference Core emitted a mismatched resource correlation"); return false;
+      this.#protocolFailure("Reference Core emitted a mismatched resource correlation", this.#generation); return false;
     }
     authorization.jobId = value.jobId;
     if (authorization.aborted) void this.#cancelResourceJob(authorization.sessionId, value.jobId);
     return true;
   }
 
-  #protocolFailure(reason) {
-    if (this.#failedGeneration) return;
+  #protocolFailure(reason, generation) {
+    if (!generation || this.#generation !== generation || this.#failedGeneration) return;
     this.#failedGeneration = true;
     const child = this.#child;
-    this.#clearChild(new Error(reason));
+    this.#clearChild(new Error(reason), generation);
     if (child && child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
     if (!this.#stopping) this.emit("event", {
       event: "core_needs_restart",
@@ -222,12 +263,17 @@ export class CoreSupervisor extends EventEmitter {
     });
   }
 
-  #clearChild(error) {
+  #clearChild(error, generation) {
+    if (!generation || this.#generation !== generation) return;
     this.#child = null;
+    this.#generation = null;
     this.#buffer = Buffer.alloc(0);
-    for (const pending of this.#pending.values()) { clearTimeout(pending.timeout); pending.reject(error); }
+    for (const pending of this.#pending.values()) {
+      if (pending.generation === generation) { clearTimeout(pending.timeout); pending.reject(error); }
+    }
     this.#pending.clear();
     this.#resourceAuthorizations.clear();
+    this.#writeTail = Promise.resolve();
   }
 }
 
@@ -250,6 +296,7 @@ function sanitizedEnvironment(enableTestCommands = false) {
   return environment;
 }
 function isRecord(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
+function safeSupervisorError(code, message) { const error = new Error(message); error.code = code; return error; }
 function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 function abortError() { return new DOMException("Resource request aborted", "AbortError"); }
 function withAbort(promise, signal) {
@@ -273,5 +320,7 @@ function assertResourceRequest(params) {
 }
 export const supervisorLimits = Object.freeze({
   maximumFrameBytes: MAX_FRAME_BYTES,
+  maximumPendingRequests: MAX_PENDING_REQUESTS,
+  maximumResourceAuthorizations: MAX_RESOURCE_AUTHORIZATIONS,
   resourceRetryDelaysMs: RESOURCE_RETRY_DELAYS_MS,
 });

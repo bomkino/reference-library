@@ -241,7 +241,7 @@ function registerNamedOperations() {
 
   ipcMain.handle(IPC.cancelJob, trusted(async (_event, sessionId, jobId) => {
     assertSession(recovery.activeSession, sessionId); assertUuid(jobId, "jobId");
-    expectResult(await core.request({ method: "cancel_job", params: { sessionId, jobId } }), "job_cancellation");
+    return expectResult(await core.request({ method: "cancel_job", params: { sessionId, jobId } }), "job_cancellation");
   }));
 
   ipcMain.handle(IPC.queryJobs, trusted(async (_event, input) => {

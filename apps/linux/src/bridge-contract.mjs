@@ -30,7 +30,7 @@ export const IPC = Object.freeze({
 const REVIEW_STATES = Object.freeze(["unreviewed", "keep", "maybe", "reject"]);
 const AVAILABILITY = Object.freeze(["present", "missing", "needs_permission", "offline_volume", "unreadable", "unavailable"]);
 const SORTS = Object.freeze(["created_ascending", "created_descending", "name_ascending", "name_descending", "review_state"]);
-const JOB_STATES = Object.freeze(["queued", "running", "cancellation_requested", "cancelled", "completed", "failed"]);
+const JOB_STATES = Object.freeze(["queued", "running", "cancelled", "completed", "failed"]);
 
 export function assertUuid(value, label) {
   if (typeof value !== "string" ||
