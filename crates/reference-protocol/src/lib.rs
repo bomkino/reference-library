@@ -12,6 +12,8 @@ use thiserror::Error;
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const MAX_FRAME_BYTES: usize = 1024 * 1024;
 pub const MAX_PAGE_SIZE: u32 = 250;
+pub const MAX_JOB_PAGE_SIZE: u32 = 100;
+pub const MAX_CANONICAL_PAGE_SIZE: u32 = 250;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -48,11 +50,72 @@ pub enum Command {
         authorized_path: String,
         display_name: String,
     },
+    ListRoots {
+        session_id: String,
+    },
+    BindRoot {
+        session_id: String,
+        root_id: String,
+        authorized_path: String,
+    },
+    UnbindRoot {
+        session_id: String,
+        root_id: String,
+    },
+    ScanRoot {
+        session_id: String,
+        root_id: String,
+    },
     QueryAssets {
         session_id: String,
         offset: u64,
         limit: u32,
         projection: AssetProjection,
+    },
+    QueryAssetIndex {
+        session_id: String,
+        offset: u64,
+        limit: u32,
+        projection: AssetProjection,
+        query: AssetQuery,
+    },
+    GetAsset {
+        session_id: String,
+        asset_id: String,
+    },
+    UpdateAsset {
+        session_id: String,
+        asset_id: String,
+        expected_revision: u64,
+        patch: AssetPatch,
+    },
+    QueryJobs {
+        session_id: String,
+        offset: u64,
+        limit: u32,
+        query: JobQuery,
+    },
+    ListCollections {
+        session_id: String,
+    },
+    CreateCollection {
+        session_id: String,
+        name: String,
+    },
+    RenameCollection {
+        session_id: String,
+        collection_id: String,
+        name: String,
+    },
+    DeleteCollection {
+        session_id: String,
+        collection_id: String,
+    },
+    SetCollectionMembership {
+        session_id: String,
+        collection_id: String,
+        asset_ids: Vec<String>,
+        member: bool,
     },
     AuthorizeResource {
         session_id: String,
@@ -65,6 +128,16 @@ pub enum Command {
     },
     CanonicalDump {
         session_id: String,
+    },
+    CanonicalDigest {
+        session_id: String,
+    },
+    CanonicalPage {
+        session_id: String,
+        digest: String,
+        entity: CanonicalEntity,
+        cursor: Option<String>,
+        limit: u32,
     },
     GetCapabilities {
         session_id: Option<String>,
@@ -84,6 +157,103 @@ pub enum AssetProjection {
     ContactSheetTiny,
     ContactSheetStandard,
     ContactSheetDetailed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetQuery {
+    pub search: Option<String>,
+    pub review_states: Vec<ReviewState>,
+    pub availability: Vec<AvailabilityFilter>,
+    pub collection_id: Option<String>,
+    pub root_id: Option<String>,
+    pub sort: AssetSort,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(default, rename_all = "camelCase")]
+pub struct JobQuery {
+    pub root_id: Option<String>,
+    pub states: Vec<JobState>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum JobState {
+    Queued,
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+impl JobState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Running => "running",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AssetSort {
+    #[default]
+    CreatedAscending,
+    CreatedDescending,
+    NameAscending,
+    NameDescending,
+    ReviewState,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewState {
+    Unreviewed,
+    Keep,
+    Maybe,
+    Reject,
+}
+
+impl ReviewState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Unreviewed => "unreviewed",
+            Self::Keep => "keep",
+            Self::Maybe => "maybe",
+            Self::Reject => "reject",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum AvailabilityFilter {
+    Present,
+    Missing,
+    NeedsPermission,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetPatch {
+    pub custom_title: TextPatch,
+    pub review_state: Option<ReviewState>,
+    pub note: TextPatch,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(tag = "action", content = "value", rename_all = "snake_case")]
+pub enum TextPatch {
+    #[default]
+    Unchanged,
+    Clear,
+    Set(String),
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -134,12 +304,49 @@ pub enum CommandResult {
         root_id: String,
         job_id: String,
     },
+    Roots {
+        items: Vec<RootSummary>,
+    },
+    RootBound {
+        root: RootSummary,
+    },
+    RootUnbound {
+        root: RootSummary,
+    },
+    RootScanStarted {
+        root_id: String,
+        job_id: String,
+    },
     AssetPage(AssetPage),
+    Asset(AssetDetail),
+    AssetUpdated {
+        asset: AssetDetail,
+        library_revision: u64,
+    },
+    JobPage(JobPage),
+    Collections {
+        items: Vec<CollectionSummary>,
+    },
+    CollectionUpdated {
+        collection: CollectionSummary,
+        library_revision: u64,
+    },
+    CollectionDeleted {
+        collection_id: String,
+        library_revision: u64,
+    },
+    CollectionMembershipUpdated {
+        collection_id: String,
+        affected: u64,
+        library_revision: u64,
+    },
     ResourceAuthorized(ResourceDescriptor),
     LocationResolved(NativeLocation),
     CanonicalDump {
         dump: Value,
     },
+    CanonicalDigest(CanonicalDigest),
+    CanonicalPage(CanonicalPage),
     Capabilities(Capabilities),
     JobCancellation {
         job_id: String,
@@ -183,9 +390,210 @@ pub struct AssetSummary {
     pub asset_id: String,
     pub location_id: String,
     pub display_name: String,
+    pub relative_display_path: String,
     pub media_family: String,
     pub availability: String,
     pub review_state: String,
+    pub custom_title: Option<String>,
+    pub revision: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetDetail {
+    pub asset_id: String,
+    pub location_id: String,
+    pub original_display_name: String,
+    pub relative_display_path: String,
+    pub media_family: String,
+    pub availability: String,
+    pub review_state: String,
+    pub custom_title: Option<String>,
+    pub note: Option<String>,
+    pub revision: u64,
+    pub collection_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RootSummary {
+    pub root_id: String,
+    pub display_name: String,
+    pub root_kind: String,
+    pub state: String,
+    pub authorized: bool,
+    pub active_job_id: Option<String>,
+    pub observed_count: u64,
+    pub unsupported_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct JobPage {
+    pub offset: u64,
+    pub limit: u32,
+    pub total: u64,
+    pub items: Vec<JobSummary>,
+    pub next_offset: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct JobSummary {
+    pub job_id: String,
+    pub root_id: Option<String>,
+    pub job_kind: String,
+    pub state: JobState,
+    pub observed_count: u64,
+    pub unsupported_count: u64,
+    pub error_code: Option<String>,
+    pub created_at_ms: u64,
+    pub updated_at_ms: u64,
+    pub finished_at_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CollectionSummary {
+    pub collection_id: String,
+    pub name: String,
+    pub asset_count: u64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum CanonicalEntity {
+    Library,
+    Roots,
+    Sources,
+    SourceRevisions,
+    Locations,
+    AssetOrigins,
+    Assets,
+    Collections,
+    CollectionMemberships,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CanonicalEntityCount {
+    pub entity: CanonicalEntity,
+    pub count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CanonicalDigest {
+    pub format: String,
+    pub algorithm: String,
+    pub digest: String,
+    pub counts: Vec<CanonicalEntityCount>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CanonicalPage {
+    pub format: String,
+    pub digest: String,
+    pub entity: CanonicalEntity,
+    pub cursor: Option<String>,
+    pub limit: u32,
+    pub records: Vec<CanonicalRecord>,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "recordType", content = "record", rename_all = "snake_case")]
+pub enum CanonicalRecord {
+    Library(CanonicalLibraryRecord),
+    Root(CanonicalRootRecord),
+    Source(CanonicalSourceRecord),
+    SourceRevision(CanonicalSourceRevisionRecord),
+    Location(CanonicalLocationRecord),
+    AssetOrigin(CanonicalAssetOriginRecord),
+    Asset(CanonicalAssetRecord),
+    Collection(CanonicalCollectionRecord),
+    CollectionMembership(CanonicalCollectionMembershipRecord),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CanonicalLibraryRecord {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CanonicalRootRecord {
+    pub id: String,
+    pub display_name: String,
+    pub root_kind: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CanonicalSourceRecord {
+    pub id: String,
+    pub media_family: String,
+    pub current_revision_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CanonicalSourceRevisionRecord {
+    pub id: String,
+    pub source_id: String,
+    pub byte_size: u64,
+    pub quick_fingerprint: Option<String>,
+    pub mime_detected: String,
+    pub extension_observed: Option<String>,
+    pub media_metadata: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CanonicalLocationRecord {
+    pub id: String,
+    pub root_id: String,
+    pub source_id: String,
+    pub relative_path_bytes_hex: String,
+    pub relative_path_display: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CanonicalAssetOriginRecord {
+    pub id: String,
+    pub asset_id: String,
+    pub source_id: String,
+    pub origin_kind: String,
+    pub origin_spec: Value,
+    pub revision_binding: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CanonicalAssetRecord {
+    pub id: String,
+    pub custom_title: Option<String>,
+    pub review_state: String,
+    pub note: Option<String>,
+    pub revision: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CanonicalCollectionRecord {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CanonicalCollectionMembershipRecord {
+    pub collection_id: String,
+    pub asset_id: String,
 }
 
 /// Privileged core-to-shell descriptor. Native paths must never be forwarded
@@ -253,6 +661,7 @@ pub enum Event {
         root_id: String,
         job_id: String,
         observed_count: u64,
+        unsupported_count: u64,
         terminal: bool,
     },
     AssetsInserted {
@@ -263,6 +672,21 @@ pub enum Event {
     JobUpdated {
         job_id: String,
         state: String,
+    },
+    ResourceAuthorizationStarted {
+        request_id: String,
+        job_id: String,
+        asset_id: String,
+        profile: ResourceProfile,
+    },
+    AssetUpdated {
+        asset_id: String,
+        revision: u64,
+        library_revision: u64,
+    },
+    CollectionsChanged {
+        collection_id: String,
+        library_revision: u64,
     },
     CoreNeedsRestart {
         reason: String,
