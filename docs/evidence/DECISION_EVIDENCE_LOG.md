@@ -85,3 +85,10 @@ Do not rewrite or delete entries. Corrections append a superseding entry.
 **Change:** created `codex/reference-library-t02-rename-reconciliation` from remote T01 head `858202c2bbf5f3427703ccf42414a1629d0f8a59`; designed external rename reconciliation twice around the existing Root scan and migration-1 platform-evidence fields.
 **Fresh measurement:** clean checkout resolved to tree `c9c65b278a1bbbe54c9741ab8f6a85607531f752`, identical to the verified remote T01 tree; `main` remains outside this branch.
 **Decision:** keep M1, L1, X1 and C1 open and explicitly rescheduled. Dispatch only T02 rename/Missing reconciliation; add no source mutation or post-T02 feature.
+
+## 2026-08-27 — T02 external rename reconciliation
+
+**Hypothesis:** existing migration-1 platform identity fields can preserve a pure external rename without turning paths or fingerprints into identity and without widening the public command seam.
+**Change:** common-still scans now retain Unix device/inode evidence, require a unique single-link file identity plus matching current Revision and absent old path before updating the existing Location, and reactivate a Source when its original path returns. Insufficient evidence inserts a separate Source/Location/Asset and leaves the unseen original Missing.
+**Fresh measurement:** `cargo test --workspace` passed 12 tests. Three new T02 public-seam fixtures proved stable Source, SourceRevision, Location, AssetOrigin and Asset IDs across rename/reopen; identical delete-plus-copy produced two equal fingerprints but distinct Assets with the original Missing; original-path restoration returned the same Source and Asset to `active`/`present`. The 100,000-Asset T01 window remained green in 7.91 seconds. Rust format, Clippy with warnings denied, repository boundary and diff checks passed.
+**Decision:** keep the strict relocation predicate. Accept visible false negatives when host evidence is missing or ambiguous; never manufacture a lineage merge from path, filename, size or fingerprint.

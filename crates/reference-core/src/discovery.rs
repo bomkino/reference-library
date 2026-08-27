@@ -2,7 +2,7 @@ use std::{
     collections::BTreeSet,
     fs::{self, File},
     io::{Read, Seek, SeekFrom},
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -10,6 +10,9 @@ use std::{
     },
     time::UNIX_EPOCH,
 };
+
+#[cfg(unix)]
+use std::{ffi::OsString, os::unix::ffi::OsStringExt, os::unix::fs::MetadataExt};
 
 use reference_protocol::Event;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
@@ -199,6 +202,9 @@ fn flush_batch(
         seen.insert(candidate.relative_bytes.clone());
         if let Some(existing) = existing_location(&transaction, plan, &candidate)? {
             refresh_existing(&transaction, &existing, &candidate, timestamp)?;
+        } else if let Some(existing) = relocated_location(&transaction, plan, &candidate)? {
+            relocate_existing(&transaction, &existing, &candidate, timestamp)?;
+            refresh_existing(&transaction, &existing, &candidate, timestamp)?;
         } else {
             inserted_asset_ids.push(insert_new(&transaction, plan, &candidate, timestamp)?);
         }
@@ -243,6 +249,7 @@ fn flush_batch(
 
 #[derive(Debug)]
 struct ExistingLocation {
+    location_id: String,
     source_id: String,
     byte_size: Option<i64>,
     mtime_ms: Option<i64>,
@@ -255,18 +262,108 @@ fn existing_location(
 ) -> Result<Option<ExistingLocation>, CoreError> {
     Ok(transaction
         .query_row(
-            "SELECT source_id, last_stat_size, last_stat_mtime_ms
+            "SELECT id, source_id, last_stat_size, last_stat_mtime_ms
              FROM locations WHERE root_id = ?1 AND relative_path_bytes = ?2",
             params![plan.root_id, candidate.relative_bytes],
             |row| {
                 Ok(ExistingLocation {
-                    source_id: row.get(0)?,
-                    byte_size: row.get(1)?,
-                    mtime_ms: row.get(2)?,
+                    location_id: row.get(0)?,
+                    source_id: row.get(1)?,
+                    byte_size: row.get(2)?,
+                    mtime_ms: row.get(3)?,
                 })
             },
         )
         .optional()?)
+}
+
+fn relocated_location(
+    transaction: &Transaction<'_>,
+    plan: &ScanPlan,
+    candidate: &FileCandidate,
+) -> Result<Option<ExistingLocation>, CoreError> {
+    let (Some(platform_file_id), Some(platform_file_id_kind)) = (
+        candidate.platform_file_id.as_ref(),
+        candidate.platform_file_id_kind.as_ref(),
+    ) else {
+        return Ok(None);
+    };
+    if candidate.platform_link_count != Some(1) {
+        return Ok(None);
+    }
+    let matches = {
+        let mut statement = transaction.prepare(
+            "SELECT l.id, l.source_id, l.last_stat_size, l.last_stat_mtime_ms,
+                    l.relative_path_bytes, sr.byte_size, sr.quick_fingerprint
+             FROM locations l
+             JOIN sources s ON s.id = l.source_id
+             JOIN source_revisions sr ON sr.id = s.current_revision_id
+             WHERE l.root_id = ?1
+               AND l.platform_file_id = ?2
+               AND l.platform_file_id_kind = ?3
+               AND l.relative_path_bytes <> ?4",
+        )?;
+        statement
+            .query_map(
+                params![
+                    plan.root_id,
+                    platform_file_id,
+                    platform_file_id_kind,
+                    candidate.relative_bytes
+                ],
+                |row| {
+                    Ok((
+                        ExistingLocation {
+                            location_id: row.get(0)?,
+                            source_id: row.get(1)?,
+                            byte_size: row.get(2)?,
+                            mtime_ms: row.get(3)?,
+                        },
+                        row.get::<_, Vec<u8>>(4)?,
+                        row.get::<_, i64>(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                    ))
+                },
+            )?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    let [(existing, old_relative_bytes, revision_size, revision_fingerprint)] = matches.as_slice()
+    else {
+        return Ok(None);
+    };
+    if *revision_size != candidate.byte_size as i64
+        || revision_fingerprint.as_deref() != Some(candidate.quick_fingerprint.as_str())
+        || !stored_path_is_absent(&plan.root_path, old_relative_bytes)
+    {
+        return Ok(None);
+    }
+    Ok(Some(ExistingLocation {
+        location_id: existing.location_id.clone(),
+        source_id: existing.source_id.clone(),
+        byte_size: existing.byte_size,
+        mtime_ms: existing.mtime_ms,
+    }))
+}
+
+fn relocate_existing(
+    transaction: &Transaction<'_>,
+    existing: &ExistingLocation,
+    candidate: &FileCandidate,
+    timestamp: i64,
+) -> Result<(), CoreError> {
+    transaction.execute(
+        "UPDATE locations
+         SET relative_path_bytes = ?1, relative_path_display = ?2,
+             state = 'moved_candidate', updated_at_ms = ?3
+         WHERE id = ?4",
+        params![
+            candidate.relative_bytes,
+            candidate.relative_display,
+            timestamp,
+            existing.location_id
+        ],
+    )?;
+    Ok(())
 }
 
 fn refresh_existing(
@@ -277,15 +374,17 @@ fn refresh_existing(
 ) -> Result<(), CoreError> {
     transaction.execute(
         "UPDATE locations SET state = 'present', relative_path_display = ?1,
-             last_stat_size = ?2, last_stat_mtime_ms = ?3, updated_at_ms = ?4
-         WHERE source_id = ?5 AND relative_path_bytes = ?6",
+             last_stat_size = ?2, last_stat_mtime_ms = ?3,
+             platform_file_id = ?4, platform_file_id_kind = ?5, updated_at_ms = ?6
+         WHERE id = ?7",
         params![
             candidate.relative_display,
             candidate.byte_size as i64,
             candidate.mtime_ms,
+            candidate.platform_file_id,
+            candidate.platform_file_id_kind,
             timestamp,
-            existing.source_id,
-            candidate.relative_bytes
+            existing.location_id
         ],
     )?;
     if existing.byte_size != Some(candidate.byte_size as i64)
@@ -303,6 +402,11 @@ fn refresh_existing(
             "UPDATE sources SET current_revision_id = ?1, lineage_state = 'active',
                                 updated_at_ms = ?2 WHERE id = ?3",
             params![revision_id, timestamp, existing.source_id],
+        )?;
+    } else {
+        transaction.execute(
+            "UPDATE sources SET lineage_state = 'active', updated_at_ms = ?1 WHERE id = ?2",
+            params![timestamp, existing.source_id],
         )?;
     }
     Ok(())
@@ -330,14 +434,17 @@ fn insert_new(
     transaction.execute(
         "INSERT INTO locations (
             id, root_id, source_id, relative_path_bytes, relative_path_display,
-            state, last_stat_size, last_stat_mtime_ms, created_at_ms, updated_at_ms
-         ) VALUES (?1, ?2, ?3, ?4, ?5, 'present', ?6, ?7, ?8, ?8)",
+            platform_file_id, platform_file_id_kind, state, last_stat_size,
+            last_stat_mtime_ms, created_at_ms, updated_at_ms
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'present', ?8, ?9, ?10, ?10)",
         params![
             location_id,
             plan.root_id,
             source_id,
             candidate.relative_bytes,
             candidate.relative_display,
+            candidate.platform_file_id,
+            candidate.platform_file_id_kind,
             candidate.byte_size as i64,
             candidate.mtime_ms,
             timestamp
@@ -529,6 +636,9 @@ struct FileCandidate {
     byte_size: u64,
     mtime_ms: Option<i64>,
     quick_fingerprint: String,
+    platform_file_id: Option<Vec<u8>>,
+    platform_file_id_kind: Option<String>,
+    platform_link_count: Option<u64>,
     mime_type: String,
     extension: Option<String>,
     pixel_width: usize,
@@ -562,12 +672,17 @@ impl FileCandidate {
             .ok()
             .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
             .map(|duration| duration.as_millis() as i64);
+        let (platform_file_id, platform_file_id_kind, platform_link_count) =
+            platform_identity(&metadata);
         Ok(Some(Self {
             relative_bytes: relative_path_bytes(relative),
             relative_display: relative.to_string_lossy().into_owned(),
             byte_size: metadata.len(),
             mtime_ms,
             quick_fingerprint: quick_fingerprint(path, metadata.len())?,
+            platform_file_id,
+            platform_file_id_kind,
+            platform_link_count,
             mime_type: mime_type.into(),
             extension: path
                 .extension()
@@ -577,6 +692,44 @@ impl FileCandidate {
             pixel_height: dimensions.height,
         }))
     }
+}
+
+fn stored_path_is_absent(root: &Path, relative_bytes: &[u8]) -> bool {
+    #[cfg(unix)]
+    let relative = PathBuf::from(OsString::from_vec(relative_bytes.to_vec()));
+    #[cfg(not(unix))]
+    let relative = PathBuf::from(String::from_utf8_lossy(relative_bytes).into_owned());
+    if relative.is_absolute()
+        || relative.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        return false;
+    }
+    matches!(
+        fs::symlink_metadata(root.join(relative)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound
+    )
+}
+
+#[cfg(unix)]
+fn platform_identity(metadata: &fs::Metadata) -> (Option<Vec<u8>>, Option<String>, Option<u64>) {
+    let mut identity = Vec::with_capacity(16);
+    identity.extend_from_slice(&metadata.dev().to_be_bytes());
+    identity.extend_from_slice(&metadata.ino().to_be_bytes());
+    (
+        Some(identity),
+        Some("unix-device-inode-v1".into()),
+        Some(metadata.nlink()),
+    )
+}
+
+#[cfg(not(unix))]
+fn platform_identity(_metadata: &fs::Metadata) -> (Option<Vec<u8>>, Option<String>, Option<u64>) {
+    (None, None, None)
 }
 
 fn detect_common_still(bytes: &[u8]) -> Option<&'static str> {
