@@ -65,3 +65,13 @@ git diff --check
 **Fresh measurement:** `python3 scripts/check_repository.py` reported `repository boundary OK: 10 required files; no forbidden corpus`; `git diff --check` passed from the exact T02 base.
 
 **Decision:** keep every item open until its named seam passes freshly.
+
+### 2026-08-27 — Recover bounded host-neutral proof harness
+
+**Hypothesis:** V1 canonical integration can be prepared without duplicating unfinished Core implementation by isolating a digest-bound page collector and a three-host-label semantic journey behind the declared V1 protocol.
+
+**Change:** added the host-neutral proof specification, a bounded `canonical_digest`/`canonical_page` collector, three standalone contract tests and an Electron → Swift → Electron script carrying two curated Assets plus one Collection with three memberships. The legacy T01 semantic script remains unchanged and runnable against the T02 base.
+
+**Fresh measurement:** `node --check` passed for the collector and V1 journey; the three new collector tests passed; after an offline locked dependency install and T02 Core build, `npm test` passed 5 script, 6 workspace and 8 Linux tests; repository boundary and diff checks passed.
+
+**Decision:** keep the harness as integration-ready source evidence. Do not claim V1-09 or host parity until the V1 Core commands exist and the full journey passes; do not claim X1 from host-neutral labels.

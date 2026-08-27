@@ -120,3 +120,10 @@ Do not rewrite or delete entries. Corrections append a superseding entry.
 **Change:** added the V1-01–V1-10 execution contract and append-only run ledger; advanced the implementation frontier from T02 to safe migrations/recovery, Root lifecycle, real bounded renditions, manual curation, lexical query, flat Collections, independent view controls, compatible Linux runtime rehearsal and bounded canonical proof. No product source, manifest, workflow or package configuration changed.
 **Fresh measurement:** `python3 scripts/check_repository.py` and `git diff --check` passed from the exact clean T02 base.
 **Decision:** execute one public-seam vertical slice at a time. Keep M1, L1, X1 and C1 open; prohibit post-v1 scope until source-ready closure and target integration are independently proved.
+
+## 2026-08-27 — Bounded V1 host-neutral proof contract
+
+**Hypothesis:** cross-host semantic evidence can remain bounded and independently testable before Core integration if diagnostic pages are explicitly bound to a digest and the harness never requests a whole-document dump.
+**Change:** specified the V1 Electron → Swift → Electron host-neutral journey; added a reusable digest/page collector, standalone cursor/count/snapshot tests and an integration script that carries manual curation plus flat Collection membership across host labels. The T01 harness and Core production source remain unchanged.
+**Fresh measurement:** `node --check` passed both new scripts; 3 collector tests passed; the complete baseline `npm test` passed 5 script, 6 workspace and 8 Linux tests after building the T02 Core; repository boundary and diff checks passed.
+**Decision:** keep the harness ready for ordered integration after the V1 Core public seam. Host-neutral success remains source evidence only and cannot close M1, L1 or X1.
