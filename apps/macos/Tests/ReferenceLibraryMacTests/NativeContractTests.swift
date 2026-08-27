@@ -16,6 +16,8 @@ final class NativeContractTests: XCTestCase {
         XCTAssertFalse(source.contains("removeRoot"))
         XCTAssertFalse(source.contains("unbindRoot"))
         XCTAssertFalse(source.contains("nativePath"))
+        XCTAssertTrue(source.contains("kind === 'query_snapshot_changed'"))
+        XCTAssertTrue(source.contains("code: 'QuerySnapshotChanged'"))
     }
 
     func testCoreErrorsUseFixedIntegrityMessages() {

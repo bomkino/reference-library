@@ -136,7 +136,13 @@ final class AppModel: ObservableObject {
         case "queryJobs":
             value = try await queryJobs(payload)
         case "queryAssets":
-            value = try await queryAssets(payload)
+            do {
+                value = try await queryAssets(payload)
+            } catch ModelFailure.querySnapshotChanged {
+                // WKScriptMessageHandlerWithReply only transports an error string. Return one
+                // finite sentinel so the injected bridge can reconstruct the stable typed error.
+                return #"{"kind":"query_snapshot_changed"}"#
+            }
         case "getAsset":
             let sessionID = try requireActiveSession(payload)
             value = try CoreResultValidator.asset(try await epochCheckedRequest(

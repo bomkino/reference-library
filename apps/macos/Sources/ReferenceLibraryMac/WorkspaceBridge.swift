@@ -66,7 +66,12 @@ final class WorkspaceBridge: NSObject, WKScriptMessageHandlerWithReply {
               (!Number.isSafeInteger(input.expectedLibraryRevision) || input.expectedLibraryRevision < 0)) {
             throw new TypeError('expectedLibraryRevision must be a non-negative safe integer or null');
           }
-          return call('queryAssets', input);
+          return call('queryAssets', input).then((value) => {
+            if (value && Object.keys(value).length === 1 && value.kind === 'query_snapshot_changed') {
+              throw Object.assign(new Error('QuerySnapshotChanged'), {code: 'QuerySnapshotChanged'});
+            }
+            return value;
+          });
         },
         getAsset: (sessionId, assetId) => call('getAsset', {
           sessionId: opaque(sessionId, 'sessionId'), assetId: opaque(assetId, 'assetId')

@@ -105,6 +105,8 @@ test("Core results are structurally rebuilt before renderer delivery", async () 
   assert.match(core, /Set\(payload\.keys\) == \["code", "message", "retryable"\]/);
   assert.match(model, /CoreSupervisor\.Failure\.capacityExceeded[\s\S]*requestCapacityExceeded/);
   assert.match(model, /expectedLibraryRevision[\s\S]*QuerySnapshotChanged[\s\S]*failure\.retryable/);
+  assert.match(model, /catch ModelFailure\.querySnapshotChanged[\s\S]*"query_snapshot_changed"/);
+  assert.match(await source("WorkspaceBridge.swift"), /kind === 'query_snapshot_changed'[\s\S]*code: 'QuerySnapshotChanged'/);
   assert.match(validator, /"unavailable",[\s\S]*"unsupported"/);
   assert.match(await source("RendererErrorPolicy.swift"), /QuerySnapshotChanged/);
 });
