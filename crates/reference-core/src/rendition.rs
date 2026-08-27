@@ -5,7 +5,7 @@ use std::{
     io::{BufReader, Cursor, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::{
-        Arc, Mutex, OnceLock, Weak,
+        Arc, Condvar, Mutex, OnceLock, Weak,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
@@ -28,6 +28,16 @@ pub const MAX_DECODE_PIXELS: u64 = 64 * 1024 * 1024;
 pub const MAX_GRID_EDGE: u32 = 512;
 pub const MAX_GRID_BYTES: u64 = 8 * 1024 * 1024;
 const DEADLINE: Duration = Duration::from_secs(30);
+const MAX_INTEGRITY_BYTES: u64 = 4 * 1024;
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GridIntegrity {
+    provider_version: String,
+    source_fingerprint: String,
+    output_fingerprint: String,
+    output_length: u64,
+}
 
 #[derive(Debug)]
 pub struct ResourcePlan {
@@ -52,6 +62,8 @@ pub fn authorize(
 ) -> Result<ResourceDescriptor, CoreError> {
     let started = Instant::now();
     checkpoint(cancelled, started)?;
+    validate_cache_id(&plan.library_id)?;
+    validate_cache_id(&plan.source_revision_id)?;
     if plan.source_length > MAX_SOURCE_BYTES {
         return Err(CoreError::ResourceTooLarge);
     }
@@ -76,14 +88,15 @@ pub fn authorize(
         .join(provider)
         .join(&plan.source_revision_id)
         .join(format!("{}.{}", profile_key(plan.profile), extension));
+    let integrity_target = integrity_path(&target);
     ensure_private_parent(&cache_root, &target)?;
-    let lock = key_lock(&target);
-    let _guard = lock.lock().map_err(|_| CoreError::RenditionCacheFailure)?;
+    let _permit = acquire_key(&target, cancelled, started)?;
     checkpoint(cancelled, started)?;
     if validate_cached(
         &target,
         plan.profile,
         &plan.expected_fingerprint,
+        plan.source_length,
         cancelled,
         started,
     )? {
@@ -91,6 +104,9 @@ pub fn authorize(
     }
     if target.exists() {
         fs::remove_file(&target).map_err(|_| CoreError::RenditionCacheFailure)?;
+    }
+    if integrity_target.exists() {
+        fs::remove_file(&integrity_target).map_err(|_| CoreError::RenditionCacheFailure)?;
     }
     let temporary = target.with_file_name(format!(
         ".{}.{}.tmp",
@@ -100,6 +116,7 @@ pub fn authorize(
             .unwrap_or("resource"),
         Uuid::new_v4()
     ));
+    let integrity_temporary = integrity_path(&temporary);
     let result = match plan.profile {
         ResourceProfile::Preview => publish_preview_snapshot(
             &mut plan.source_file,
@@ -121,13 +138,50 @@ pub fn authorize(
     };
     if let Err(error) = result {
         let _ = fs::remove_file(&temporary);
+        let _ = fs::remove_file(&integrity_temporary);
         return Err(error);
+    }
+    if plan.profile == ResourceProfile::GridStandard {
+        let integrity_result = (|| -> Result<(), CoreError> {
+            let mut output = File::open(&temporary)?;
+            let output_length = output.metadata()?.len();
+            let output_fingerprint = full_fingerprint_cancellable(
+                &mut output,
+                output_length,
+                Some(cancelled),
+                Some(started + DEADLINE),
+            )?;
+            let bytes = serde_json::to_vec(&GridIntegrity {
+                provider_version: GRID_PROVIDER_VERSION.into(),
+                source_fingerprint: plan.expected_fingerprint.clone(),
+                output_fingerprint,
+                output_length,
+            })
+            .map_err(|_| CoreError::RenditionCacheFailure)?;
+            let mut integrity = private_temporary(&integrity_temporary)?;
+            integrity.write_all(&bytes)?;
+            integrity.sync_all()?;
+            Ok(())
+        })();
+        if let Err(error) = integrity_result {
+            let _ = fs::remove_file(&temporary);
+            let _ = fs::remove_file(&integrity_temporary);
+            return Err(error);
+        }
     }
     if let Err(error) = checkpoint(cancelled, started) {
         let _ = fs::remove_file(&temporary);
+        let _ = fs::remove_file(&integrity_temporary);
         return Err(error);
     }
     fs::rename(&temporary, &target).map_err(|_| CoreError::RenditionCacheFailure)?;
+    if plan.profile == ResourceProfile::GridStandard
+        && fs::rename(&integrity_temporary, &integrity_target).is_err()
+    {
+        let _ = fs::remove_file(&target);
+        let _ = fs::remove_file(&integrity_temporary);
+        return Err(CoreError::RenditionCacheFailure);
+    }
     File::open(target.parent().ok_or(CoreError::RenditionCacheFailure)?)
         .and_then(|directory| directory.sync_all())
         .map_err(|_| CoreError::RenditionCacheFailure)?;
@@ -410,6 +464,9 @@ fn ensure_private_parent(cache_root: &Path, target: &Path) -> Result<(), CoreErr
         .map_err(|_| CoreError::RenditionCacheUnsafe)?;
     let mut current = cache_root.to_path_buf();
     for component in relative.components() {
+        let std::path::Component::Normal(component) = component else {
+            return Err(CoreError::RenditionCacheUnsafe);
+        };
         current.push(component);
         create_private_directory(&current)?;
     }
@@ -417,6 +474,14 @@ fn ensure_private_parent(cache_root: &Path, target: &Path) -> Result<(), CoreErr
         .canonicalize()
         .map_err(|_| CoreError::RenditionCacheFailure)?;
     if !resolved.starts_with(cache_root) {
+        return Err(CoreError::RenditionCacheUnsafe);
+    }
+    Ok(())
+}
+
+fn validate_cache_id(value: &str) -> Result<(), CoreError> {
+    let parsed = Uuid::parse_str(value).map_err(|_| CoreError::RenditionCacheUnsafe)?;
+    if parsed.to_string() != value {
         return Err(CoreError::RenditionCacheUnsafe);
     }
     Ok(())
@@ -458,6 +523,7 @@ fn validate_cached(
     path: &Path,
     profile: ResourceProfile,
     expected_fingerprint: &str,
+    expected_source_length: u64,
     cancelled: &AtomicBool,
     started: Instant,
 ) -> Result<bool, CoreError> {
@@ -474,14 +540,46 @@ fn validate_cached(
             if metadata.len() == 0 || metadata.len() > MAX_GRID_BYTES {
                 return Ok(false);
             }
-            Ok(imagesize::size(path).ok().is_some_and(|size| {
-                size.width > 0
-                    && size.height > 0
-                    && size.width <= MAX_GRID_EDGE as usize
-                    && size.height <= MAX_GRID_EDGE as usize
-            }))
+            let integrity_path = integrity_path(path);
+            let integrity_metadata = match fs::symlink_metadata(&integrity_path) {
+                Ok(metadata)
+                    if metadata.is_file()
+                        && !metadata.file_type().is_symlink()
+                        && metadata.len() <= MAX_INTEGRITY_BYTES =>
+                {
+                    metadata
+                }
+                Ok(_) => return Ok(false),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+                Err(_) => return Err(CoreError::RenditionCacheFailure),
+            };
+            let mut integrity_bytes = Vec::with_capacity(integrity_metadata.len() as usize);
+            File::open(&integrity_path)?.read_to_end(&mut integrity_bytes)?;
+            let Ok(integrity) = serde_json::from_slice::<GridIntegrity>(&integrity_bytes) else {
+                return Ok(false);
+            };
+            if integrity.provider_version != GRID_PROVIDER_VERSION
+                || integrity.source_fingerprint != expected_fingerprint
+                || integrity.output_length != metadata.len()
+            {
+                return Ok(false);
+            }
+            let mut output = File::open(path)?;
+            if full_fingerprint_cancellable(
+                &mut output,
+                metadata.len(),
+                Some(cancelled),
+                Some(started + DEADLINE),
+            )? != integrity.output_fingerprint
+            {
+                return Ok(false);
+            }
+            validate_grid_image(path)
         }
         ResourceProfile::Preview => {
+            if metadata.len() != expected_source_length || metadata.len() > MAX_SOURCE_BYTES {
+                return Ok(false);
+            }
             let mut file = File::open(path)?;
             Ok(full_fingerprint_cancellable(
                 &mut file,
@@ -491,6 +589,37 @@ fn validate_cached(
             )? == expected_fingerprint)
         }
     }
+}
+
+fn validate_grid_image(path: &Path) -> Result<bool, CoreError> {
+    let mut reader = ImageReader::with_format(BufReader::new(File::open(path)?), ImageFormat::Png);
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_GRID_EDGE);
+    limits.max_image_height = Some(MAX_GRID_EDGE);
+    limits.max_alloc = Some(MAX_GRID_BYTES);
+    reader.limits(limits);
+    let decoder = match reader.into_decoder() {
+        Ok(decoder) => decoder,
+        Err(_) => return Ok(false),
+    };
+    let (width, height) = decoder.dimensions();
+    if width == 0
+        || height == 0
+        || width > MAX_GRID_EDGE
+        || height > MAX_GRID_EDGE
+        || decoder.total_bytes() > MAX_GRID_BYTES
+    {
+        return Ok(false);
+    }
+    Ok(DynamicImage::from_decoder(decoder).is_ok())
+}
+
+fn integrity_path(path: &Path) -> PathBuf {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("grid");
+    path.with_file_name(format!("{name}.integrity.json"))
 }
 
 fn validate_source_evidence(
@@ -570,8 +699,54 @@ fn checkpoint(cancelled: &AtomicBool, started: Instant) -> Result<(), CoreError>
         Ok(())
     }
 }
-fn key_lock(path: &Path) -> Arc<Mutex<()>> {
-    static LOCKS: OnceLock<Mutex<HashMap<PathBuf, Weak<Mutex<()>>>>> = OnceLock::new();
+struct KeyGate {
+    active: Mutex<bool>,
+    wake: Condvar,
+}
+
+struct KeyPermit {
+    gate: Arc<KeyGate>,
+}
+
+impl Drop for KeyPermit {
+    fn drop(&mut self) {
+        if let Ok(mut active) = self.gate.active.lock() {
+            *active = false;
+            self.gate.wake.notify_one();
+        }
+    }
+}
+
+fn acquire_key(
+    path: &Path,
+    cancelled: &AtomicBool,
+    started: Instant,
+) -> Result<KeyPermit, CoreError> {
+    let gate = key_gate(path);
+    let mut active = gate
+        .active
+        .lock()
+        .map_err(|_| CoreError::RenditionCacheFailure)?;
+    loop {
+        checkpoint(cancelled, started)?;
+        if !*active {
+            *active = true;
+            drop(active);
+            return Ok(KeyPermit { gate });
+        }
+        let remaining = (started + DEADLINE)
+            .checked_duration_since(Instant::now())
+            .ok_or(CoreError::RenditionTimedOut)?;
+        let (next, _) = gate
+            .wake
+            .wait_timeout(active, remaining.min(Duration::from_millis(10)))
+            .map_err(|_| CoreError::RenditionCacheFailure)?;
+        active = next;
+    }
+}
+
+fn key_gate(path: &Path) -> Arc<KeyGate> {
+    static LOCKS: OnceLock<Mutex<HashMap<PathBuf, Weak<KeyGate>>>> = OnceLock::new();
     let mut locks = LOCKS
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
@@ -580,7 +755,38 @@ fn key_lock(path: &Path) -> Arc<Mutex<()>> {
     if let Some(lock) = locks.get(path).and_then(Weak::upgrade) {
         return lock;
     }
-    let lock = Arc::new(Mutex::new(()));
+    let lock = Arc::new(KeyGate {
+        active: Mutex::new(false),
+        wake: Condvar::new(),
+    });
     locks.insert(path.to_path_buf(), Arc::downgrade(&lock));
     lock
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cancelled_waiter_does_not_wait_for_the_same_cache_key_owner() {
+        let path = PathBuf::from("same-cache-key");
+        let owner_cancelled = AtomicBool::new(false);
+        let owner = acquire_key(&path, &owner_cancelled, Instant::now()).unwrap();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let worker_cancelled = Arc::clone(&cancelled);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            sender
+                .send(acquire_key(&path, &worker_cancelled, Instant::now()).map(drop))
+                .unwrap();
+        });
+        std::thread::sleep(Duration::from_millis(20));
+        cancelled.store(true, Ordering::Release);
+        assert!(matches!(
+            receiver.recv_timeout(Duration::from_millis(250)).unwrap(),
+            Err(CoreError::RenditionCancelled)
+        ));
+        drop(owner);
+        worker.join().unwrap();
+    }
 }

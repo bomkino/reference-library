@@ -21,6 +21,10 @@ pub const MAX_NOTE_CHARS: usize = 5_000;
 pub const MAX_COLLECTION_NAME_CHARS: usize = 200;
 pub const MAX_COLLECTION_MEMBERSHIP_BATCH: usize = 250;
 pub const MAX_LIBRARY_NAME_CHARS: usize = 200;
+pub const MAX_ROOT_NAME_CHARS: usize = 200;
+pub const MAX_ROOTS: usize = 64;
+pub const MAX_COLLECTIONS: usize = 512;
+pub const MAX_ASSET_COLLECTIONS: usize = MAX_COLLECTIONS;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -81,6 +85,8 @@ pub enum Command {
         limit: u32,
         projection: AssetProjection,
         query: AssetQuery,
+        #[serde(default)]
+        expected_library_revision: Option<u64>,
     },
     GetAsset {
         session_id: String,
@@ -261,6 +267,7 @@ pub enum AvailabilityFilter {
     Unavailable,
     OfflineVolume,
     Unreadable,
+    Unsupported,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

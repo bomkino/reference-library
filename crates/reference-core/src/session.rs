@@ -25,8 +25,9 @@ use std::{
 
 use reference_protocol::{
     AssetDetail, AssetPage, AssetPatch, AssetProjection, AssetQuery, CanonicalDigest,
-    CanonicalEntity, CanonicalPage, CollectionSummary, JobPage, JobQuery, NativeLocation,
-    ResourceDescriptor, ResourceProfile, ReviewState, RootSummary, SessionOpened, TextPatch,
+    CanonicalEntity, CanonicalPage, CollectionSummary, JobPage, JobQuery, MAX_ROOT_NAME_CHARS,
+    MAX_ROOTS, NativeLocation, ResourceDescriptor, ResourceProfile, ReviewState, RootSummary,
+    SessionOpened, TextPatch,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
@@ -49,7 +50,14 @@ pub struct LibrarySession {
     connection: Option<Connection>,
     lock_file: Option<File>,
     authorized_roots: RefCell<HashMap<String, AuthorizedRoot>>,
+    canonical_snapshot: RefCell<Option<CanonicalSessionSnapshot>>,
     closed: bool,
+}
+
+#[derive(Debug, Clone)]
+struct CanonicalSessionSnapshot {
+    digest: CanonicalDigest,
+    library_revision: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -133,6 +141,49 @@ impl AuthorizedRoot {
         #[cfg(not(unix))]
         {
             self.canonical_path == other.canonical_path
+        }
+    }
+
+    fn provider_path_matches_authority(&self) -> bool {
+        AuthorizedRoot::open(&self.canonical_path)
+            .is_ok_and(|current| self.same_directory(&current))
+    }
+
+    fn identity_policy_json(&self) -> String {
+        #[cfg(unix)]
+        {
+            if let Ok(metadata) = self.directory.metadata() {
+                return serde_json::json!({
+                    "authorityIdentity": {
+                        "kind": "unix-device-inode-v1",
+                        "device": metadata.dev(),
+                        "inode": metadata.ino()
+                    }
+                })
+                .to_string();
+            }
+        }
+        "{}".into()
+    }
+
+    fn matches_identity_policy(&self, policy: &str) -> bool {
+        #[cfg(unix)]
+        {
+            let Ok(policy) = serde_json::from_str::<serde_json::Value>(policy) else {
+                return false;
+            };
+            let identity = &policy["authorityIdentity"];
+            let Ok(metadata) = self.directory.metadata() else {
+                return false;
+            };
+            identity["kind"] == "unix-device-inode-v1"
+                && identity["device"].as_u64() == Some(metadata.dev())
+                && identity["inode"].as_u64() == Some(metadata.ino())
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = policy;
+            false
         }
     }
 }
@@ -220,6 +271,7 @@ impl LibrarySession {
             }
         };
         recover_interrupted_scan(&connection)?;
+        mark_linked_roots_unbound(&connection)?;
         Ok(Self {
             session_id: Uuid::new_v4().to_string(),
             package_path: package_path.to_path_buf(),
@@ -227,6 +279,7 @@ impl LibrarySession {
             connection: Some(connection),
             lock_file: Some(lock_file),
             authorized_roots: RefCell::new(HashMap::new()),
+            canonical_snapshot: RefCell::new(None),
             closed: false,
         })
     }
@@ -256,7 +309,11 @@ impl LibrarySession {
         let connection = self.connection()?;
         let authority = AuthorizedRoot::open(authorized_path.as_ref())?;
         let root_path = authority.path().to_path_buf();
-        if display_name.trim().is_empty() {
+        let display_name = display_name.trim().to_owned();
+        if display_name.is_empty()
+            || display_name.contains('\0')
+            || display_name.chars().count() > MAX_ROOT_NAME_CHARS
+        {
             return Err(CoreError::RootPermissionRequired);
         }
         let path_text = root_path.to_string_lossy().into_owned();
@@ -269,8 +326,10 @@ impl LibrarySession {
         if root_id.is_none() {
             let candidates = {
                 let mut statement = connection.prepare(
-                    "SELECT id FROM roots WHERE library_id=?1 AND last_known_display_path=?2
-                     ORDER BY created_at_ms,id",
+                    "SELECT r.id FROM roots r
+                     WHERE r.library_id=?1 AND r.last_known_display_path=?2
+                       AND EXISTS (SELECT 1 FROM locations l WHERE l.root_id=r.id)
+                     ORDER BY r.created_at_ms,r.id",
                 )?;
                 statement
                     .query_map(params![self.manifest.library_id, path_text], |row| {
@@ -288,6 +347,16 @@ impl LibrarySession {
                 root_id = Some(matched.clone());
             }
         }
+        if root_id.is_none() {
+            let count = connection.query_row(
+                "SELECT COUNT(*) FROM roots WHERE library_id=?1",
+                params![self.manifest.library_id],
+                |row| row.get::<_, i64>(0),
+            )?;
+            if count < 0 || count as usize >= MAX_ROOTS {
+                return Err(CoreError::RootLimitReached);
+            }
+        }
         let root_id = root_id.unwrap_or_else(|| Uuid::new_v4().to_string());
         let active: bool = connection.query_row(
             "SELECT EXISTS(SELECT 1 FROM jobs
@@ -299,16 +368,18 @@ impl LibrarySession {
             return Err(CoreError::RootScanInProgress);
         }
         let job_id = Uuid::new_v4().to_string();
+        let identity_policy = authority.identity_policy_json();
         let timestamp = now_ms() as i64;
         let transaction = connection.unchecked_transaction()?;
         transaction.execute(
             "INSERT INTO roots (
                 id, library_id, display_name, root_kind, last_known_display_path,
                 state, scan_policy_json, created_at_ms, updated_at_ms, last_seen_at_ms
-             ) VALUES (?1, ?2, ?3, 'linked', ?4, 'scanning', '{}', ?5, ?5, ?5)
+             ) VALUES (?1, ?2, ?3, 'linked', ?4, 'scanning', ?5, ?6, ?6, ?6)
              ON CONFLICT(id) DO UPDATE SET
                 display_name = excluded.display_name,
                 last_known_display_path = excluded.last_known_display_path,
+                scan_policy_json = excluded.scan_policy_json,
                 state = 'scanning', updated_at_ms = excluded.updated_at_ms,
                 last_seen_at_ms = excluded.last_seen_at_ms",
             params![
@@ -316,6 +387,7 @@ impl LibrarySession {
                 self.manifest.library_id,
                 display_name,
                 path_text,
+                identity_policy,
                 timestamp
             ],
         )?;
@@ -353,30 +425,39 @@ impl LibrarySession {
              FROM roots r
              LEFT JOIN jobs j ON j.id = (
                  SELECT id FROM jobs
-                 WHERE root_id = r.id
+                 WHERE root_id = r.id AND job_kind = 'initial_scan'
                  ORDER BY created_at_ms DESC, id DESC LIMIT 1
              )
-             WHERE r.library_id = ?1 ORDER BY r.created_at_ms, r.id",
+             WHERE r.library_id = ?1 ORDER BY r.created_at_ms, r.id LIMIT ?2",
         )?;
-        Ok(statement
-            .query_map(params![self.manifest.library_id], |row| {
-                let root_id: String = row.get(0)?;
-                let progress = row
-                    .get::<_, Option<String>>(5)?
-                    .and_then(|value| serde_json::from_str::<serde_json::Value>(&value).ok())
-                    .unwrap_or_default();
-                Ok(RootSummary {
-                    authorized: authorized.contains_key(&root_id),
-                    root_id,
-                    display_name: row.get(1)?,
-                    root_kind: row.get(2)?,
-                    state: row.get(3)?,
-                    active_job_id: row.get(4)?,
-                    observed_count: progress["observedCount"].as_u64().unwrap_or_default(),
-                    unsupported_count: progress["unsupportedCount"].as_u64().unwrap_or_default(),
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?)
+        let items = statement
+            .query_map(
+                params![self.manifest.library_id, MAX_ROOTS as i64 + 1],
+                |row| {
+                    let root_id: String = row.get(0)?;
+                    let progress = row
+                        .get::<_, Option<String>>(5)?
+                        .and_then(|value| serde_json::from_str::<serde_json::Value>(&value).ok())
+                        .unwrap_or_default();
+                    Ok(RootSummary {
+                        authorized: authorized.contains_key(&root_id),
+                        root_id,
+                        display_name: row.get(1)?,
+                        root_kind: row.get(2)?,
+                        state: row.get(3)?,
+                        active_job_id: row.get(4)?,
+                        observed_count: progress["observedCount"].as_u64().unwrap_or_default(),
+                        unsupported_count: progress["unsupportedCount"]
+                            .as_u64()
+                            .unwrap_or_default(),
+                    })
+                },
+            )?
+            .collect::<Result<Vec<_>, _>>()?;
+        if items.len() > MAX_ROOTS {
+            return Err(CoreError::RootLimitReached);
+        }
+        Ok(items)
     }
 
     pub fn query_roots(&self) -> Result<Vec<RootSummary>, CoreError> {
@@ -408,6 +489,7 @@ impl LibrarySession {
         }
         let authority = AuthorizedRoot::open(authorized_path.as_ref())?;
         validate_root_evidence(connection, root_id, &authority)?;
+        let identity_policy = authority.identity_policy_json();
         let timestamp = now_ms() as i64;
         let transaction = connection.unchecked_transaction()?;
         let active: bool = transaction.query_row(
@@ -419,9 +501,15 @@ impl LibrarySession {
             return Err(CoreError::RootScanInProgress);
         }
         transaction.execute(
-            "UPDATE roots SET last_known_display_path = ?1, state = 'connected',
-                              updated_at_ms = ?2, last_seen_at_ms = ?2 WHERE id = ?3",
-            params![authority.path().to_string_lossy(), timestamp, root_id],
+            "UPDATE roots SET last_known_display_path = ?1, scan_policy_json=?2,
+                              state = 'connected', updated_at_ms = ?3,
+                              last_seen_at_ms = ?3 WHERE id = ?4",
+            params![
+                authority.path().to_string_lossy(),
+                identity_policy,
+                timestamp,
+                root_id
+            ],
         )?;
         bump_revision(&transaction, timestamp)?;
         transaction.commit()?;
@@ -509,6 +597,7 @@ impl LibrarySession {
             limit,
             _projection,
             &AssetQuery::default(),
+            None,
         )
     }
 
@@ -526,6 +615,26 @@ impl LibrarySession {
             limit,
             projection,
             query,
+            None,
+        )
+    }
+
+    pub fn query_asset_index_at_revision(
+        &self,
+        offset: u64,
+        limit: u32,
+        projection: AssetProjection,
+        query: &AssetQuery,
+        expected_library_revision: Option<u64>,
+    ) -> Result<AssetPage, CoreError> {
+        editorial::query_assets(
+            self.connection()?,
+            &self.manifest.library_id,
+            offset,
+            limit,
+            projection,
+            query,
+            expected_library_revision,
         )
     }
 
@@ -768,10 +877,12 @@ impl LibrarySession {
             fingerprint,
         ) in records
         {
-            if state != "present" {
-                continue;
+            if Uuid::parse_str(&location_id).is_err()
+                || Uuid::parse_str(&root_id).is_err()
+                || Uuid::parse_str(&source_revision_id).is_err()
+            {
+                return Err(CoreError::SourceRevisionChanged);
             }
-            saw_present = true;
             if !matches!(
                 mime_type.as_str(),
                 "image/jpeg" | "image/png" | "image/webp"
@@ -781,6 +892,13 @@ impl LibrarySession {
             if source_length > rendition::MAX_SOURCE_BYTES {
                 return Err(CoreError::ResourceTooLarge);
             }
+            if state == "unreadable" {
+                return Err(CoreError::RenditionInputInvalid);
+            }
+            if state != "present" {
+                continue;
+            }
+            saw_present = true;
             let Some(authority) = authorized.get(&root_id) else {
                 continue;
             };
@@ -835,6 +953,9 @@ impl LibrarySession {
             .get(&record.0)
             .cloned()
             .ok_or(CoreError::RootPermissionRequired)?;
+        if !authority.provider_path_matches_authority() {
+            return Err(CoreError::LocationMissing);
+        }
         let _verified = authority.open_file(&record.1)?;
         let relative = relative_path_from_bytes(&record.1)?;
         validate_relative(&relative)?;
@@ -850,7 +971,13 @@ impl LibrarySession {
     }
 
     pub fn canonical_digest(&self) -> Result<CanonicalDigest, CoreError> {
-        canonical::digest(self.connection()?)
+        let (digest, library_revision) = canonical::digest_with_revision(self.connection()?)?;
+        self.canonical_snapshot
+            .replace(Some(CanonicalSessionSnapshot {
+                digest: digest.clone(),
+                library_revision,
+            }));
+        Ok(digest)
     }
 
     pub fn canonical_page(
@@ -860,7 +987,34 @@ impl LibrarySession {
         cursor: Option<&str>,
         limit: u32,
     ) -> Result<CanonicalPage, CoreError> {
-        canonical::page(self.connection()?, snapshot_digest, entity, cursor, limit)
+        let cached = self
+            .canonical_snapshot
+            .borrow()
+            .as_ref()
+            .filter(|snapshot| snapshot.digest.digest == snapshot_digest)
+            .cloned();
+        let snapshot = if let Some(snapshot) = cached {
+            snapshot
+        } else {
+            let (digest, library_revision) = canonical::digest_with_revision(self.connection()?)?;
+            if digest.digest != snapshot_digest {
+                return Err(CoreError::CanonicalSnapshotChanged);
+            }
+            let snapshot = CanonicalSessionSnapshot {
+                digest,
+                library_revision,
+            };
+            self.canonical_snapshot.replace(Some(snapshot.clone()));
+            snapshot
+        };
+        canonical::page_verified(
+            self.connection()?,
+            &snapshot.digest,
+            snapshot.library_revision,
+            entity,
+            cursor,
+            limit,
+        )
     }
 
     pub fn job_state(&self, job_id: &str) -> Result<Option<String>, CoreError> {
@@ -924,6 +1078,15 @@ fn recover_interrupted_scan(connection: &Connection) -> Result<(), CoreError> {
     Ok(())
 }
 
+fn mark_linked_roots_unbound(connection: &Connection) -> Result<(), CoreError> {
+    connection.execute(
+        "UPDATE roots SET state='needs_permission', updated_at_ms=?1
+         WHERE root_kind='linked' AND state != 'error'",
+        params![now_ms() as i64],
+    )?;
+    Ok(())
+}
+
 pub(crate) fn bump_revision(connection: &Connection, timestamp: i64) -> Result<u64, CoreError> {
     Ok(connection.query_row(
         "UPDATE library_meta
@@ -953,64 +1116,136 @@ fn validate_root_evidence(
     root_id: &str,
     authority: &AuthorizedRoot,
 ) -> Result<(), CoreError> {
+    const MAX_EVIDENCE_FILE_BYTES: u64 = 128 * 1024 * 1024;
+    const MAX_EVIDENCE_HASH_BYTES: u64 = 256 * 1024 * 1024;
+    const EVIDENCE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(10);
+    let identity_policy = connection.query_row(
+        "SELECT scan_policy_json FROM roots WHERE id=?1",
+        params![root_id],
+        |row| row.get::<_, String>(0),
+    )?;
+    if authority.matches_identity_policy(&identity_policy) {
+        return Ok(());
+    }
     let total = connection.query_row(
         "SELECT COUNT(*) FROM locations WHERE root_id = ?1",
         params![root_id],
         |row| row.get::<_, i64>(0),
     )? as usize;
     if total == 0 {
-        return Ok(());
+        return Err(CoreError::RootIdentityMismatch);
     }
-    let offsets = if total <= 8 {
-        (0..total).collect::<Vec<_>>()
-    } else {
-        (0..8)
-            .map(|index| index * (total - 1) / 7)
-            .collect::<Vec<_>>()
-    };
-    let mut evidence = Vec::with_capacity(offsets.len());
     let mut statement = connection.prepare(
-        "SELECT l.relative_path_bytes,sr.byte_size,sr.quick_fingerprint FROM locations l
-         JOIN sources s ON s.id=l.source_id JOIN source_revisions sr ON sr.id=s.current_revision_id
-         WHERE l.root_id=?1 ORDER BY CASE l.state WHEN 'present' THEN 0 ELSE 1 END,l.id
-         LIMIT 1 OFFSET ?2",
+        "WITH eligible AS (
+             SELECT l.id,l.relative_path_bytes,sr.byte_size,sr.quick_fingerprint,
+                    l.platform_file_id,l.platform_file_id_kind,
+                    SUM(sr.byte_size) OVER (ORDER BY sr.byte_size,l.id) AS cumulative_bytes
+             FROM locations l
+             JOIN sources s ON s.id=l.source_id
+             JOIN source_revisions sr ON sr.id=s.current_revision_id
+             WHERE l.root_id=?1 AND sr.quick_fingerprint IS NOT NULL
+               AND sr.byte_size BETWEEN 0 AND ?2
+         )
+         SELECT relative_path_bytes,byte_size,quick_fingerprint,
+                platform_file_id,platform_file_id_kind
+         FROM eligible WHERE cumulative_bytes<=?3
+         ORDER BY byte_size,id LIMIT 8",
     )?;
-    for offset in offsets {
-        evidence.push(statement.query_row(params![root_id, offset as i64], |row| {
-            Ok((
-                row.get::<_, Vec<u8>>(0)?,
-                row.get::<_, i64>(1)? as u64,
-                row.get::<_, Option<String>>(2)?,
-            ))
-        })?);
-    }
-    let required = usize::min(2, total);
+    let evidence = statement
+        .query_map(
+            params![
+                root_id,
+                MAX_EVIDENCE_FILE_BYTES as i64,
+                MAX_EVIDENCE_HASH_BYTES as i64
+            ],
+            |row| {
+                Ok((
+                    row.get::<_, Vec<u8>>(0)?,
+                    row.get::<_, i64>(1)? as u64,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<Vec<u8>>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                ))
+            },
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+    let minimum_required = usize::min(2, total);
+    let mut required = 0_usize;
     let mut matched = 0_usize;
-    for (relative, expected_size, expected_fingerprint) in evidence {
-        let Ok(mut file) = authority.open_file(&relative) else {
+    let deadline = std::time::Instant::now() + EVIDENCE_DEADLINE;
+    for (
+        relative,
+        expected_size,
+        expected_fingerprint,
+        expected_platform_id,
+        expected_platform_kind,
+    ) in evidence
+    {
+        let platform_evidence = expected_platform_kind.as_deref() == Some("unix-device-inode-v1")
+            && expected_platform_id.is_some();
+        let hash_evidence = expected_fingerprint.is_some();
+        if !platform_evidence && !hash_evidence {
             continue;
-        };
+        }
+        required += 1;
+        let mut file = authority
+            .open_file(&relative)
+            .map_err(|_| CoreError::RootIdentityMismatch)?;
         let metadata = file
             .metadata()
             .map_err(|_| CoreError::RootIdentityMismatch)?;
         if metadata.len() != expected_size {
             return Err(CoreError::RootIdentityMismatch);
         }
-        if let Some(expected_fingerprint) = expected_fingerprint
-            && full_fingerprint(&mut file, expected_size)? != expected_fingerprint
-        {
+        if platform_identity_matches(
+            &metadata,
+            expected_platform_id.as_deref(),
+            expected_platform_kind.as_deref(),
+        ) {
+            matched += 1;
+            continue;
+        }
+        if !hash_evidence {
+            return Err(CoreError::RootIdentityMismatch);
+        }
+        let Some(expected_fingerprint) = expected_fingerprint else {
+            continue;
+        };
+        let observed = full_fingerprint_cancellable(&mut file, expected_size, None, Some(deadline))
+            .map_err(|_| CoreError::RootIdentityMismatch)?;
+        if observed != expected_fingerprint {
             return Err(CoreError::RootIdentityMismatch);
         }
         matched += 1;
     }
-    if matched < required {
+    if required < minimum_required || matched != required {
         return Err(CoreError::RootIdentityMismatch);
     }
     Ok(())
 }
 
-pub(crate) fn full_fingerprint(file: &mut File, size: u64) -> Result<String, CoreError> {
-    full_fingerprint_cancellable(file, size, None, None)
+#[cfg(unix)]
+fn platform_identity_matches(
+    metadata: &fs::Metadata,
+    expected_id: Option<&[u8]>,
+    expected_kind: Option<&str>,
+) -> bool {
+    if expected_kind != Some("unix-device-inode-v1") {
+        return false;
+    }
+    let mut observed = Vec::with_capacity(16);
+    observed.extend_from_slice(&metadata.dev().to_be_bytes());
+    observed.extend_from_slice(&metadata.ino().to_be_bytes());
+    expected_id == Some(observed.as_slice())
+}
+
+#[cfg(not(unix))]
+fn platform_identity_matches(
+    _metadata: &fs::Metadata,
+    _expected_id: Option<&[u8]>,
+    _expected_kind: Option<&str>,
+) -> bool {
+    false
 }
 
 pub(crate) fn full_fingerprint_cancellable(
@@ -1052,7 +1287,7 @@ fn hex(bytes: &[u8]) -> String {
     output
 }
 
-fn relative_path_from_bytes(bytes: &[u8]) -> Result<PathBuf, CoreError> {
+pub(crate) fn relative_path_from_bytes(bytes: &[u8]) -> Result<PathBuf, CoreError> {
     #[cfg(unix)]
     {
         Ok(PathBuf::from(std::ffi::OsString::from_vec(bytes.to_vec())))
@@ -1199,6 +1434,25 @@ pub(crate) fn open_relative_file(root: &File, relative: &Path) -> std::io::Resul
             std::io::ErrorKind::InvalidInput,
             "not a regular file",
         ));
+    }
+    Ok(current)
+}
+
+#[cfg(unix)]
+pub(crate) fn open_relative_directory(root: &File, relative: &Path) -> std::io::Result<File> {
+    let mut current = fresh_directory(root)?;
+    for component in relative.components() {
+        let Component::Normal(name) = component else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "invalid relative directory component",
+            ));
+        };
+        current = openat(
+            &current,
+            name.as_bytes(),
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )?;
     }
     Ok(current)
 }

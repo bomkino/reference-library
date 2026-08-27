@@ -20,6 +20,8 @@ use crate::error::CoreError;
 const PROJECTION_FORMAT: &str = "pitchdog-reference-canonical-projection-v1";
 const DUMP_FORMAT: &str = "pitchdog-reference-canonical-dump-v1";
 const DIGEST_DOMAIN: &[u8] = b"pitchdog-reference-canonical-projection\0v1";
+const MAX_LEGACY_DUMP_ROWS: i64 = 512;
+const MAX_LEGACY_DUMP_SOURCE_BYTES: i64 = 128 * 1024;
 
 const ENTITIES: [CanonicalEntity; 9] = [
     CanonicalEntity::Library,
@@ -36,10 +38,26 @@ const ENTITIES: [CanonicalEntity; 9] = [
 /// Compute a deterministic digest and per-entity counts from one SQLite read
 /// snapshot. Records are streamed through SHA-256 one at a time.
 pub fn digest(connection: &Connection) -> Result<CanonicalDigest, CoreError> {
+    Ok(digest_with_revision(connection)?.0)
+}
+
+/// Compute the semantic digest and conservative durable generation from the
+/// same SQLite read snapshot. A session can validate many bounded pages
+/// against this pair without re-hashing the whole Library for every window.
+pub fn digest_with_revision(connection: &Connection) -> Result<(CanonicalDigest, u64), CoreError> {
     let transaction = connection.unchecked_transaction()?;
+    let library_revision =
+        transaction.query_row("SELECT library_revision FROM library_meta", [], |row| {
+            row.get::<_, i64>(0)
+        })?;
+    if library_revision < 0 {
+        return Err(CoreError::DatabaseIntegrity(
+            "Library revision is invalid".into(),
+        ));
+    }
     let result = digest_snapshot(&transaction)?;
     transaction.commit()?;
-    Ok(result)
+    Ok((result, library_revision as u64))
 }
 
 /// Return one bounded diagnostic page, but only when the caller's digest still
@@ -52,15 +70,55 @@ pub fn page(
     cursor: Option<&str>,
     limit: u32,
 ) -> Result<CanonicalPage, CoreError> {
-    if limit == 0 || limit > MAX_CANONICAL_PAGE_SIZE {
-        return Err(CoreError::QueryPageTooLarge(limit));
-    }
-    let offset = decode_cursor(cursor)?;
     let transaction = connection.unchecked_transaction()?;
     let current = digest_snapshot(&transaction)?;
     if current.digest != snapshot_digest {
         return Err(CoreError::CanonicalSnapshotChanged);
     }
+    let result = page_from_snapshot(&transaction, &current, entity, cursor, limit)?;
+    transaction.commit()?;
+    Ok(result)
+}
+
+/// Return a page from a digest already computed by this session. The durable
+/// generation check and page query share one read transaction. Any canonical
+/// write necessarily advances that generation; operational writes may cause a
+/// conservative retry but can never yield a mixed semantic proof.
+pub fn page_verified(
+    connection: &Connection,
+    snapshot: &CanonicalDigest,
+    expected_library_revision: u64,
+    entity: CanonicalEntity,
+    cursor: Option<&str>,
+    limit: u32,
+) -> Result<CanonicalPage, CoreError> {
+    if limit == 0 || limit > MAX_CANONICAL_PAGE_SIZE {
+        return Err(CoreError::QueryPageTooLarge(limit));
+    }
+    let transaction = connection.unchecked_transaction()?;
+    let actual_revision =
+        transaction.query_row("SELECT library_revision FROM library_meta", [], |row| {
+            row.get::<_, i64>(0)
+        })?;
+    if actual_revision < 0 || actual_revision as u64 != expected_library_revision {
+        return Err(CoreError::CanonicalSnapshotChanged);
+    }
+    let result = page_from_snapshot(&transaction, snapshot, entity, cursor, limit)?;
+    transaction.commit()?;
+    Ok(result)
+}
+
+fn page_from_snapshot(
+    connection: &Connection,
+    current: &CanonicalDigest,
+    entity: CanonicalEntity,
+    cursor: Option<&str>,
+    limit: u32,
+) -> Result<CanonicalPage, CoreError> {
+    if limit == 0 || limit > MAX_CANONICAL_PAGE_SIZE {
+        return Err(CoreError::QueryPageTooLarge(limit));
+    }
+    let offset = decode_cursor(cursor)?;
 
     let total = current
         .counts
@@ -77,7 +135,7 @@ pub fn page(
     let mut records = Vec::with_capacity(limit as usize);
     let mut record_content_bytes = 0_usize;
     let mut first_record_exceeds_frame = false;
-    visit_records(&transaction, entity, Some((offset, limit)), |record| {
+    visit_records(connection, entity, Some((offset, limit)), |record| {
         let record_bytes = serde_json::to_vec(&record)?.len();
         let candidate_count = records.len() as u64 + 1;
         let candidate_next_cursor =
@@ -111,7 +169,7 @@ pub fn page(
     let next_cursor = (offset + returned < total).then(|| encode_cursor(offset + returned));
     let result = CanonicalPage {
         format: PROJECTION_FORMAT.into(),
-        snapshot_digest: current.digest,
+        snapshot_digest: current.digest.clone(),
         entity,
         cursor: cursor.map(str::to_owned),
         limit,
@@ -124,7 +182,6 @@ pub fn page(
             "canonical page exceeds framed response limit".into(),
         ));
     }
-    transaction.commit()?;
     Ok(result)
 }
 
@@ -444,6 +501,7 @@ fn encode_cursor(offset: u64) -> String {
 
 /// Legacy whole-document diagnostic retained for T01/T02 compatibility.
 pub fn generate(connection: &Connection) -> Result<Value, CoreError> {
+    legacy_dump_preflight(connection)?;
     let library = connection.query_row(
         "SELECT id, schema_version, name, library_revision FROM library_meta LIMIT 1",
         [],
@@ -456,7 +514,7 @@ pub fn generate(connection: &Connection) -> Result<Value, CoreError> {
             }))
         },
     )?;
-    Ok(json!({
+    let dump = json!({
         "format": DUMP_FORMAT,
         "library": library,
         "roots": rows(connection,
@@ -509,7 +567,73 @@ pub fn generate(connection: &Connection) -> Result<Value, CoreError> {
                 "id": values[0], "jobKind": values[1], "state": values[2],
                 "progress": parse_json(&values[3]), "errorCode": values[4]
             }))?
-    }))
+    });
+    let frame = ServerFrame::Response {
+        protocol_version: PROTOCOL_VERSION,
+        request_id: "r".repeat(MAX_REQUEST_ID_BYTES),
+        result: CommandResult::CanonicalDump { dump: dump.clone() },
+    };
+    if serde_json::to_vec(&frame)?.len() > MAX_FRAME_BYTES {
+        return Err(CoreError::CanonicalDumpTooLarge);
+    }
+    Ok(dump)
+}
+
+fn legacy_dump_preflight(connection: &Connection) -> Result<(), CoreError> {
+    let (rows, source_bytes) = connection.query_row(
+        "SELECT
+           (SELECT COUNT(*) FROM roots) +
+           (SELECT COUNT(*) FROM sources) +
+           (SELECT COUNT(*) FROM source_revisions) +
+           (SELECT COUNT(*) FROM locations) +
+           (SELECT COUNT(*) FROM assets) +
+           (SELECT COUNT(*) FROM asset_origins) +
+           (SELECT COUNT(*) FROM renditions) +
+           (SELECT COUNT(*) FROM jobs),
+           COALESCE((SELECT SUM(bytes) FROM (
+             SELECT length(CAST(id AS BLOB))+length(CAST(name AS BLOB)) AS bytes
+               FROM library_meta
+             UNION ALL SELECT length(CAST(id AS BLOB))+length(CAST(display_name AS BLOB))+
+                    length(CAST(root_kind AS BLOB))+length(CAST(state AS BLOB)) FROM roots
+             UNION ALL SELECT length(CAST(id AS BLOB))+length(CAST(media_family AS BLOB))+
+                    COALESCE(length(CAST(current_revision_id AS BLOB)),0)+
+                    length(CAST(lineage_state AS BLOB)) FROM sources
+             UNION ALL SELECT length(CAST(id AS BLOB))+length(CAST(source_id AS BLOB))+
+                    COALESCE(length(CAST(quick_fingerprint AS BLOB)),0)+
+                    COALESCE(length(CAST(mime_detected AS BLOB)),0)+
+                    COALESCE(length(CAST(extension_observed AS BLOB)),0)+
+                    length(CAST(media_metadata_json AS BLOB)) FROM source_revisions
+             UNION ALL SELECT length(CAST(id AS BLOB))+length(CAST(root_id AS BLOB))+
+                    length(CAST(source_id AS BLOB))+(2*length(relative_path_bytes))+
+                    COALESCE(length(CAST(relative_path_display AS BLOB)),0)+
+                    length(CAST(state AS BLOB)) FROM locations
+             UNION ALL SELECT length(CAST(id AS BLOB))+
+                    COALESCE(length(CAST(custom_title AS BLOB)),0)+
+                    length(CAST(review_state AS BLOB)) FROM assets
+             UNION ALL SELECT length(CAST(id AS BLOB))+length(CAST(asset_id AS BLOB))+
+                    length(CAST(source_id AS BLOB))+length(CAST(origin_kind AS BLOB))+
+                    length(CAST(origin_spec_json AS BLOB))+
+                    length(CAST(revision_binding AS BLOB)) FROM asset_origins
+             UNION ALL SELECT length(CAST(id AS BLOB))+length(CAST(asset_origin_id AS BLOB))+
+                    length(CAST(source_revision_id AS BLOB))+length(CAST(profile AS BLOB))+
+                    length(CAST(provider AS BLOB))+length(CAST(provider_version AS BLOB))+
+                    length(CAST(state AS BLOB))+COALESCE(length(CAST(error_code AS BLOB)),0)
+                    FROM renditions
+             UNION ALL SELECT length(CAST(id AS BLOB))+length(CAST(job_kind AS BLOB))+
+                    length(CAST(state AS BLOB))+length(CAST(progress_json AS BLOB))+
+                    COALESCE(length(CAST(error_code AS BLOB)),0) FROM jobs
+           )),0)",
+        [],
+        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+    )?;
+    if rows < 0
+        || source_bytes < 0
+        || rows > MAX_LEGACY_DUMP_ROWS
+        || source_bytes > MAX_LEGACY_DUMP_SOURCE_BYTES
+    {
+        return Err(CoreError::CanonicalDumpTooLarge);
+    }
+    Ok(())
 }
 
 fn rows(

@@ -395,7 +395,7 @@ fn one_hundred_thousand_assets_use_small_digest_and_page_frames() {
     }
     transaction.commit().unwrap();
 
-    let digest = canonical::digest(&connection).unwrap();
+    let (digest, library_revision) = canonical::digest_with_revision(&connection).unwrap();
     let asset_count = digest
         .counts
         .iter()
@@ -404,18 +404,34 @@ fn one_hundred_thousand_assets_use_small_digest_and_page_frames() {
     assert_eq!(asset_count.count, 100_000);
     assert!(serde_json::to_vec(&digest).unwrap().len() < MAX_FRAME_BYTES);
 
-    let page = canonical::page(
-        &connection,
-        &digest.digest,
-        CanonicalEntity::Assets,
-        None,
-        MAX_CANONICAL_PAGE_SIZE,
-    )
-    .unwrap();
-    assert_eq!(page.total, 100_000);
-    assert_eq!(page.records.len(), MAX_CANONICAL_PAGE_SIZE as usize);
-    assert_eq!(page.next_cursor.as_deref(), Some("250"));
-    assert!(serde_json::to_vec(&page).unwrap().len() < MAX_FRAME_BYTES);
+    let started = std::time::Instant::now();
+    let mut cursor = None;
+    let mut observed = 0_usize;
+    loop {
+        let page = canonical::page_verified(
+            &connection,
+            &digest,
+            library_revision,
+            CanonicalEntity::Assets,
+            cursor.as_deref(),
+            MAX_CANONICAL_PAGE_SIZE,
+        )
+        .unwrap();
+        assert_eq!(page.total, 100_000);
+        assert!(!page.records.is_empty());
+        assert!(serde_json::to_vec(&page).unwrap().len() < MAX_FRAME_BYTES);
+        observed += page.records.len();
+        cursor = page.next_cursor;
+        if cursor.is_none() {
+            break;
+        }
+    }
+    assert_eq!(observed, 100_000);
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(10),
+        "cached canonical traversal took {:?}",
+        started.elapsed()
+    );
 }
 
 #[test]
@@ -522,6 +538,27 @@ fn one_canonical_record_that_cannot_fit_fails_with_a_path_free_error() {
     assert_eq!(protocol_error.code, "QueryInvalid");
     assert!(!protocol_error.message.contains('/'));
     assert!(!protocol_error.message.contains("asset-too-large"));
+}
+
+#[test]
+fn legacy_dump_refuses_oversized_projected_text_before_materialization() {
+    let connection = empty_database();
+    connection
+        .execute(
+            "INSERT INTO roots (
+                 id, library_id, display_name, root_kind, state,
+                 created_at_ms, updated_at_ms
+             ) VALUES ('root-large', 'library-a', ?1, 'linked', 'ready', 1, 1)",
+            ["\u{0001}".repeat(128 * 1024)],
+        )
+        .unwrap();
+
+    let error = canonical::generate(&connection).unwrap_err();
+    assert!(matches!(error, CoreError::CanonicalDumpTooLarge));
+    assert_eq!(error.to_protocol_error().code, "CanonicalDumpTooLarge");
+    // The bounded V1 proof seam remains usable even when the compatibility
+    // dump refuses an unsafe aggregate projection.
+    assert!(!canonical::digest(&connection).unwrap().digest.is_empty());
 }
 
 fn semantic_database() -> Connection {

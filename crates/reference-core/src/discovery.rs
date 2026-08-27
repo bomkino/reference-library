@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs::{self, File},
     io::{BufReader, Read, Seek, SeekFrom},
     path::{Component, Path, PathBuf},
@@ -8,7 +8,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         mpsc::{Sender, SyncSender},
     },
-    time::UNIX_EPOCH,
+    time::{Duration, Instant, UNIX_EPOCH},
 };
 
 #[cfg(unix)]
@@ -30,17 +30,22 @@ use uuid::Uuid;
 use crate::{
     error::CoreError,
     manifest::Manifest,
-    now_ms, schema,
+    now_ms,
+    rendition::MAX_SOURCE_BYTES,
+    schema,
     session::{
-        bump_revision, fresh_directory, full_fingerprint_cancellable, open_relative_file, openat,
-        relative_path_bytes,
+        bump_revision, fresh_directory, full_fingerprint_cancellable, open_relative_directory,
+        open_relative_file, openat, relative_path_bytes, relative_path_from_bytes,
     },
 };
 
-#[cfg(not(unix))]
-use crate::session::full_fingerprint;
-
 const INSERT_BATCH: usize = 32;
+const MAX_DIRECTORY_ENTRIES: usize = 100_000;
+const MAX_QUEUED_DIRECTORIES: usize = 100_000;
+const MAX_SCAN_ENTRIES: usize = 250_000;
+const DIMENSION_READ_LIMIT: u64 = 4 * 1024 * 1024;
+const DIMENSION_READ_TIMEOUT: Duration = Duration::from_secs(2);
+const OVERSIZED_SAMPLE_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct ScanPlan {
@@ -120,13 +125,20 @@ fn run_scan(
     let manifest = Manifest::read(&plan.package_path)?;
     let mut connection =
         schema::open_database(&plan.package_path.join("library.sqlite"), &manifest)?;
+    connection.execute_batch(
+        "CREATE TEMP TABLE scan_seen (
+             relative_path_bytes BLOB PRIMARY KEY
+         ) WITHOUT ROWID;",
+    )?;
     let mut batch = Vec::with_capacity(INSERT_BATCH);
-    let mut seen = BTreeSet::new();
     let mut observed_count = 0_u64;
     let mut unsupported_count = 0_u64;
+    let mut per_entry_states = BTreeMap::new();
+    let mut unreadable_directories = BTreeSet::new();
+    let mut traversed_entries = 0_usize;
 
     #[cfg(unix)]
-    let mut stack = vec![(PathBuf::new(), fresh_directory(&plan.root_directory)?)];
+    let mut stack = vec![PathBuf::new()];
     #[cfg(not(unix))]
     let mut stack = vec![plan.root_path.clone()];
 
@@ -136,7 +148,6 @@ fn run_scan(
                 &mut connection,
                 plan,
                 &mut batch,
-                &mut seen,
                 &mut observed_count,
                 &mut unsupported_count,
                 events,
@@ -144,23 +155,71 @@ fn run_scan(
             return Ok(());
         }
         #[cfg(unix)]
-        let entries = read_directory_names(&directory.1)?;
+        let directory_handle = match open_relative_directory(&plan.root_directory, &directory) {
+            Ok(handle) => handle,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                unreadable_directories.insert(directory);
+                continue;
+            }
+            Err(error) => return Err(error.into()),
+        };
+        #[cfg(unix)]
+        let entries = match read_directory_names(&directory_handle, cancelled) {
+            Ok(entries) => entries,
+            Err(CoreError::Io(error)) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                unreadable_directories.insert(directory);
+                continue;
+            }
+            Err(CoreError::RenditionCancelled) => {
+                finish_cancelled(
+                    &mut connection,
+                    plan,
+                    &mut batch,
+                    &mut observed_count,
+                    &mut unsupported_count,
+                    events,
+                )?;
+                return Ok(());
+            }
+            Err(error) => return Err(error),
+        };
         #[cfg(not(unix))]
         let entries = {
-            let mut entries = fs::read_dir(&directory)?.collect::<Result<Vec<_>, _>>()?;
-            entries.sort_by_key(|entry| entry.file_name());
-            entries
-                .into_iter()
-                .map(|entry| entry.file_name())
-                .collect::<Vec<_>>()
+            let mut names = Vec::new();
+            for entry in fs::read_dir(&directory)? {
+                if cancelled.load(Ordering::Relaxed) {
+                    finish_cancelled(
+                        &mut connection,
+                        plan,
+                        &mut batch,
+                        &mut seen,
+                        &mut observed_count,
+                        &mut unsupported_count,
+                        events,
+                    )?;
+                    return Ok(());
+                }
+                if names.len() >= MAX_DIRECTORY_ENTRIES {
+                    return Err(CoreError::RootScanLimitExceeded);
+                }
+                names.push(entry?.file_name());
+            }
+            names.sort();
+            names
         };
+        traversed_entries = traversed_entries
+            .checked_add(entries.len())
+            .ok_or(CoreError::RootScanLimitExceeded)?;
+        if traversed_entries > MAX_SCAN_ENTRIES {
+            return Err(CoreError::RootScanLimitExceeded);
+        }
         for name in entries.into_iter().rev() {
             if cancelled.load(Ordering::Relaxed) {
                 finish_cancelled(
                     &mut connection,
                     plan,
                     &mut batch,
-                    &mut seen,
                     &mut observed_count,
                     &mut unsupported_count,
                     events,
@@ -170,45 +229,76 @@ fn run_scan(
             #[cfg(unix)]
             let candidate = {
                 let name_bytes = name.as_bytes();
+                let relative = directory.join(&name);
                 match openat(
-                    &directory.1,
+                    &directory_handle,
                     name_bytes,
                     libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
                 ) {
                     Ok(child) => {
-                        stack.push((directory.0.join(&name), child));
+                        drop(child);
+                        if stack.len() >= MAX_QUEUED_DIRECTORIES {
+                            return Err(CoreError::RootScanLimitExceeded);
+                        }
+                        stack.push(relative);
                         continue;
                     }
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
                     Err(error) if error.raw_os_error() == Some(libc::ELOOP) => continue,
                     Err(error) if error.raw_os_error() == Some(libc::ENOTDIR) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                        unreadable_directories.insert(relative);
+                        continue;
+                    }
                     Err(error) => return Err(error.into()),
                 }
                 match openat(
-                    &directory.1,
+                    &directory_handle,
                     name_bytes,
-                    libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                    libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC,
                 ) {
                     Ok(file) if file.metadata()?.is_file() => {
-                        match FileCandidate::inspect_file(directory.0.join(&name), file, cancelled)
-                        {
+                        match FileCandidate::inspect_file(relative.clone(), file, cancelled) {
                             Ok(candidate) => candidate,
                             Err(CoreError::RenditionCancelled) => {
                                 finish_cancelled(
                                     &mut connection,
                                     plan,
                                     &mut batch,
-                                    &mut seen,
                                     &mut observed_count,
                                     &mut unsupported_count,
                                     events,
                                 )?;
                                 return Ok(());
                             }
+                            Err(CoreError::Io(error))
+                                if error.kind() == std::io::ErrorKind::NotFound =>
+                            {
+                                None
+                            }
+                            Err(CoreError::Io(error))
+                                if error.kind() == std::io::ErrorKind::PermissionDenied =>
+                            {
+                                per_entry_states
+                                    .insert(relative_path_bytes(&relative), "permission_denied");
+                                None
+                            }
+                            Err(CoreError::SourceRevisionChanged) => {
+                                per_entry_states
+                                    .insert(relative_path_bytes(&relative), "unreadable");
+                                None
+                            }
                             Err(error) => return Err(error),
                         }
                     }
                     Ok(_) => None,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
                     Err(error) if error.raw_os_error() == Some(libc::ELOOP) => None,
+                    Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                        per_entry_states
+                            .insert(relative_path_bytes(&relative), "permission_denied");
+                        None
+                    }
                     Err(error) => return Err(error.into()),
                 }
             };
@@ -220,13 +310,16 @@ fn run_scan(
                     continue;
                 }
                 if metadata.is_dir() {
+                    if stack.len() >= MAX_QUEUED_DIRECTORIES {
+                        return Err(CoreError::RootScanLimitExceeded);
+                    }
                     stack.push(path);
                     continue;
                 }
                 if !metadata.is_file() {
                     continue;
                 }
-                FileCandidate::inspect_path(&plan.root_path, &path)?
+                FileCandidate::inspect_path(&plan.root_path, &path, cancelled)?
             };
             if let Some(candidate) = candidate {
                 batch.push(candidate);
@@ -235,7 +328,6 @@ fn run_scan(
                         &mut connection,
                         plan,
                         &mut batch,
-                        &mut seen,
                         &mut observed_count,
                         &mut unsupported_count,
                         events,
@@ -248,12 +340,16 @@ fn run_scan(
         &mut connection,
         plan,
         &mut batch,
-        &mut seen,
         &mut observed_count,
         &mut unsupported_count,
         events,
     )?;
-    mark_unseen_missing(&mut connection, plan, &seen)?;
+    mark_unseen(
+        &mut connection,
+        plan,
+        &per_entry_states,
+        &unreadable_directories,
+    )?;
     mark_completed(&connection, plan, observed_count, unsupported_count)?;
     events.emit(Event::ScanProgressChanged {
         root_id: plan.root_id.clone(),
@@ -277,7 +373,6 @@ fn finish_cancelled(
     connection: &mut Connection,
     plan: &ScanPlan,
     batch: &mut Vec<FileCandidate>,
-    seen: &mut BTreeSet<Vec<u8>>,
     observed_count: &mut u64,
     unsupported_count: &mut u64,
     events: &dyn EventSink,
@@ -286,7 +381,6 @@ fn finish_cancelled(
         connection,
         plan,
         batch,
-        seen,
         observed_count,
         unsupported_count,
         events,
@@ -314,7 +408,6 @@ fn flush_batch(
     connection: &mut Connection,
     plan: &ScanPlan,
     candidates: &mut Vec<FileCandidate>,
-    seen: &mut BTreeSet<Vec<u8>>,
     observed_count: &mut u64,
     unsupported_count: &mut u64,
     events: &dyn EventSink,
@@ -326,7 +419,10 @@ fn flush_batch(
     let transaction = connection.transaction()?;
     let mut inserted_asset_ids = Vec::new();
     for candidate in candidates.drain(..) {
-        seen.insert(candidate.relative_bytes.clone());
+        transaction.execute(
+            "INSERT OR IGNORE INTO scan_seen (relative_path_bytes) VALUES (?1)",
+            params![&candidate.relative_bytes],
+        )?;
         if let Some(existing) = existing_location(&transaction, plan, &candidate)? {
             refresh_existing(&transaction, &existing, &candidate, timestamp)?;
         } else if let Some(existing) = relocated_location(&transaction, plan, &candidate)? {
@@ -646,46 +742,67 @@ fn insert_revision(
     Ok(())
 }
 
-fn mark_unseen_missing(
+fn mark_unseen(
     connection: &mut Connection,
     plan: &ScanPlan,
-    seen: &BTreeSet<Vec<u8>>,
+    per_entry_states: &BTreeMap<Vec<u8>, &'static str>,
+    unreadable_directories: &BTreeSet<PathBuf>,
 ) -> Result<(), CoreError> {
-    let locations = {
-        let mut statement = connection.prepare(
-            "SELECT id, source_id, relative_path_bytes FROM locations WHERE root_id = ?1",
-        )?;
-        statement
-            .query_map(params![plan.root_id], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, Vec<u8>>(2)?,
-                ))
-            })?
-            .collect::<Result<Vec<_>, _>>()?
-    };
-    let missing = locations
-        .into_iter()
-        .filter(|(_, _, bytes)| !seen.contains(bytes))
-        .collect::<Vec<_>>();
-    if missing.is_empty() {
-        return Ok(());
-    }
     let timestamp = now_ms() as i64;
     let transaction = connection.transaction()?;
-    for (location_id, source_id, _) in missing {
-        transaction.execute(
-            "UPDATE locations SET state = 'missing', updated_at_ms = ?1 WHERE id = ?2",
-            params![timestamp, location_id],
-        )?;
-        transaction.execute(
-            "UPDATE sources SET lineage_state = 'missing', updated_at_ms = ?1
-             WHERE id = ?2 AND NOT EXISTS (
-                 SELECT 1 FROM locations WHERE source_id = ?2 AND state = 'present'
-             )",
-            params![timestamp, source_id],
-        )?;
+    let mut after_id = String::new();
+    loop {
+        let unresolved = {
+            let mut statement = transaction.prepare(
+                "SELECT l.id, l.source_id, l.relative_path_bytes
+                 FROM locations l
+                 WHERE l.root_id = ?1 AND l.id > ?2
+                   AND NOT EXISTS (
+                     SELECT 1 FROM scan_seen s
+                     WHERE s.relative_path_bytes = l.relative_path_bytes
+                   )
+                 ORDER BY l.id LIMIT 256",
+            )?;
+            statement
+                .query_map(params![plan.root_id, after_id], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Vec<u8>>(2)?,
+                    ))
+                })?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        if unresolved.is_empty() {
+            break;
+        }
+        for (location_id, source_id, relative_bytes) in unresolved {
+            after_id.clone_from(&location_id);
+            let path = relative_path_from_bytes(&relative_bytes)?;
+            let location_state = per_entry_states
+                .get(&relative_bytes)
+                .copied()
+                .or_else(|| {
+                    path.ancestors()
+                        .any(|directory| unreadable_directories.contains(directory))
+                        .then_some("permission_denied")
+                })
+                .unwrap_or("missing");
+            transaction.execute(
+                "UPDATE locations SET state = ?1, updated_at_ms = ?2 WHERE id = ?3",
+                params![location_state, timestamp, location_id],
+            )?;
+            transaction.execute(
+                "UPDATE sources
+                 SET lineage_state = CASE WHEN EXISTS (
+                         SELECT 1 FROM locations
+                         WHERE source_id = ?2 AND state <> 'missing'
+                     ) THEN 'active' ELSE 'missing' END,
+                     updated_at_ms = ?1
+                 WHERE id = ?2",
+                params![timestamp, source_id],
+            )?;
+        }
     }
     bump_revision(&transaction, timestamp)?;
     transaction.commit()?;
@@ -699,12 +816,13 @@ fn mark_completed(
     unsupported_count: u64,
 ) -> Result<(), CoreError> {
     let timestamp = now_ms() as i64;
-    connection.execute(
+    let transaction = connection.unchecked_transaction()?;
+    transaction.execute(
         "UPDATE roots SET state = 'ready', updated_at_ms = ?1, last_seen_at_ms = ?1
          WHERE id = ?2",
         params![timestamp, plan.root_id],
     )?;
-    connection.execute(
+    transaction.execute(
         "UPDATE jobs SET state = 'completed', progress_json = ?1,
                          updated_at_ms = ?2, finished_at_ms = ?2 WHERE id = ?3",
         params![
@@ -717,7 +835,8 @@ fn mark_completed(
             plan.job_id
         ],
     )?;
-    bump_revision(connection, timestamp)?;
+    bump_revision(&transaction, timestamp)?;
+    transaction.commit()?;
     Ok(())
 }
 
@@ -728,11 +847,12 @@ fn mark_cancelled(
     unsupported_count: u64,
 ) -> Result<(), CoreError> {
     let timestamp = now_ms() as i64;
-    connection.execute(
+    let transaction = connection.unchecked_transaction()?;
+    transaction.execute(
         "UPDATE roots SET state = 'connected', updated_at_ms = ?1 WHERE id = ?2",
         params![timestamp, plan.root_id],
     )?;
-    connection.execute(
+    transaction.execute(
         "UPDATE jobs SET state = 'cancelled', progress_json = ?1,
                          updated_at_ms = ?2, finished_at_ms = ?2 WHERE id = ?3",
         params![
@@ -745,7 +865,8 @@ fn mark_cancelled(
             plan.job_id
         ],
     )?;
-    bump_revision(connection, timestamp)?;
+    bump_revision(&transaction, timestamp)?;
+    transaction.commit()?;
     Ok(())
 }
 
@@ -835,8 +956,9 @@ impl FileCandidate {
         let Some((mime_type, potentially_servable)) = kind else {
             return Ok(None);
         };
-        let dimensions = if potentially_servable {
-            imagesize::reader_size(BufReader::new(file.try_clone()?)).ok()
+        let eligible_size = before.len() <= MAX_SOURCE_BYTES;
+        let dimensions = if potentially_servable && eligible_size {
+            read_dimensions(file.try_clone()?, cancelled)
         } else {
             None
         };
@@ -846,8 +968,11 @@ impl FileCandidate {
             .filter(|dimensions| valid_dimensions(dimensions.width, dimensions.height))
             .map(|dimensions| (dimensions.width, dimensions.height))
             .unwrap_or_default();
-        let fingerprint =
-            full_fingerprint_cancellable(&mut file, before.len(), Some(cancelled), None)?;
+        let fingerprint = if eligible_size {
+            full_fingerprint_cancellable(&mut file, before.len(), Some(cancelled), None)?
+        } else {
+            oversized_fingerprint(&mut file, before.len(), cancelled)?
+        };
         let after = file.metadata()?;
         if !same_file_observation(&before, &after) {
             return Err(CoreError::SourceRevisionChanged);
@@ -873,7 +998,11 @@ impl FileCandidate {
     }
 
     #[cfg(not(unix))]
-    fn inspect_path(root: &Path, path: &Path) -> Result<Option<Self>, CoreError> {
+    fn inspect_path(
+        root: &Path,
+        path: &Path,
+        cancelled: &AtomicBool,
+    ) -> Result<Option<Self>, CoreError> {
         let relative = path
             .strip_prefix(root)
             .map_err(|_| CoreError::LocationMissing)?;
@@ -891,8 +1020,9 @@ impl FileCandidate {
         else {
             return Ok(None);
         };
-        let dimensions = potentially_servable
-            .then(|| imagesize::reader_size(BufReader::new(file.try_clone())).ok())
+        let eligible_size = before.len() <= MAX_SOURCE_BYTES;
+        let dimensions = (potentially_servable && eligible_size)
+            .then(|| read_dimensions(file.try_clone().ok()?, cancelled))
             .flatten();
         let servable = dimensions
             .is_some_and(|dimensions| valid_dimensions(dimensions.width, dimensions.height));
@@ -900,7 +1030,11 @@ impl FileCandidate {
             .filter(|dimensions| valid_dimensions(dimensions.width, dimensions.height))
             .map(|dimensions| (dimensions.width, dimensions.height))
             .unwrap_or_default();
-        let fingerprint = full_fingerprint(&mut file, before.len())?;
+        let fingerprint = if eligible_size {
+            full_fingerprint_cancellable(&mut file, before.len(), Some(cancelled), None)?
+        } else {
+            oversized_fingerprint(&mut file, before.len(), cancelled)?
+        };
         let metadata = file.metadata()?;
         if before.len() != metadata.len() || modified_ms(&before) != modified_ms(&metadata) {
             return Err(CoreError::SourceRevisionChanged);
@@ -926,8 +1060,109 @@ impl FileCandidate {
     }
 }
 
+fn oversized_fingerprint(
+    file: &mut File,
+    size: u64,
+    cancelled: &AtomicBool,
+) -> Result<String, CoreError> {
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    hasher.update(b"catalogue-only-oversized-v2\0");
+    hasher.update(size.to_be_bytes());
+    let sample = OVERSIZED_SAMPLE_BYTES as u64;
+    let mut offsets = [
+        0,
+        size.saturating_sub(sample) / 2,
+        size.saturating_sub(sample),
+    ];
+    offsets.sort_unstable();
+    let mut previous = None;
+    let mut buffer = vec![0_u8; OVERSIZED_SAMPLE_BYTES];
+    for offset in offsets {
+        if previous == Some(offset) {
+            continue;
+        }
+        previous = Some(offset);
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(CoreError::RenditionCancelled);
+        }
+        file.seek(SeekFrom::Start(offset))?;
+        let expected = usize::try_from((size - offset).min(sample)).unwrap_or(0);
+        let mut read = 0;
+        while read < expected {
+            if cancelled.load(Ordering::Relaxed) {
+                return Err(CoreError::RenditionCancelled);
+            }
+            let count = file.read(&mut buffer[read..expected])?;
+            if count == 0 {
+                return Err(CoreError::SourceRevisionChanged);
+            }
+            read += count;
+        }
+        hasher.update(offset.to_be_bytes());
+        hasher.update(&buffer[..read]);
+    }
+    Ok(format!("oversized-v2:{:x}", hasher.finalize()))
+}
+
+fn read_dimensions(file: File, cancelled: &AtomicBool) -> Option<imagesize::ImageSize> {
+    let reader = InspectionReader {
+        file,
+        cancelled,
+        remaining: DIMENSION_READ_LIMIT,
+        deadline: Instant::now() + DIMENSION_READ_TIMEOUT,
+    };
+    imagesize::reader_size(BufReader::new(reader)).ok()
+}
+
+struct InspectionReader<'a> {
+    file: File,
+    cancelled: &'a AtomicBool,
+    remaining: u64,
+    deadline: Instant,
+}
+
+impl InspectionReader<'_> {
+    fn check(&self) -> std::io::Result<()> {
+        if self.cancelled.load(Ordering::Relaxed) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "image inspection cancelled",
+            ));
+        }
+        if Instant::now() >= self.deadline || self.remaining == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "image inspection budget exceeded",
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl Read for InspectionReader<'_> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        self.check()?;
+        let allowed = buffer.len().min(self.remaining as usize);
+        let count = self.file.read(&mut buffer[..allowed])?;
+        self.remaining = self.remaining.saturating_sub(count as u64);
+        Ok(count)
+    }
+}
+
+impl Seek for InspectionReader<'_> {
+    fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+        self.check()?;
+        self.file.seek(position)
+    }
+}
+
 #[cfg(unix)]
-fn read_directory_names(directory: &File) -> Result<Vec<OsString>, CoreError> {
+fn read_directory_names(
+    directory: &File,
+    cancelled: &AtomicBool,
+) -> Result<Vec<OsString>, CoreError> {
     let fresh = fresh_directory(directory)?;
     let raw_fd = fresh.into_raw_fd();
     // SAFETY: raw_fd is a newly owned directory fd transferred to DIR.
@@ -939,6 +1174,11 @@ fn read_directory_names(directory: &File) -> Result<Vec<OsString>, CoreError> {
     }
     let mut names = Vec::new();
     loop {
+        if cancelled.load(Ordering::Relaxed) {
+            // SAFETY: stream is owned by this function and closed once here.
+            unsafe { libc::closedir(stream) };
+            return Err(CoreError::RenditionCancelled);
+        }
         clear_errno();
         // SAFETY: stream remains valid until closed below; readdir's pointer is
         // copied before the next call.
@@ -957,6 +1197,11 @@ fn read_directory_names(directory: &File) -> Result<Vec<OsString>, CoreError> {
         let bytes = unsafe { CStr::from_ptr((*entry).d_name.as_ptr()) }.to_bytes();
         if bytes == b"." || bytes == b".." {
             continue;
+        }
+        if names.len() >= MAX_DIRECTORY_ENTRIES {
+            // SAFETY: stream is owned by this function and closed once here.
+            unsafe { libc::closedir(stream) };
+            return Err(CoreError::RootScanLimitExceeded);
         }
         names.push(OsString::from_vec(bytes.to_vec()));
     }
@@ -1079,6 +1324,9 @@ fn classify_still(bytes: &[u8], extension: Option<&str>) -> Option<(&'static str
         Some(("image/svg+xml", false))
     } else {
         match extension {
+            Some("png") => Some(("image/png", false)),
+            Some("jpg" | "jpeg") => Some(("image/jpeg", false)),
+            Some("webp") => Some(("image/webp", false)),
             Some("gif") => Some(("image/gif", false)),
             Some("bmp") => Some(("image/bmp", false)),
             Some("tif" | "tiff") => Some(("image/tiff", false)),

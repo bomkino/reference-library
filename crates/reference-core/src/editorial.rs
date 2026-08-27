@@ -2,9 +2,10 @@ use std::path::Path;
 
 use reference_protocol::{
     AssetDetail, AssetPage, AssetPatch, AssetProjection, AssetQuery, AssetSort, AvailabilityFilter,
-    CollectionSummary, JobPage, JobQuery, JobState, MAX_COLLECTION_MEMBERSHIP_BATCH,
-    MAX_COLLECTION_NAME_CHARS, MAX_JOB_PAGE_SIZE, MAX_NOTE_CHARS, MAX_PAGE_SIZE, MAX_SEARCH_CHARS,
-    MAX_TITLE_CHARS, ReviewState, TextPatch,
+    CollectionSummary, CommandResult, JobPage, JobQuery, JobState, MAX_ASSET_COLLECTIONS,
+    MAX_COLLECTION_MEMBERSHIP_BATCH, MAX_COLLECTION_NAME_CHARS, MAX_COLLECTIONS, MAX_FRAME_BYTES,
+    MAX_JOB_PAGE_SIZE, MAX_NOTE_CHARS, MAX_PAGE_SIZE, MAX_REQUEST_ID_BYTES, MAX_SEARCH_CHARS,
+    MAX_TITLE_CHARS, PROTOCOL_VERSION, ReviewState, ServerFrame, TextPatch,
 };
 use rusqlite::types::Value;
 use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
@@ -19,10 +20,12 @@ pub fn query_assets(
     limit: u32,
     _projection: AssetProjection,
     query: &AssetQuery,
+    expected_library_revision: Option<u64>,
 ) -> Result<AssetPage, CoreError> {
     if limit == 0 || limit > MAX_PAGE_SIZE {
         return Err(CoreError::QueryPageTooLarge(limit));
     }
+    let sqlite_offset = sqlite_offset(offset)?;
     validate_query(connection, library_id, query)?;
 
     let mut values = vec![Value::Text(library_id.to_owned())];
@@ -40,16 +43,37 @@ pub fn query_assets(
     let cte = format!(
         "WITH preferred_locations AS (
             SELECT ao.asset_id, l.id AS location_id, l.relative_path_display,
-                   l.state, s.media_family, a.created_at_ms,
+                   CASE
+                     WHEN r.state = 'offline_volume' THEN 'offline_volume'
+                     WHEN r.state = 'needs_permission' THEN 'needs_permission'
+                     WHEN r.state IN ('unavailable','error') THEN 'unavailable'
+                     WHEN l.state = 'permission_denied' THEN 'needs_permission'
+                     WHEN l.state = 'offline_root' THEN 'offline_volume'
+                     WHEN l.state = 'moved_candidate' THEN 'unavailable'
+                     WHEN l.state = 'unreadable'
+                          AND sr.mime_detected NOT IN ('image/png','image/jpeg','image/webp')
+                       THEN 'unsupported'
+                     ELSE l.state
+                   END AS state,
+                   s.media_family, a.created_at_ms,
                    ROW_NUMBER() OVER (
                        PARTITION BY ao.asset_id
-                       ORDER BY CASE l.state WHEN 'present' THEN 0 ELSE 1 END,
+                       ORDER BY CASE
+                                  WHEN r.state IN ('ready','connected','scanning')
+                                       AND l.state = 'present' THEN 0
+                                  WHEN r.state IN ('needs_permission','offline_volume',
+                                                   'unavailable','error') THEN 2
+                                  ELSE 1
+                                END,
+                                CASE l.state WHEN 'present' THEN 0 ELSE 1 END,
                                 l.created_at_ms, l.id
                    ) AS location_rank
             FROM assets a
             JOIN asset_origins ao ON ao.asset_id = a.id
             JOIN sources s ON s.id = ao.source_id
+            JOIN source_revisions sr ON sr.id = s.current_revision_id
             JOIN locations l ON l.source_id = s.id
+            JOIN roots r ON r.id = l.root_id
             {location_filter}
         )"
     );
@@ -86,10 +110,11 @@ pub fn query_assets(
         let states = query.availability.iter().flat_map(|state| match state {
             AvailabilityFilter::Present => vec!["present"],
             AvailabilityFilter::Missing => vec!["missing"],
-            AvailabilityFilter::NeedsPermission => vec!["permission_denied"],
-            AvailabilityFilter::Unavailable => vec!["moved_candidate"],
-            AvailabilityFilter::OfflineVolume => vec!["offline_root"],
+            AvailabilityFilter::NeedsPermission => vec!["needs_permission"],
+            AvailabilityFilter::Unavailable => vec!["unavailable"],
+            AvailabilityFilter::OfflineVolume => vec!["offline_volume"],
             AvailabilityFilter::Unreadable => vec!["unreadable"],
+            AvailabilityFilter::Unsupported => vec!["unsupported"],
         });
         let slots = push_text_values(&mut values, states);
         where_parts.push(format!("pl.state IN ({slots})"));
@@ -130,6 +155,19 @@ pub fn query_assets(
     };
 
     let transaction = connection.unchecked_transaction()?;
+    let library_revision = transaction.query_row(
+        "SELECT library_revision FROM library_meta WHERE id = ?1",
+        params![library_id],
+        |row| row.get::<_, i64>(0),
+    )? as u64;
+    if let Some(expected) = expected_library_revision
+        && expected != library_revision
+    {
+        return Err(CoreError::QuerySnapshotChanged {
+            expected,
+            actual: library_revision,
+        });
+    }
     let total_sql = format!("{cte} SELECT COUNT(*) {from}");
     let total = transaction.query_row(&total_sql, params_from_iter(values.iter()), |row| {
         row.get::<_, i64>(0)
@@ -138,7 +176,7 @@ pub fn query_assets(
     let mut page_values = values;
     page_values.push(Value::Integer(limit as i64));
     let limit_slot = page_values.len();
-    page_values.push(Value::Integer(offset as i64));
+    page_values.push(Value::Integer(sqlite_offset));
     let offset_slot = page_values.len();
     let sql = format!(
         "{cte} SELECT a.id, pl.location_id, pl.relative_path_display, pl.media_family,
@@ -163,22 +201,9 @@ pub fn query_assets(
         })?
         .collect::<Result<Vec<_>, _>>()?;
     drop(statement);
-    let library_revision = transaction.query_row(
-        "SELECT library_revision FROM library_meta WHERE id = ?1",
-        params![library_id],
-        |row| row.get::<_, i64>(0),
-    )? as u64;
     transaction.commit()?;
 
-    let returned = items.len() as u64;
-    Ok(AssetPage {
-        offset,
-        limit,
-        total,
-        items,
-        next_offset: (offset + returned < total).then_some(offset + returned),
-        library_revision,
-    })
+    byte_bound_asset_page(offset, limit, total, items, library_revision)
 }
 
 pub fn get_asset(
@@ -263,6 +288,7 @@ pub fn query_jobs(
     if limit == 0 || limit > MAX_JOB_PAGE_SIZE {
         return Err(CoreError::QueryPageTooLarge(limit));
     }
+    let sqlite_offset = sqlite_offset(offset)?;
     let mut values = vec![Value::Text(library_id.to_owned())];
     let mut where_parts = vec!["library_id = ?1".to_owned()];
     if let Some(root_id) = &query.root_id {
@@ -275,16 +301,17 @@ pub fn query_jobs(
         where_parts.push(format!("state IN ({slots})"));
     }
     let base = format!("FROM jobs WHERE {}", where_parts.join(" AND "));
-    let total = connection.query_row(
+    let transaction = connection.unchecked_transaction()?;
+    let total = transaction.query_row(
         &format!("SELECT COUNT(*) {base}"),
         params_from_iter(values.iter()),
         |row| row.get::<_, i64>(0),
     )? as u64;
     values.push(Value::Integer(limit as i64));
     let limit_slot = values.len();
-    values.push(Value::Integer(offset as i64));
+    values.push(Value::Integer(sqlite_offset));
     let offset_slot = values.len();
-    let mut statement = connection.prepare(&format!(
+    let mut statement = transaction.prepare(&format!(
         "SELECT id, root_id, job_kind, state, progress_json, error_code,
                 created_at_ms, updated_at_ms, finished_at_ms
          {base} ORDER BY created_at_ms DESC, id DESC
@@ -309,14 +336,24 @@ pub fn query_jobs(
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
+    drop(statement);
+    transaction.commit()?;
     let returned = items.len() as u64;
+    let end = offset
+        .checked_add(returned)
+        .ok_or_else(|| CoreError::QueryInvalid("query offset is outside supported range".into()))?;
     Ok(JobPage {
         offset,
         limit,
         total,
         items,
-        next_offset: (offset + returned < total).then_some(offset + returned),
+        next_offset: (end < total).then_some(end),
     })
+}
+
+fn sqlite_offset(offset: u64) -> Result<i64, CoreError> {
+    i64::try_from(offset)
+        .map_err(|_| CoreError::QueryInvalid("query offset is outside supported range".into()))
 }
 
 pub fn list_collections(
@@ -327,11 +364,18 @@ pub fn list_collections(
         "SELECT c.id, c.name, COUNT(ca.asset_id), c.revision
          FROM collections c LEFT JOIN collection_assets ca ON ca.collection_id = c.id
          WHERE c.library_id = ?1 GROUP BY c.id, c.name, c.revision
-         ORDER BY lower(c.name), c.id",
+         ORDER BY lower(c.name), c.id LIMIT ?2",
     )?;
-    Ok(statement
-        .query_map(params![library_id], collection_summary_row)?
-        .collect::<Result<Vec<_>, _>>()?)
+    let items = statement
+        .query_map(
+            params![library_id, MAX_COLLECTIONS as i64 + 1],
+            collection_summary_row,
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+    if items.len() > MAX_COLLECTIONS {
+        return Err(CoreError::CollectionLimitReached);
+    }
+    Ok(items)
 }
 
 pub fn create_collection(
@@ -341,6 +385,14 @@ pub fn create_collection(
 ) -> Result<(CollectionSummary, u64), CoreError> {
     let name = normalize_collection_name(name)?;
     ensure_collection_name_available(connection, library_id, None, &name)?;
+    let count = connection.query_row(
+        "SELECT COUNT(*) FROM collections WHERE library_id=?1",
+        params![library_id],
+        |row| row.get::<_, i64>(0),
+    )?;
+    if count < 0 || count as usize >= MAX_COLLECTIONS {
+        return Err(CoreError::CollectionLimitReached);
+    }
     let id = Uuid::new_v4().to_string();
     let timestamp = now_ms() as i64;
     let transaction = connection.unchecked_transaction()?;
@@ -452,6 +504,23 @@ pub fn set_collection_membership(
         }
     }
     drop(statement);
+    if member {
+        let mut count_statement = transaction.prepare(
+            "SELECT COUNT(*), EXISTS(
+                 SELECT 1 FROM collection_assets
+                 WHERE asset_id=?1 AND collection_id=?2
+             ) FROM collection_assets WHERE asset_id=?1",
+        )?;
+        for id in &unique {
+            let (count, already_member) = count_statement
+                .query_row(params![id, collection_id], |row| {
+                    Ok((row.get::<_, i64>(0)?, row.get::<_, bool>(1)?))
+                })?;
+            if !already_member && (count < 0 || count as usize >= MAX_ASSET_COLLECTIONS) {
+                return Err(CoreError::AssetCollectionLimitReached);
+            }
+        }
+    }
     let mut affected = 0_u64;
     for id in &unique {
         let changed = if member {
@@ -494,14 +563,36 @@ fn asset_detail(
     let mut detail = connection
         .query_row(
             "WITH preferred_location AS (
-                SELECT l.id, l.relative_path_display, l.state, s.media_family,
+                SELECT l.id, l.relative_path_display,
+                       CASE
+                         WHEN r.state = 'offline_volume' THEN 'offline_volume'
+                         WHEN r.state = 'needs_permission' THEN 'needs_permission'
+                         WHEN r.state IN ('unavailable','error') THEN 'unavailable'
+                         WHEN l.state = 'permission_denied' THEN 'needs_permission'
+                         WHEN l.state = 'offline_root' THEN 'offline_volume'
+                         WHEN l.state = 'moved_candidate' THEN 'unavailable'
+                         WHEN l.state = 'unreadable'
+                              AND sr.mime_detected NOT IN ('image/png','image/jpeg','image/webp')
+                           THEN 'unsupported'
+                         ELSE l.state
+                       END AS state,
+                       s.media_family,
                        ROW_NUMBER() OVER (
-                           ORDER BY CASE l.state WHEN 'present' THEN 0 ELSE 1 END,
+                           ORDER BY CASE
+                                      WHEN r.state IN ('ready','connected','scanning')
+                                           AND l.state = 'present' THEN 0
+                                      WHEN r.state IN ('needs_permission','offline_volume',
+                                                       'unavailable','error') THEN 2
+                                      ELSE 1
+                                    END,
+                                    CASE l.state WHEN 'present' THEN 0 ELSE 1 END,
                                     l.created_at_ms, l.id
                        ) AS location_rank
                 FROM asset_origins ao
                 JOIN sources s ON s.id = ao.source_id
+                JOIN source_revisions sr ON sr.id = s.current_revision_id
                 JOIN locations l ON l.source_id = s.id
+                JOIN roots r ON r.id = l.root_id
                 WHERE ao.asset_id = ?1
              )
              SELECT a.id, pl.id, pl.relative_path_display, pl.media_family, pl.state,
@@ -529,12 +620,78 @@ fn asset_detail(
         .optional()?
         .ok_or(CoreError::AssetNotFound)?;
     let mut statement = connection.prepare(
-        "SELECT collection_id FROM collection_assets WHERE asset_id = ?1 ORDER BY collection_id",
+        "SELECT collection_id FROM collection_assets WHERE asset_id = ?1
+         ORDER BY collection_id LIMIT ?2",
     )?;
     detail.collection_ids = statement
-        .query_map(params![asset_id], |row| row.get(0))?
+        .query_map(params![asset_id, MAX_ASSET_COLLECTIONS as i64 + 1], |row| {
+            row.get(0)
+        })?
         .collect::<Result<Vec<_>, _>>()?;
+    if detail.collection_ids.len() > MAX_ASSET_COLLECTIONS {
+        return Err(CoreError::AssetCollectionLimitReached);
+    }
     Ok(detail)
+}
+
+fn byte_bound_asset_page(
+    offset: u64,
+    limit: u32,
+    total: u64,
+    mut items: Vec<reference_protocol::AssetSummary>,
+    library_revision: u64,
+) -> Result<AssetPage, CoreError> {
+    let fits = |count: usize| -> Result<bool, CoreError> {
+        let returned = count as u64;
+        let end = offset.checked_add(returned).ok_or_else(|| {
+            CoreError::QueryInvalid("query offset is outside supported range".into())
+        })?;
+        let page = AssetPage {
+            offset,
+            limit,
+            total,
+            items: items[..count].to_vec(),
+            next_offset: (end < total).then_some(end),
+            library_revision,
+        };
+        let frame = ServerFrame::Response {
+            protocol_version: PROTOCOL_VERSION,
+            request_id: "r".repeat(MAX_REQUEST_ID_BYTES),
+            result: CommandResult::AssetPage(page),
+        };
+        Ok(serde_json::to_vec(&frame)?.len().saturating_add(4) <= MAX_FRAME_BYTES)
+    };
+
+    let selected = if fits(items.len())? {
+        items.len()
+    } else {
+        if items.is_empty() || !fits(1)? {
+            return Err(CoreError::QueryResultTooLarge);
+        }
+        let (mut low, mut high) = (1_usize, items.len());
+        while low < high {
+            let middle = low + (high - low).div_ceil(2);
+            if fits(middle)? {
+                low = middle;
+            } else {
+                high = middle - 1;
+            }
+        }
+        low
+    };
+    items.truncate(selected);
+    let returned = items.len() as u64;
+    let end = offset
+        .checked_add(returned)
+        .ok_or_else(|| CoreError::QueryInvalid("query offset is outside supported range".into()))?;
+    Ok(AssetPage {
+        offset,
+        limit,
+        total,
+        items,
+        next_offset: (end < total).then_some(end),
+        library_revision,
+    })
 }
 
 fn validate_query(
@@ -547,7 +704,7 @@ fn validate_query(
     {
         return Err(CoreError::QueryInvalid("search text is invalid".into()));
     }
-    if query.review_states.len() > 4 || query.availability.len() > 4 {
+    if query.review_states.len() > 4 || query.availability.len() > 7 {
         return Err(CoreError::QueryInvalid("filter list is too large".into()));
     }
     if let Some(root_id) = &query.root_id {

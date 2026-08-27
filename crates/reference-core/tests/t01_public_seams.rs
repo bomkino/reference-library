@@ -162,7 +162,7 @@ fn stills_progress_page_preview_reveal_missing_and_round_trip() {
         Err(CoreError::RawPathResourceDenied)
     ));
 
-    let before = session.canonical_dump().unwrap();
+    let before = session.canonical_digest().unwrap();
     session.close().unwrap();
     assert!(matches!(
         session.authorize_resource(&selected.asset_id, ResourceProfile::Preview),
@@ -180,7 +180,7 @@ fn stills_progress_page_preview_reveal_missing_and_round_trip() {
             .collect::<Vec<_>>(),
         all_ids
     );
-    assert_eq!(reopened.canonical_dump().unwrap(), before);
+    assert_eq!(reopened.canonical_digest().unwrap(), before);
 
     fs::remove_file(project.root_path().join("alpha.png")).unwrap();
     let rescan = reopened
@@ -239,6 +239,7 @@ fn seed_assets(library_path: PathBuf, count: u128) {
         .unwrap();
     for index in 0..count {
         let source_id = Uuid::from_u128(10_000_000 + index).to_string();
+        let source_revision_id = Uuid::from_u128(15_000_000 + index).to_string();
         let location_id = Uuid::from_u128(20_000_000 + index).to_string();
         let asset_id = Uuid::from_u128(30_000_000 + index).to_string();
         let origin_id = Uuid::from_u128(40_000_000 + index).to_string();
@@ -249,6 +250,26 @@ fn seed_assets(library_path: PathBuf, count: u128) {
                     id, library_id, media_family, lineage_state, created_at_ms, updated_at_ms
                  ) VALUES (?1, ?2, 'still', 'active', ?3, ?3)",
                 params![source_id, manifest.library_id, index as i64],
+            )
+            .unwrap();
+        transaction
+            .execute(
+                "INSERT INTO source_revisions (
+                    id,source_id,byte_size,quick_fingerprint,mime_detected,
+                    extension_observed,media_metadata_json,created_at_ms
+                 ) VALUES (?1,?2,72,?3,'image/png','png','{}',?4)",
+                params![
+                    source_revision_id,
+                    source_id,
+                    format!("fixture-{index}"),
+                    index as i64
+                ],
+            )
+            .unwrap();
+        transaction
+            .execute(
+                "UPDATE sources SET current_revision_id=?1 WHERE id=?2",
+                params![source_revision_id, source_id],
             )
             .unwrap();
         transaction

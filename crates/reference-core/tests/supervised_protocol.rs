@@ -5,8 +5,8 @@ use std::{
 };
 
 use reference_protocol::{
-    AssetProjection, ClientFrame, Command, CommandResult, Event, PROTOCOL_VERSION, ServerFrame,
-    read_frame, write_frame,
+    AssetProjection, ClientFrame, Command, CommandResult, Event, PROTOCOL_VERSION, ReviewState,
+    ServerFrame, read_frame, write_frame,
 };
 use uuid::Uuid;
 
@@ -150,13 +150,13 @@ fn framed_core_survives_supervised_restart_without_false_completion() {
     assert_eq!(page.total, 70);
     assert_eq!(page.items.len(), 25);
     core.send(
-        "dump-before",
-        Command::CanonicalDump {
+        "digest-before",
+        Command::CanonicalDigest {
             session_id: opened.session_id,
         },
     );
-    let CommandResult::CanonicalDump { dump: before } = core.response("dump-before") else {
-        panic!("wrong dump response")
+    let CommandResult::CanonicalDigest(before) = core.response("digest-before") else {
+        panic!("wrong digest response")
     };
 
     core.send("crash", Command::TestCrash);
@@ -178,13 +178,13 @@ fn framed_core_survives_supervised_restart_without_false_completion() {
         panic!("wrong reopen response")
     };
     restarted.send(
-        "dump-after",
-        Command::CanonicalDump {
+        "digest-after",
+        Command::CanonicalDigest {
             session_id: reopened.session_id.clone(),
         },
     );
-    let CommandResult::CanonicalDump { dump: after } = restarted.response("dump-after") else {
-        panic!("wrong dump response")
+    let CommandResult::CanonicalDigest(after) = restarted.response("digest-after") else {
+        panic!("wrong digest response")
     };
     assert_eq!(after, before);
     restarted.send(
@@ -205,4 +205,225 @@ fn framed_core_survives_supervised_restart_without_false_completion() {
     assert!(restarted.child.wait().unwrap().success());
 
     fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn committed_curation_and_collection_survive_two_supervised_recovery_cycles() {
+    let directory = std::env::temp_dir().join(format!("pitchdog-curation-{}", Uuid::new_v4()));
+    let root = directory.join("Root");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("still.png"), PNG).unwrap();
+    let library = directory.join("Editorial.pitchlibrary");
+
+    let mut core = CoreProcess::start();
+    core.send(
+        "create",
+        Command::CreateLibrary {
+            path: library.to_string_lossy().into_owned(),
+            name: "Editorial recovery".into(),
+        },
+    );
+    let CommandResult::SessionOpened(opened) = core.response("create") else {
+        panic!("wrong create response")
+    };
+    core.send(
+        "add-root",
+        Command::AddRoot {
+            session_id: opened.session_id.clone(),
+            authorized_path: root.to_string_lossy().into_owned(),
+            display_name: "Root".into(),
+        },
+    );
+    let CommandResult::RootAdded { job_id, .. } = core.response("add-root") else {
+        panic!("wrong add response")
+    };
+    core.wait_for_completed_job(&job_id);
+    core.send(
+        "query",
+        Command::QueryAssets {
+            session_id: opened.session_id.clone(),
+            offset: 0,
+            limit: 1,
+            projection: AssetProjection::ContactSheetStandard,
+        },
+    );
+    let CommandResult::AssetPage(page) = core.response("query") else {
+        panic!("wrong query response")
+    };
+    let asset_id = page.items[0].asset_id.clone();
+    core.send(
+        "title",
+        Command::UpdateAssetTitle {
+            session_id: opened.session_id.clone(),
+            asset_id: asset_id.clone(),
+            expected_revision: 0,
+            title: Some("  Hero still  ".into()),
+        },
+    );
+    assert!(matches!(
+        core.response("title"),
+        CommandResult::AssetUpdated { asset, .. }
+            if asset.custom_title.as_deref() == Some("Hero still") && asset.revision == 1
+    ));
+    core.send(
+        "note",
+        Command::UpdateAssetNote {
+            session_id: opened.session_id.clone(),
+            asset_id: asset_id.clone(),
+            expected_revision: 1,
+            note: Some("  durable note  ".into()),
+        },
+    );
+    assert!(matches!(
+        core.response("note"),
+        CommandResult::AssetUpdated { asset, .. }
+            if asset.note.as_deref() == Some("  durable note  ") && asset.revision == 2
+    ));
+    core.send(
+        "review",
+        Command::UpdateAssetReview {
+            session_id: opened.session_id.clone(),
+            asset_id: asset_id.clone(),
+            expected_revision: 2,
+            review_state: ReviewState::Keep,
+        },
+    );
+    assert!(matches!(
+        core.response("review"),
+        CommandResult::AssetUpdated { asset, .. }
+            if asset.review_state == "keep" && asset.revision == 3
+    ));
+    core.send(
+        "collection",
+        Command::CreateCollection {
+            session_id: opened.session_id.clone(),
+            name: "Selects".into(),
+        },
+    );
+    let CommandResult::CollectionUpdated { collection, .. } = core.response("collection") else {
+        panic!("wrong collection response")
+    };
+    let collection_id = collection.collection_id;
+    core.send(
+        "membership",
+        Command::SetCollectionMembership {
+            session_id: opened.session_id,
+            collection_id: collection_id.clone(),
+            asset_ids: vec![asset_id.clone()],
+            member: true,
+        },
+    );
+    assert!(matches!(
+        core.response("membership"),
+        CommandResult::CollectionMembershipUpdated { affected: 1, .. }
+    ));
+    crash_and_wait(&mut core);
+
+    let mut recovered = CoreProcess::start();
+    let first_session =
+        open_and_assert_editorial(&mut recovered, &library, "first", &asset_id, &collection_id);
+    recovered.send(
+        "close-first",
+        Command::CloseLibrary {
+            session_id: first_session,
+        },
+    );
+    assert!(matches!(
+        recovered.response("close-first"),
+        CommandResult::LibraryClosed { .. }
+    ));
+    let second_session = open_and_assert_editorial(
+        &mut recovered,
+        &library,
+        "second",
+        &asset_id,
+        &collection_id,
+    );
+    let _ = second_session;
+    crash_and_wait(&mut recovered);
+
+    let mut recovered_again = CoreProcess::start();
+    let final_session = open_and_assert_editorial(
+        &mut recovered_again,
+        &library,
+        "final",
+        &asset_id,
+        &collection_id,
+    );
+    recovered_again.send(
+        "close-final",
+        Command::CloseLibrary {
+            session_id: final_session,
+        },
+    );
+    assert!(matches!(
+        recovered_again.response("close-final"),
+        CommandResult::LibraryClosed { .. }
+    ));
+    recovered_again.send("shutdown", Command::Shutdown);
+    assert!(matches!(
+        recovered_again.response("shutdown"),
+        CommandResult::Shutdown
+    ));
+    assert!(recovered_again.child.wait().unwrap().success());
+    fs::remove_dir_all(directory).unwrap();
+}
+
+fn crash_and_wait(core: &mut CoreProcess) {
+    core.send("crash", Command::TestCrash);
+    while read_frame::<ServerFrame>(&mut core.output)
+        .unwrap()
+        .is_some()
+    {}
+    assert_eq!(core.child.wait().unwrap().code(), Some(91));
+}
+
+fn open_and_assert_editorial(
+    core: &mut CoreProcess,
+    library: &std::path::Path,
+    suffix: &str,
+    asset_id: &str,
+    collection_id: &str,
+) -> String {
+    let open_id = format!("open-{suffix}");
+    core.send(
+        &open_id,
+        Command::OpenLibrary {
+            path: library.to_string_lossy().into_owned(),
+        },
+    );
+    let CommandResult::SessionOpened(opened) = core.response(&open_id) else {
+        panic!("wrong open response")
+    };
+    let detail_id = format!("detail-{suffix}");
+    core.send(
+        &detail_id,
+        Command::GetAsset {
+            session_id: opened.session_id.clone(),
+            asset_id: asset_id.into(),
+        },
+    );
+    let CommandResult::Asset(detail) = core.response(&detail_id) else {
+        panic!("wrong detail response")
+    };
+    assert_eq!(detail.custom_title.as_deref(), Some("Hero still"));
+    assert_eq!(detail.note.as_deref(), Some("  durable note  "));
+    assert_eq!(detail.review_state, "keep");
+    assert_eq!(detail.revision, 3);
+    assert_eq!(detail.collection_ids, vec![collection_id.to_owned()]);
+    let collections_id = format!("collections-{suffix}");
+    core.send(
+        &collections_id,
+        Command::ListCollections {
+            session_id: opened.session_id.clone(),
+        },
+    );
+    assert!(matches!(
+        core.response(&collections_id),
+        CommandResult::Collections { items }
+            if items.len() == 1
+                && items[0].collection_id == collection_id
+                && items[0].asset_count == 1
+    ));
+    opened.session_id
 }

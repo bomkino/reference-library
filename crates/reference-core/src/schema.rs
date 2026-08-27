@@ -142,6 +142,7 @@ fn validate_existing(connection: &Connection, manifest: &Manifest) -> Result<u32
         });
     }
     validate_migration_ledger(connection, version)?;
+    validate_schema_contract(connection, version)?;
     validate_library_identity(connection, manifest, version)?;
     Ok(version)
 }
@@ -253,11 +254,11 @@ fn validate_migration_ledger(connection: &Connection, version: u32) -> Result<()
     let mut statement = connection
         .prepare(
             "SELECT version, name, checksum FROM schema_migrations
-             WHERE version BETWEEN 1 AND ?1 ORDER BY version",
+             ORDER BY version",
         )
         .map_err(|_| CoreError::MigrationLedgerInvalid(version))?;
     let actual = statement
-        .query_map(params![version], |row| {
+        .query_map([], |row| {
             Ok((
                 row.get::<_, u32>(0)?,
                 row.get::<_, String>(1)?,
@@ -279,6 +280,38 @@ fn validate_migration_ledger(connection: &Connection, version: u32) -> Result<()
         return Err(CoreError::MigrationLedgerInvalid(version));
     }
     Ok(())
+}
+
+fn validate_schema_contract(connection: &Connection, version: u32) -> Result<(), CoreError> {
+    let expected = Connection::open_in_memory()?;
+    for sql in [MIGRATION_0001, MIGRATION_0002, MIGRATION_0003]
+        .into_iter()
+        .take(version as usize)
+    {
+        expected.execute_batch(sql)?;
+    }
+    if schema_contract_rows(connection)? != schema_contract_rows(&expected)? {
+        return Err(CoreError::DatabaseIntegrity(
+            "canonical database schema does not match the embedded contract".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn schema_contract_rows(
+    connection: &Connection,
+) -> Result<Vec<(String, String, String, String)>, CoreError> {
+    let mut statement = connection.prepare(
+        "SELECT type, name, tbl_name, sql
+         FROM sqlite_schema
+         WHERE name NOT LIKE 'sqlite_%' AND sql IS NOT NULL
+         ORDER BY type, name, tbl_name",
+    )?;
+    Ok(statement
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?)
 }
 
 fn apply_pending_migrations(

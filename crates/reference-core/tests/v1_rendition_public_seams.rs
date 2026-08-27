@@ -86,6 +86,63 @@ fn grid_is_real_bounded_image_and_preview_is_a_stable_private_snapshot() {
 }
 
 #[test]
+fn jpeg_webp_and_exif_orientation_produce_bounded_png_grids() {
+    let (project, mut session) = Project::new();
+    write_still(
+        &project.root.join("photo.jpg"),
+        80,
+        40,
+        21,
+        ImageFormat::Jpeg,
+    );
+    write_still(
+        &project.root.join("graphic.webp"),
+        72,
+        36,
+        22,
+        ImageFormat::WebP,
+    );
+    let oriented = project.root.join("oriented.jpg");
+    write_still(&oriented, 80, 40, 23, ImageFormat::Jpeg);
+    inject_exif_orientation(&oriented, 6);
+    let root_id = session.query_roots().unwrap()[0].root_id.clone();
+    let (sender, _receiver) = mpsc::channel();
+    scan_root(
+        session.rescan_root(&root_id).unwrap(),
+        Arc::new(AtomicBool::new(false)),
+        sender,
+    );
+
+    let assets = session
+        .query_assets(0, 10, AssetProjection::ContactSheetStandard)
+        .unwrap()
+        .items;
+    for name in ["photo.jpg", "graphic.webp", "oriented.jpg"] {
+        let asset = assets
+            .iter()
+            .find(|asset| asset.display_name == name)
+            .unwrap();
+        let descriptor = session
+            .authorize_resource(&asset.asset_id, ResourceProfile::GridStandard)
+            .unwrap();
+        assert_eq!(descriptor.mime_type, "image/png");
+        let dimensions = imagesize::size(&descriptor.native_path_for_handler).unwrap();
+        assert!(dimensions.width <= 512 && dimensions.height <= 512);
+        if name == "oriented.jpg" {
+            assert!(
+                dimensions.height > dimensions.width,
+                "EXIF orientation 6 must rotate the landscape source"
+            );
+        }
+        cleanup_library_cache(
+            Path::new(&descriptor.native_path_for_handler),
+            &session.opened().library_id,
+        );
+    }
+    session.close().unwrap();
+}
+
+#[test]
 fn cache_reuses_across_reopen_repairs_corruption_and_rekeys_after_revision() {
     let (project, mut session) = Project::new();
     let asset = session
@@ -111,12 +168,50 @@ fn cache_reuses_across_reopen_repairs_corruption_and_rekeys_after_revision() {
         .authorize_resource(&asset.asset_id, ResourceProfile::GridStandard)
         .unwrap();
     assert_eq!(PathBuf::from(&reused.native_path_for_handler), first_path);
+    let preview = reopened
+        .authorize_resource(&asset.asset_id, ResourceProfile::Preview)
+        .unwrap();
+    let preview_path = PathBuf::from(&preview.native_path_for_handler);
+    let source_length = fs::metadata(project.root.join("large.png")).unwrap().len();
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&preview_path)
+        .unwrap()
+        .set_len(reference_core::rendition::MAX_SOURCE_BYTES + 1)
+        .unwrap();
+    let repaired_preview = reopened
+        .authorize_resource(&asset.asset_id, ResourceProfile::Preview)
+        .unwrap();
+    assert_eq!(
+        fs::metadata(&repaired_preview.native_path_for_handler)
+            .unwrap()
+            .len(),
+        source_length
+    );
     fs::write(&first_path, b"corrupt cache").unwrap();
     let repaired = reopened
         .authorize_resource(&asset.asset_id, ResourceProfile::GridStandard)
         .unwrap();
     assert_eq!(
         fs::read(&repaired.native_path_for_handler).unwrap(),
+        first_bytes
+    );
+    write_png(&first_path, 512, 256, 88);
+    let substituted = fs::read(&first_path).unwrap();
+    assert_ne!(substituted, first_bytes);
+    let repaired_substitution = reopened
+        .authorize_resource(&asset.asset_id, ResourceProfile::GridStandard)
+        .unwrap();
+    assert_eq!(
+        fs::read(&repaired_substitution.native_path_for_handler).unwrap(),
+        first_bytes
+    );
+    fs::write(&first_path, &first_bytes[..33]).unwrap();
+    let repaired_truncation = reopened
+        .authorize_resource(&asset.asset_id, ResourceProfile::GridStandard)
+        .unwrap();
+    assert_eq!(
+        fs::read(&repaired_truncation.native_path_for_handler).unwrap(),
         first_bytes
     );
 
@@ -248,6 +343,10 @@ fn terminal_rendition_job_retention_is_bounded_without_deleting_scan_history() {
             .chain(second.items.iter())
             .any(|job| job.job_kind == "initial_scan")
     );
+    let root = session.query_roots().unwrap().remove(0);
+    assert_eq!(root.observed_count, 1);
+    assert_eq!(root.unsupported_count, 0);
+    assert_eq!(root.active_job_id, None);
     cleanup_library_cache(
         resource_path.as_deref().unwrap(),
         &session.opened().library_id,
@@ -307,13 +406,72 @@ fn rendition_persistence_failure_requires_restart_without_false_terminal_event()
     reopened.close().unwrap();
 }
 
+#[test]
+fn tampered_revision_id_cannot_escape_the_private_cache_namespace() {
+    let (project, mut session) = Project::new();
+    let asset = session
+        .query_assets(0, 1, AssetProjection::ContactSheetStandard)
+        .unwrap()
+        .items
+        .remove(0);
+    let marker_name = format!("reference-cache-escape-{}", Uuid::new_v4());
+    let marker = std::env::temp_dir()
+        .join("pitchdog-reference-cache")
+        .join(&marker_name);
+    assert!(!marker.exists());
+    let malicious = format!("../../../{marker_name}");
+    let connection = rusqlite::Connection::open(project.library.join("library.sqlite")).unwrap();
+    let revision_id: String = connection
+        .query_row("SELECT id FROM source_revisions LIMIT 1", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    connection
+        .execute(
+            "UPDATE source_revisions SET id=?1 WHERE id=?2",
+            [&malicious, &revision_id],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "UPDATE sources SET current_revision_id=?1 WHERE current_revision_id=?2",
+            [&malicious, &revision_id],
+        )
+        .unwrap();
+    assert!(matches!(
+        session.authorize_resource(&asset.asset_id, ResourceProfile::GridStandard),
+        Err(CoreError::SourceRevisionChanged | CoreError::RenditionCacheUnsafe)
+    ));
+    assert!(!marker.exists());
+    session.close().unwrap();
+}
+
 fn write_png(path: &Path, width: u32, height: u32, seed: u8) {
+    write_still(path, width, height, seed, ImageFormat::Png);
+}
+
+fn write_still(path: &Path, width: u32, height: u32, seed: u8, format: ImageFormat) {
     let image = RgbImage::from_fn(width, height, |x, y| {
         Rgb([seed.wrapping_add(x as u8), seed.wrapping_add(y as u8), seed])
     });
     DynamicImage::ImageRgb8(image)
-        .save_with_format(path, ImageFormat::Png)
+        .save_with_format(path, format)
         .unwrap();
+}
+
+fn inject_exif_orientation(path: &Path, orientation: u16) {
+    let original = fs::read(path).unwrap();
+    assert_eq!(&original[..2], &[0xff, 0xd8]);
+    let mut payload = b"Exif\0\0II\x2a\0\x08\0\0\0\x01\0\x12\x01\x03\0\x01\0\0\0".to_vec();
+    payload.extend_from_slice(&orientation.to_le_bytes());
+    payload.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+    let mut with_exif = Vec::with_capacity(original.len() + payload.len() + 4);
+    with_exif.extend_from_slice(&original[..2]);
+    with_exif.extend_from_slice(&[0xff, 0xe1]);
+    with_exif.extend_from_slice(&u16::try_from(payload.len() + 2).unwrap().to_be_bytes());
+    with_exif.extend_from_slice(&payload);
+    with_exif.extend_from_slice(&original[2..]);
+    fs::write(path, with_exif).unwrap();
 }
 
 fn cleanup_library_cache(resource: &Path, library_id: &str) {

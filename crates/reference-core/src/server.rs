@@ -13,7 +13,8 @@ use std::{
 
 use reference_protocol::{
     CancellationState, Capabilities, CapabilityDetail, ClientFrame, Command, CommandResult, Event,
-    HelloResult, MAX_REQUEST_ID_BYTES, PROTOCOL_VERSION, ServerFrame, read_frame, write_frame,
+    FrameError, HelloResult, MAX_REQUEST_ID_BYTES, PROTOCOL_VERSION, ServerFrame, read_frame,
+    write_frame,
 };
 
 use crate::{
@@ -58,6 +59,7 @@ struct ResourceWork {
 struct AsyncResponse {
     request_id: String,
     job_id: String,
+    session_id: String,
     result: Result<reference_protocol::ResourceDescriptor, CoreError>,
     terminal_persisted: bool,
 }
@@ -96,26 +98,28 @@ impl CommandEngine {
                         }
                     };
                     let job_id = work.plan.job_id.clone().unwrap_or_default();
+                    let session_id = work.plan.session_id.clone();
                     let completion = Arc::clone(&work.completion);
                     let outcome = crate::rendition::run_job_outcome(
                         work.plan,
                         work.cancelled,
                         events.clone(),
                     );
+                    let response_sent = sender
+                        .send(AsyncResponse {
+                            request_id: work.request_id,
+                            job_id,
+                            session_id,
+                            result: outcome.result,
+                            terminal_persisted: outcome.terminal_persisted,
+                        })
+                        .is_ok();
                     let (completed, wake) = &*completion;
                     if let Ok(mut completed) = completed.lock() {
                         *completed = true;
                         wake.notify_all();
                     }
-                    if sender
-                        .send(AsyncResponse {
-                            request_id: work.request_id,
-                            job_id,
-                            result: outcome.result,
-                            terminal_persisted: outcome.terminal_persisted,
-                        })
-                        .is_err()
-                    {
+                    if !response_sent {
                         return;
                     }
                 }
@@ -259,8 +263,17 @@ impl CommandEngine {
                 let cancelled = Arc::new(AtomicBool::new(false));
                 let worker_cancelled = Arc::clone(&cancelled);
                 let sender = self.event_sender.clone();
+                let completion = Arc::new((Mutex::new(false), Condvar::new()));
+                let worker_completion = Arc::clone(&completion);
                 let handle = thread::spawn(move || {
-                    discovery::scan_root(plan, worker_cancelled, sender).terminal_persisted
+                    let persisted =
+                        discovery::scan_root(plan, worker_cancelled, sender).terminal_persisted;
+                    let (completed, wake) = &*worker_completion;
+                    if let Ok(mut completed) = completed.lock() {
+                        *completed = true;
+                        wake.notify_all();
+                    }
+                    persisted
                 });
                 self.jobs.insert(
                     job_id.clone(),
@@ -269,7 +282,7 @@ impl CommandEngine {
                         cancelled,
                         handle: Some(handle),
                         kind: JobKind::Scan,
-                        completion: None,
+                        completion: Some(completion),
                     },
                 );
                 self.queue_local_event(Event::RootStateChanged {
@@ -308,8 +321,17 @@ impl CommandEngine {
                 let cancelled = Arc::new(AtomicBool::new(false));
                 let worker_cancelled = Arc::clone(&cancelled);
                 let sender = self.event_sender.clone();
+                let completion = Arc::new((Mutex::new(false), Condvar::new()));
+                let worker_completion = Arc::clone(&completion);
                 let handle = thread::spawn(move || {
-                    discovery::scan_root(plan, worker_cancelled, sender).terminal_persisted
+                    let persisted =
+                        discovery::scan_root(plan, worker_cancelled, sender).terminal_persisted;
+                    let (completed, wake) = &*worker_completion;
+                    if let Ok(mut completed) = completed.lock() {
+                        *completed = true;
+                        wake.notify_all();
+                    }
+                    persisted
                 });
                 self.jobs.insert(
                     job_id.clone(),
@@ -318,7 +340,7 @@ impl CommandEngine {
                         cancelled,
                         handle: Some(handle),
                         kind: JobKind::Scan,
-                        completion: None,
+                        completion: Some(completion),
                     },
                 );
                 self.queue_local_event(Event::RootStateChanged {
@@ -342,9 +364,15 @@ impl CommandEngine {
                 limit,
                 projection,
                 query,
+                expected_library_revision,
             } => Ok(CommandResult::AssetPage(
-                self.session(&session_id)?
-                    .query_asset_index(offset, limit, projection, &query)?,
+                self.session(&session_id)?.query_asset_index_at_revision(
+                    offset,
+                    limit,
+                    projection,
+                    &query,
+                    expected_library_revision,
+                )?,
             )),
             Command::GetAsset {
                 session_id,
@@ -654,14 +682,6 @@ impl CommandEngine {
                 job.cancelled.store(true, Ordering::Relaxed);
             }
         }
-        for job_id in &job_ids {
-            if let Some(job) = self.jobs.get_mut(job_id)
-                && job.kind == JobKind::Scan
-                && let Some(handle) = job.handle.take()
-            {
-                let _ = handle.join();
-            }
-        }
         let deadline = Instant::now() + WORKER_STOP_TIMEOUT;
         for job_id in &job_ids {
             let Some(completion) = self
@@ -686,6 +706,14 @@ impl CommandEngine {
                 if timeout.timed_out() && !*completed {
                     return Err(CoreError::RenditionTimedOut);
                 }
+            }
+        }
+        for job_id in &job_ids {
+            if let Some(job) = self.jobs.get_mut(job_id)
+                && job.kind == JobKind::Scan
+                && let Some(handle) = job.handle.take()
+            {
+                let _ = handle.join();
             }
         }
         Ok(())
@@ -713,7 +741,12 @@ impl CommandEngine {
         if response.terminal_persisted {
             self.jobs.remove(&response.job_id);
         }
-        Some(match response.result {
+        let result = if self.sessions.contains_key(&response.session_id) {
+            response.result
+        } else {
+            Err(CoreError::RenditionCancelled)
+        };
+        Some(match result {
             Ok(descriptor) => ServerFrame::Response {
                 protocol_version: PROTOCOL_VERSION,
                 request_id: response.request_id,
@@ -763,16 +796,16 @@ pub fn run_server(
     let mut engine = CommandEngine::new();
     let mut shutdown = false;
     while !shutdown {
-        while let Some(response) = engine.take_async_response() {
-            write_frame(&mut writer, &response).map_err(|e| e.to_string())?;
-        }
         while let Some(event) = engine.take_event() {
-            write_frame(&mut writer, &engine.next_event_frame(event)).map_err(|e| e.to_string())?;
+            write_server_frame(&mut writer, &engine.next_event_frame(event))?;
+        }
+        while let Some(response) = engine.take_async_response() {
+            write_server_frame(&mut writer, &response)?;
         }
         match input_receiver.try_recv() {
             Ok(Input::Request(request)) => {
                 if !valid_request_id(&request.request_id) {
-                    write_frame(
+                    write_server_frame(
                         &mut writer,
                         &ServerFrame::Error {
                             protocol_version: PROTOCOL_VERSION,
@@ -783,8 +816,7 @@ pub fn run_server(
                                 false,
                             ),
                         },
-                    )
-                    .map_err(|e| e.to_string())?;
+                    )?;
                     continue;
                 }
                 let request_id = request.request_id.clone();
@@ -801,15 +833,14 @@ pub fn run_server(
                         asset_id.clone(),
                         *profile,
                     ) {
-                        write_frame(
+                        write_server_frame(
                             &mut writer,
                             &ServerFrame::Error {
                                 protocol_version: PROTOCOL_VERSION,
                                 request_id,
                                 error: error.to_protocol_error(),
                             },
-                        )
-                        .map_err(|e| e.to_string())?;
+                        )?;
                     }
                     continue;
                 }
@@ -825,8 +856,16 @@ pub fn run_server(
                         error: error.to_protocol_error(),
                     },
                 };
-                write_frame(&mut writer, &frame).map_err(|e| e.to_string())?;
-                shutdown = is_shutdown;
+                let shutdown_succeeded = is_shutdown
+                    && matches!(
+                        &frame,
+                        ServerFrame::Response {
+                            result: CommandResult::Shutdown,
+                            ..
+                        }
+                    );
+                write_server_frame(&mut writer, &frame)?;
+                shutdown = shutdown_succeeded;
             }
             Ok(Input::Invalid(message)) => {
                 let frame = ServerFrame::Error {
@@ -838,17 +877,52 @@ pub fn run_server(
                         false,
                     ),
                 };
-                write_frame(&mut writer, &frame).map_err(|e| e.to_string())?;
+                write_server_frame(&mut writer, &frame)?;
             }
             Ok(Input::Eof) => {
-                let _ = engine.stop_all_jobs();
-                break;
+                if engine.stop_all_jobs().is_ok() {
+                    break;
+                }
+                // Retain every session and its writer lock until background
+                // writers are quiescent. A supervising shell can still
+                // terminate the helper process if a hostile decoder exceeds
+                // the bounded cooperative deadline.
+                thread::sleep(Duration::from_millis(4));
             }
             Err(TryRecvError::Empty) => thread::sleep(Duration::from_millis(4)),
-            Err(TryRecvError::Disconnected) => break,
+            Err(TryRecvError::Disconnected) => {
+                if engine.stop_all_jobs().is_ok() {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(4));
+            }
         }
     }
     Ok(())
+}
+
+fn write_server_frame(writer: &mut impl Write, frame: &ServerFrame) -> Result<(), String> {
+    match write_frame(writer, frame) {
+        Ok(()) => Ok(()),
+        Err(FrameError::FrameTooLarge { .. }) => {
+            let request_id = match frame {
+                ServerFrame::Response { request_id, .. }
+                | ServerFrame::Error { request_id, .. } => request_id.clone(),
+                ServerFrame::Event { .. } => "oversized-event".into(),
+            };
+            let fallback = ServerFrame::Error {
+                protocol_version: PROTOCOL_VERSION,
+                request_id,
+                error: reference_protocol::ProtocolError::new(
+                    "ProtocolResultTooLarge",
+                    "Core result exceeded the bounded protocol frame",
+                    false,
+                ),
+            };
+            write_frame(writer, &fallback).map_err(|error| error.to_string())
+        }
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 fn read_input(mut reader: impl Read, sender: SyncSender<Input>) {
@@ -874,12 +948,71 @@ fn read_input(mut reader: impl Read, sender: SyncSender<Input>) {
 fn valid_request_id(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= MAX_REQUEST_ID_BYTES
-        && value.bytes().all(|byte| byte.is_ascii_graphic())
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':' | b'.'))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn request_ids_use_a_non_escaping_bounded_alphabet() {
+        assert!(valid_request_id("request-1:page_2.0"));
+        assert!(valid_request_id(&"r".repeat(MAX_REQUEST_ID_BYTES)));
+        assert!(!valid_request_id(&"\\".repeat(MAX_REQUEST_ID_BYTES)));
+        assert!(!valid_request_id("quoted\"id"));
+    }
+
+    #[test]
+    fn oversized_result_becomes_a_bounded_nonfatal_protocol_error() {
+        let oversized = ServerFrame::Response {
+            protocol_version: PROTOCOL_VERSION,
+            request_id: "large-result".into(),
+            result: CommandResult::CanonicalDump {
+                dump: serde_json::json!({"value": "x".repeat(reference_protocol::MAX_FRAME_BYTES)}),
+            },
+        };
+        let following = ServerFrame::Response {
+            protocol_version: PROTOCOL_VERSION,
+            request_id: "following".into(),
+            result: CommandResult::Shutdown,
+        };
+        let mut encoded = Vec::new();
+        write_server_frame(&mut encoded, &oversized).unwrap();
+        write_server_frame(&mut encoded, &following).unwrap();
+        let mut reader = std::io::Cursor::new(encoded);
+        let first = read_frame::<ServerFrame>(&mut reader).unwrap().unwrap();
+        let second = read_frame::<ServerFrame>(&mut reader).unwrap().unwrap();
+        assert!(matches!(
+            first,
+            ServerFrame::Error { request_id, error, .. }
+                if request_id == "large-result" && error.code == "ProtocolResultTooLarge"
+        ));
+        assert!(matches!(
+            second,
+            ServerFrame::Response { request_id, result: CommandResult::Shutdown, .. }
+                if request_id == "following"
+        ));
+    }
+
+    #[test]
+    fn filesystem_failures_do_not_expose_host_paths() {
+        let secret = PathBuf::from("/private/secret/customer/Project.pitchlibrary");
+        for error in [
+            CoreError::DestinationExists(secret.clone()),
+            CoreError::InvalidPackageExtension(secret.clone()),
+            CoreError::Io(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                secret.display().to_string(),
+            )),
+        ] {
+            let public = error.to_protocol_error();
+            assert!(!public.message.contains("/private"));
+            assert!(!public.message.contains("customer"));
+        }
+    }
 
     #[test]
     fn capabilities_explicitly_exclude_source_mutation() {

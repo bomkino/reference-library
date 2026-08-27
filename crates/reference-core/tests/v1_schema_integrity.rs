@@ -317,6 +317,46 @@ fn multiple_library_identities_are_rejected_without_mutating_database_bytes() {
     let _ = fs::remove_dir_all(directory);
 }
 
+#[test]
+fn extra_ledger_rows_and_schema_drift_are_rejected_without_repair() {
+    for mutation in [
+        "INSERT INTO schema_migrations (
+             version, name, checksum, applied_at_ms, application_version
+         ) VALUES (999, 'future-tamper', 'tampered', 1, 'tampered')",
+        "ALTER TABLE assets ADD COLUMN attacker_controlled TEXT",
+    ] {
+        let directory =
+            std::env::temp_dir().join(format!("reference-v1-contract-{}", Uuid::new_v4()));
+        let path = directory.join("Project.pitchlibrary");
+        fs::create_dir(&directory).unwrap();
+        let mut session = LibrarySession::create(&path, "Contract proof".into()).unwrap();
+        session.close().unwrap();
+        let database = path.join("library.sqlite");
+        let connection = Connection::open(&database).unwrap();
+        connection.execute_batch(mutation).unwrap();
+        connection
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+            .unwrap();
+        drop(connection);
+        let before = fs::read(&database).unwrap();
+
+        let error = match LibrarySession::open(&path) {
+            Ok(_) => panic!("tampered package must be rejected"),
+            Err(error) => error,
+        };
+        assert!(matches!(
+            error,
+            CoreError::MigrationLedgerInvalid(_) | CoreError::DatabaseIntegrity(_)
+        ));
+        assert_eq!(
+            error.to_protocol_error().code,
+            "LibraryIntegrityFailedPreserved"
+        );
+        assert_eq!(fs::read(&database).unwrap(), before);
+        let _ = fs::remove_dir_all(directory);
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn hostile_writer_lock_links_never_modify_external_bytes() {

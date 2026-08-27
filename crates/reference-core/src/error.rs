@@ -35,12 +35,20 @@ pub enum CoreError {
     RootScanInProgress,
     #[error("Root scan capacity is currently full")]
     RootScanCapacityReached,
+    #[error("Root scan exceeded a bounded directory traversal limit")]
+    RootScanLimitExceeded,
+    #[error("Library has reached the V1 Root limit")]
+    RootLimitReached,
     #[error("selected directory does not match the Root's known file evidence")]
     RootIdentityMismatch,
     #[error("query page size {0} exceeds limit")]
     QueryPageTooLarge(u32),
     #[error("query is invalid: {0}")]
     QueryInvalid(String),
+    #[error("query snapshot changed: expected Library revision {expected}, actual {actual}")]
+    QuerySnapshotChanged { expected: u64, actual: u64 },
+    #[error("a query record cannot fit the bounded protocol frame")]
+    QueryResultTooLarge,
     #[error("Asset was not found")]
     AssetNotFound,
     #[error("Asset revision conflict: expected {expected}, actual {actual}")]
@@ -53,6 +61,10 @@ pub enum CoreError {
     CollectionRevisionConflict { expected: u64, actual: u64 },
     #[error("Collection membership is invalid: {0}")]
     CollectionMembershipInvalid(String),
+    #[error("Library has reached the V1 Collection limit")]
+    CollectionLimitReached,
+    #[error("Asset has reached the V1 Collection membership limit")]
+    AssetCollectionLimitReached,
     #[error("Location was not found")]
     LocationNotFound,
     #[error("Location is missing or outside its authorized Root")]
@@ -83,6 +95,8 @@ pub enum CoreError {
     ProtocolVersionUnsupported(u32),
     #[error("canonical snapshot changed; request a new digest")]
     CanonicalSnapshotChanged,
+    #[error("legacy canonical dump is too large; use canonical digest and pages")]
+    CanonicalDumpTooLarge,
     #[error("test-only command is disabled")]
     TestCommandDisabled,
 }
@@ -104,14 +118,20 @@ impl CoreError {
             Self::RootNotFound => ("RootNotFound", false),
             Self::RootScanInProgress => ("RootScanInProgress", true),
             Self::RootScanCapacityReached => ("RootScanCapacityReached", true),
+            Self::RootScanLimitExceeded => ("RootScanLimitExceeded", false),
+            Self::RootLimitReached => ("RootLimitReached", false),
             Self::RootIdentityMismatch => ("RootIdentityMismatch", false),
             Self::QueryPageTooLarge(_) | Self::QueryInvalid(_) => ("QueryInvalid", false),
+            Self::QuerySnapshotChanged { .. } => ("QuerySnapshotChanged", true),
+            Self::QueryResultTooLarge => ("QueryResultTooLarge", false),
             Self::AssetNotFound => ("AssetNotFound", false),
             Self::AssetRevisionConflict { .. } => ("AssetRevisionConflict", true),
             Self::CollectionNotFound => ("CollectionNotFound", false),
             Self::CollectionNameConflict => ("CollectionNameConflict", false),
             Self::CollectionRevisionConflict { .. } => ("CollectionRevisionConflict", true),
             Self::CollectionMembershipInvalid(_) => ("CollectionMembershipInvalid", false),
+            Self::CollectionLimitReached => ("CollectionLimitReached", false),
+            Self::AssetCollectionLimitReached => ("AssetCollectionLimitReached", false),
             Self::LocationNotFound => ("LocationNotFound", false),
             Self::LocationMissing => ("LocationMissing", true),
             Self::SourceRevisionChanged => ("SourceRevisionChanged", true),
@@ -127,9 +147,18 @@ impl CoreError {
             Self::RawPathResourceDenied => ("RawPathResourceDenied", false),
             Self::ProtocolVersionUnsupported(_) => ("ProtocolVersionUnsupported", false),
             Self::CanonicalSnapshotChanged => ("CanonicalSnapshotChanged", true),
+            Self::CanonicalDumpTooLarge => ("CanonicalDumpTooLarge", false),
             Self::TestCommandDisabled => ("TestCommandDisabled", false),
             Self::Io(_) | Self::Database(_) | Self::ManifestJson(_) => ("CoreFailure", true),
         };
-        ProtocolError::new(code, self.to_string(), retryable)
+        let message = match self {
+            Self::DestinationExists(_) => "Library destination already exists".into(),
+            Self::InvalidPackageExtension(_) => "Library path must end in .pitchlibrary".into(),
+            Self::Io(_) | Self::Database(_) | Self::ManifestJson(_) => {
+                "Core operation failed without changing source files".into()
+            }
+            _ => self.to_string(),
+        };
+        ProtocolError::new(code, message, retryable)
     }
 }
