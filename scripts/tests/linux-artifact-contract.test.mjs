@@ -8,6 +8,7 @@ import {
   assertDesktopAssociation,
   expectedLinuxArtifacts,
   preflightLinuxArtifacts,
+  squashfsOffsets,
 } from "../linux-artifact-contract.mjs";
 import { readReleaseMetadata } from "../release-metadata.mjs";
 
@@ -87,4 +88,9 @@ test("archive preflight rejects paths and links that could escape before extract
     ["archive", "a.tar.gz", "tar.gz"],
     ["appimage", "a.AppImage", "AppImage"],
   ]);
+});
+
+test("AppImage preflight locates SquashFS bytes without executing the artifact", () => {
+  assert.deepEqual(squashfsOffsets(Buffer.from("ELF\0hsqsdatahsqs", "binary")), [4, 12]);
+  assert.deepEqual(squashfsOffsets(Buffer.from("not-an-appimage")), []);
 });

@@ -6,6 +6,7 @@ import {
   chmod,
   lstat,
   mkdir,
+  open,
   readFile,
   readdir,
 } from "node:fs/promises";
@@ -83,6 +84,7 @@ export async function validateLinuxArtifactSet({ repository, releaseDirectory, e
   await Promise.all([pacmanRoot, tarRoot, appImageRoot].map((directory) => mkdir(directory)));
   await run("bsdtar", ["-xf", artifacts[artifactNames[0]], "-C", pacmanRoot]);
   await run("tar", ["-xzf", artifacts[artifactNames[2]], "-C", tarRoot]);
+  await chmod(artifacts[artifactNames[1]], 0o755);
   await run(artifacts[artifactNames[1]], ["--appimage-extract"], { cwd: appImageRoot });
 
   const distributions = await Promise.all([
@@ -195,19 +197,53 @@ async function preflightTarArchive(archive, label) {
 }
 
 async function preflightAppImage(archive, label) {
-  await chmod(archive, 0o755);
-  const { stdout } = await run(archive, ["--appimage-offset"]);
-  const offset = stdout.trim();
-  assert.match(offset, /^[1-9][0-9]{0,15}$/, `${label} filesystem offset is invalid`);
+  const offset = await findAppImageSquashfsOffset(archive, label);
   const options = { env: { ...process.env, LC_ALL: "C" } };
   const [{ stdout: listed }, { stdout: verbose }] = await Promise.all([
-    run("unsquashfs", ["-l", "-o", offset, archive], options),
-    run("unsquashfs", ["-ll", "-o", offset, archive], options),
+    run("unsquashfs", ["-l", "-o", String(offset), archive], options),
+    run("unsquashfs", ["-ll", "-o", String(offset), archive], options),
   ]);
   const entries = outputLines(listed, label).filter((line) => line.startsWith("squashfs-root"));
   const verboseLines = outputLines(verbose, label).filter((line) =>
     /^[bcdhlps-][rwxStT-]{9}\s/.test(line) && line.includes("squashfs-root"));
   return assertSafeArchiveListing({ entries, verboseLines, label });
+}
+
+async function findAppImageSquashfsOffset(archive, label) {
+  const handle = await open(archive, "r");
+  let prefix;
+  try {
+    const metadata = await handle.stat();
+    assert.ok(metadata.isFile(), `${label} is not a regular file`);
+    const length = Math.min(metadata.size, 32 * 1024 * 1024);
+    prefix = Buffer.alloc(length);
+    const { bytesRead } = await handle.read(prefix, 0, length, 0);
+    prefix = prefix.subarray(0, bytesRead);
+  } finally {
+    await handle.close();
+  }
+  const candidates = squashfsOffsets(prefix);
+  for (const offset of candidates) {
+    try {
+      await run("unsquashfs", ["-s", "-o", String(offset), archive], {
+        env: { ...process.env, LC_ALL: "C" },
+      });
+      return offset;
+    } catch {
+      // An ELF runtime may contain the magic bytes before the real filesystem.
+    }
+  }
+  throw new Error(`${label} does not contain a valid bounded SquashFS payload`);
+}
+
+export function squashfsOffsets(buffer) {
+  assert.ok(Buffer.isBuffer(buffer), "AppImage prefix must be bytes");
+  const found = [];
+  for (let offset = 0; offset <= buffer.length - 4; offset += 1) {
+    if (buffer[offset] === 0x68 && buffer[offset + 1] === 0x73 &&
+        buffer[offset + 2] === 0x71 && buffer[offset + 3] === 0x73) found.push(offset);
+  }
+  return found;
 }
 
 function outputLines(output, label) {
