@@ -5,12 +5,15 @@ export const MAX_SEARCH_SCALARS = 200 as const;
 export const MAX_ASSET_TITLE_SCALARS = 500 as const;
 export const MAX_ASSET_NOTE_SCALARS = 5_000 as const;
 export const MAX_COLLECTION_NAME_SCALARS = 200 as const;
+export const MAX_COLLECTION_MEMBERSHIP_BATCH = 250 as const;
+export const MIN_THUMBNAIL_DENSITY = 140 as const;
+export const MAX_THUMBNAIL_DENSITY = 340 as const;
 
 export type InterfaceScale = 0.8 | 1 | 1.25 | 1.5;
 export type ResourceProfile = "grid_standard" | "preview";
 export type AssetProjection = "contact_sheet_tiny" | "contact_sheet_standard" | "contact_sheet_detailed";
 export type ReviewState = "unreviewed" | "keep" | "maybe" | "reject";
-export type Availability = "present" | "missing" | "needs_permission" | "unavailable";
+export type Availability = "present" | "missing" | "needs_permission" | "offline_volume" | "unreadable" | "unavailable";
 export type AssetSort = "created_ascending" | "created_descending" | "name_ascending" | "name_descending" | "review_state";
 export type JobState = "queued" | "running" | "cancellation_requested" | "cancelled" | "completed" | "failed";
 
@@ -113,6 +116,12 @@ export interface CollectionSummary {
   revision: number;
 }
 
+export interface WorkspacePreferences {
+  interfaceScale: InterfaceScale;
+  thumbnailDensity: number;
+  previewZoom: number;
+}
+
 export type TextPatch = { action: "unchanged" } | { action: "clear" } | { action: "set"; value: string };
 
 export interface AssetPatch {
@@ -145,6 +154,8 @@ export interface ReferenceWorkspaceBridge {
   createLibrary(name: string): Promise<SessionOpened | null>;
   openLibrary(): Promise<SessionOpened | null>;
   completeOpenIntent(intentId: string, decision: "save" | "discard" | "cancel"): Promise<SessionOpened | null>;
+  readPreferences(): Promise<WorkspacePreferences>;
+  writePreferences(patch: Partial<WorkspacePreferences>): Promise<WorkspacePreferences>;
   closeLibrary(sessionId: string): Promise<void>;
   chooseRoot(sessionId: string): Promise<{ rootId: string; jobId: string } | null>;
   listRoots(sessionId: string): Promise<RootSummary[]>;
