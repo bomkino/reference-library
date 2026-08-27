@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -144,6 +145,124 @@ test("Electron supervisor exercises the framed T01 lifecycle and restart seam", 
       await core.request({
         method: "close_library",
         params: { sessionId: recovered.sessionId },
+      }),
+      "library_closed",
+    );
+  } finally {
+    await core.stop();
+    await rm(temporary, { recursive: true, force: true });
+  }
+});
+
+test("decoder hang hard-times-out the real Core process and preserves canonical meaning", { timeout: 20_000 }, async () => {
+  assert.throws(
+    () => new CoreSupervisor({ corePath, testHangBeforeGridDecode: true }),
+    /explicit test-command authority/,
+  );
+  const temporary = await mkdtemp(path.join(os.tmpdir(), "reference-library-decoder-timeout-"));
+  const libraryPath = path.join(temporary, "Project.pitchlibrary");
+  const rootPath = path.join(temporary, "stills");
+  const events = [];
+  const diagnostics = [];
+  const exits = [];
+  const children = [];
+  const spawnTrackedCore = (...arguments_) => {
+    const child = spawn(...arguments_);
+    children.push(child);
+    child.once("exit", (code, signal) => exits.push({ code, signal }));
+    return child;
+  };
+  const core = new CoreSupervisor({
+    corePath,
+    enableTestCommands: true,
+    testHangBeforeGridDecode: true,
+    spawnProcess: spawnTrackedCore,
+  });
+  core.on("event", (event) => events.push(event));
+  core.on("diagnostic", (message) => diagnostics.push(message));
+
+  try {
+    await mkdir(rootPath);
+    await writeFile(path.join(rootPath, "frame.png"), png);
+    await core.start();
+    const created = expectResult(
+      await core.request({
+        method: "create_library",
+        params: { path: libraryPath, name: "Project" },
+      }),
+      "session_opened",
+    );
+    expectResult(
+      await core.request({
+        method: "add_root",
+        params: {
+          sessionId: created.sessionId,
+          authorizedPath: rootPath,
+          displayName: "stills",
+        },
+      }),
+      "root_added",
+    );
+    const page = await waitForAsset(core, created.sessionId);
+    const canonicalBefore = expectResult(
+      await core.request({
+        method: "canonical_digest",
+        params: { sessionId: created.sessionId },
+      }),
+      "canonical_digest",
+    );
+
+    const timedOut = core.authorizeResource({
+      sessionId: created.sessionId,
+      assetId: page.items[0].assetId,
+      profile: "grid_standard",
+    }, { timeoutMs: 2_000 });
+    await waitFor(() => diagnostics.some((message) => message.includes(
+      "test hook reached immediately before grid decode",
+    )));
+    const collateral = core.authorizeResource({
+      sessionId: created.sessionId,
+      assetId: page.items[0].assetId,
+      profile: "grid_standard",
+    }, { timeoutMs: 10_000 });
+
+    const failures = await Promise.allSettled([timedOut, collateral]);
+    assert.deepEqual(failures.map(({ status }) => status), ["rejected", "rejected"]);
+    for (const failure of failures) {
+      assert.match(failure.reason.message, /timed out/i);
+      assert.equal(failure.reason.message.includes(temporary), false);
+    }
+    await waitFor(() => exits.length === 1);
+    assert.equal(exits[0].code, null);
+    assert.equal(exits[0].signal, "SIGKILL");
+    assert.equal(core.running, false);
+    assert.equal(
+      events.filter((event) => event.event === "core_needs_restart").length,
+      1,
+    );
+    assert.equal(
+      events.find((event) => event.event === "core_needs_restart")?.value?.reason,
+      "Reference Core stopped. Writes are frozen until restart.",
+    );
+
+    await core.restart();
+    assert.equal(children.length, 2);
+    const reopened = expectResult(
+      await core.request({ method: "open_library", params: { path: libraryPath } }),
+      "session_opened",
+    );
+    const canonicalAfter = expectResult(
+      await core.request({
+        method: "canonical_digest",
+        params: { sessionId: reopened.sessionId },
+      }),
+      "canonical_digest",
+    );
+    assert.deepEqual(canonicalAfter, canonicalBefore);
+    expectResult(
+      await core.request({
+        method: "close_library",
+        params: { sessionId: reopened.sessionId },
       }),
       "library_closed",
     );

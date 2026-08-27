@@ -384,6 +384,7 @@ fn publish_grid(
         return Err(CoreError::RenditionLimitExceeded);
     }
     let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
+    test_hang_immediately_before_grid_decode();
     let mut image =
         DynamicImage::from_decoder(decoder).map_err(|_| CoreError::RenditionInputInvalid)?;
     checkpoint(cancelled, started)?;
@@ -413,6 +414,22 @@ fn publish_grid(
     }
     Ok(())
 }
+
+#[cfg(debug_assertions)]
+fn test_hang_immediately_before_grid_decode() {
+    let enabled = env::var("PITCHDOG_ENABLE_TEST_COMMANDS").as_deref() == Ok("1")
+        && env::var("PITCHDOG_TEST_HANG_BEFORE_GRID_DECODE").as_deref() == Ok("1");
+    if !enabled {
+        return;
+    }
+    eprintln!("reference-core: test hook reached immediately before grid decode");
+    loop {
+        std::thread::park();
+    }
+}
+
+#[cfg(not(debug_assertions))]
+fn test_hang_immediately_before_grid_decode() {}
 
 fn descriptor(
     plan: &ResourcePlan,

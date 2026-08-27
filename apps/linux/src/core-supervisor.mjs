@@ -26,13 +26,24 @@ export class CoreSupervisor extends EventEmitter {
   #corePath;
   #clientName;
   #enableTestCommands;
+  #testHangBeforeGridDecode;
   #spawn;
 
-  constructor({ corePath, clientName = "garuda-electron", enableTestCommands = false, spawnProcess = spawn } = {}) {
+  constructor({
+    corePath,
+    clientName = "garuda-electron",
+    enableTestCommands = false,
+    testHangBeforeGridDecode = false,
+    spawnProcess = spawn,
+  } = {}) {
     super();
+    if (testHangBeforeGridDecode && !enableTestCommands) {
+      throw new TypeError("Core test hooks require explicit test-command authority");
+    }
     this.#corePath = corePath ?? (spawnProcess === spawn ? resolveCorePath() : "reference-core-test");
     this.#clientName = clientName;
     this.#enableTestCommands = enableTestCommands;
+    this.#testHangBeforeGridDecode = testHangBeforeGridDecode;
     this.#spawn = spawnProcess;
   }
 
@@ -48,7 +59,7 @@ export class CoreSupervisor extends EventEmitter {
     const generation = randomUUID();
     const child = this.#spawn(this.#corePath, [], {
       stdio: ["pipe", "pipe", "pipe"],
-      env: sanitizedEnvironment(this.#enableTestCommands),
+      env: sanitizedEnvironment(this.#enableTestCommands, this.#testHangBeforeGridDecode),
       windowsHide: true,
     });
     this.#child = child;
@@ -294,10 +305,13 @@ export function encodeFrame(value) {
 function resolveCorePath() {
   return path.join(process.resourcesPath, "bin", "reference-core");
 }
-function sanitizedEnvironment(enableTestCommands = false) {
+function sanitizedEnvironment(enableTestCommands = false, testHangBeforeGridDecode = false) {
   const allowed = ["HOME", "LANG", "LC_ALL", "PATH", "TMPDIR", "XDG_RUNTIME_DIR"];
   const environment = Object.fromEntries(allowed.flatMap((key) => process.env[key] ? [[key, process.env[key]]] : []));
-  if (enableTestCommands) environment.PITCHDOG_ENABLE_TEST_COMMANDS = "1";
+  if (enableTestCommands) {
+    environment.PITCHDOG_ENABLE_TEST_COMMANDS = "1";
+    if (testHangBeforeGridDecode) environment.PITCHDOG_TEST_HANG_BEFORE_GRID_DECODE = "1";
+  }
   return environment;
 }
 function isRecord(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
