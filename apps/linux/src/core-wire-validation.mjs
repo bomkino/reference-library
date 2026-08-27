@@ -38,7 +38,7 @@ export function validateCoreResult(method, result) {
     case "roots":
       record(value); exact(value, ["items"]); array(value.items, 10_000).forEach(rootSummary); break;
     case "root_bound": record(value); exact(value, ["root"]); rootSummary(value.root); break;
-    case "asset_page": assetPage(value, method === "query_asset_index"); break;
+    case "asset_page": assetPage(value); break;
     case "asset": assetDetail(value); break;
     case "asset_updated":
       record(value); exact(value, ["asset", "libraryRevision"]); assetDetail(value.asset); count(value.libraryRevision); break;
@@ -123,22 +123,21 @@ function rootSummary(value) {
   text(value.state, 80); boolean(value.authorized); optionalUuid(value.activeJobId);
   count(value.observedCount); count(value.unsupportedCount);
 }
-function assetPage(value, detailed) {
+function assetPage(value) {
   record(value); exact(value, ["offset", "limit", "total", "items", "nextOffset", "libraryRevision"]);
   count(value.offset); integer(value.limit, 1, 250); count(value.total);
   const items = array(value.items, value.limit);
-  items.forEach((item) => assetSummary(item, detailed));
+  items.forEach(assetSummary);
   optionalCount(value.nextOffset); count(value.libraryRevision);
 }
-function assetSummary(value, detailed) {
-  record(value); exact(value, detailed
-    ? ["assetId", "locationId", "displayName", "relativeDisplayPath", "mediaFamily", "availability", "reviewState", "customTitle", "revision"]
-    : ["assetId", "locationId", "displayName", "mediaFamily", "availability", "reviewState"]);
+function assetSummary(value) {
+  record(value); exact(value, [
+    "assetId", "locationId", "displayName", "relativeDisplayPath", "mediaFamily", "availability",
+    "reviewState", "customTitle", "revision",
+  ]);
   uuid(value.assetId); uuid(value.locationId); text(value.displayName, 1_000);
   text(value.mediaFamily, 80); member(value.availability, AVAILABILITY); member(value.reviewState, REVIEW_STATES);
-  if (detailed) {
-    text(value.relativeDisplayPath, 4_096); optionalText(value.customTitle, 500); count(value.revision);
-  }
+  text(value.relativeDisplayPath, 4_096); optionalText(value.customTitle, 500); count(value.revision);
 }
 function assetDetail(value) {
   record(value); exact(value, [
