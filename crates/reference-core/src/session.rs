@@ -8,8 +8,9 @@ use std::{
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 
 use reference_protocol::{
-    AssetPage, AssetProjection, AssetSummary, MAX_PAGE_SIZE, NativeLocation, ResourceDescriptor,
-    ResourceProfile, SessionOpened,
+    AssetDetail, AssetPage, AssetPatch, AssetProjection, AssetQuery, CollectionSummary, JobPage,
+    JobQuery, NativeLocation, ResourceDescriptor, ResourceProfile, ReviewState, SessionOpened,
+    TextPatch,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
@@ -19,6 +20,7 @@ const MAX_RESOURCE_BYTES: u64 = 512 * 1024 * 1024;
 use crate::{
     canonical,
     discovery::ScanPlan,
+    editorial,
     error::CoreError,
     manifest::{Manifest, staging_path, validate_package_extension},
     now_ms, schema,
@@ -199,55 +201,178 @@ impl LibrarySession {
         limit: u32,
         _projection: AssetProjection,
     ) -> Result<AssetPage, CoreError> {
-        if limit == 0 || limit > MAX_PAGE_SIZE {
-            return Err(CoreError::QueryPageTooLarge(limit));
-        }
-        let connection = self.connection()?;
-        let total = connection.query_row(
-            "SELECT COUNT(*) FROM assets WHERE library_id = ?1",
-            params![self.manifest.library_id],
-            |row| row.get::<_, i64>(0),
-        )? as u64;
-        let mut statement = connection.prepare(
-            "SELECT a.id, l.id, l.relative_path_display, s.media_family,
-                    l.state, a.review_state
-             FROM assets a
-             JOIN asset_origins ao ON ao.asset_id = a.id
-             JOIN sources s ON s.id = ao.source_id
-             JOIN locations l ON l.source_id = s.id
-             WHERE a.library_id = ?1
-             ORDER BY a.created_at_ms, a.id
-             LIMIT ?2 OFFSET ?3",
-        )?;
-        let items = statement
-            .query_map(
-                params![self.manifest.library_id, limit as i64, offset as i64],
-                |row| {
-                    Ok(AssetSummary {
-                        asset_id: row.get(0)?,
-                        location_id: row.get(1)?,
-                        display_name: row.get(2)?,
-                        media_family: row.get(3)?,
-                        availability: row.get(4)?,
-                        review_state: row.get(5)?,
-                    })
-                },
-            )?
-            .collect::<Result<Vec<_>, _>>()?;
-        let library_revision = connection.query_row(
-            "SELECT library_revision FROM library_meta LIMIT 1",
-            [],
-            |row| row.get::<_, i64>(0),
-        )? as u64;
-        let returned = items.len() as u64;
-        Ok(AssetPage {
+        editorial::query_assets(
+            self.connection()?,
+            &self.manifest.library_id,
             offset,
             limit,
-            total,
-            items,
-            next_offset: (offset + returned < total).then_some(offset + returned),
-            library_revision,
-        })
+            _projection,
+            &AssetQuery::default(),
+        )
+    }
+
+    pub fn query_asset_index(
+        &self,
+        offset: u64,
+        limit: u32,
+        projection: AssetProjection,
+        query: &AssetQuery,
+    ) -> Result<AssetPage, CoreError> {
+        editorial::query_assets(
+            self.connection()?,
+            &self.manifest.library_id,
+            offset,
+            limit,
+            projection,
+            query,
+        )
+    }
+
+    pub fn get_asset(&self, asset_id: &str) -> Result<AssetDetail, CoreError> {
+        editorial::get_asset(self.connection()?, &self.manifest.library_id, asset_id)
+    }
+
+    pub fn update_asset(
+        &self,
+        asset_id: &str,
+        expected_revision: u64,
+        patch: AssetPatch,
+    ) -> Result<(AssetDetail, u64), CoreError> {
+        editorial::update_asset(
+            self.connection()?,
+            &self.manifest.library_id,
+            asset_id,
+            expected_revision,
+            patch,
+        )
+    }
+
+    pub fn update_asset_review(
+        &self,
+        asset_id: &str,
+        expected_revision: u64,
+        review_state: ReviewState,
+    ) -> Result<(AssetDetail, u64), CoreError> {
+        self.update_asset(
+            asset_id,
+            expected_revision,
+            AssetPatch {
+                custom_title: TextPatch::Unchanged,
+                review_state: Some(review_state),
+                note: TextPatch::Unchanged,
+            },
+        )
+    }
+
+    pub fn update_asset_title(
+        &self,
+        asset_id: &str,
+        expected_revision: u64,
+        title: Option<&str>,
+    ) -> Result<(AssetDetail, u64), CoreError> {
+        self.update_asset(
+            asset_id,
+            expected_revision,
+            AssetPatch {
+                custom_title: title
+                    .map(|value| TextPatch::Set(value.to_owned()))
+                    .unwrap_or(TextPatch::Clear),
+                review_state: None,
+                note: TextPatch::Unchanged,
+            },
+        )
+    }
+
+    pub fn update_asset_note(
+        &self,
+        asset_id: &str,
+        expected_revision: u64,
+        note: Option<&str>,
+    ) -> Result<(AssetDetail, u64), CoreError> {
+        self.update_asset(
+            asset_id,
+            expected_revision,
+            AssetPatch {
+                custom_title: TextPatch::Unchanged,
+                review_state: None,
+                note: note
+                    .map(|value| TextPatch::Set(value.to_owned()))
+                    .unwrap_or(TextPatch::Clear),
+            },
+        )
+    }
+
+    pub fn query_jobs(
+        &self,
+        offset: u64,
+        limit: u32,
+        query: &JobQuery,
+    ) -> Result<JobPage, CoreError> {
+        editorial::query_jobs(
+            self.connection()?,
+            &self.manifest.library_id,
+            offset,
+            limit,
+            query,
+        )
+    }
+
+    pub fn list_collections(&self) -> Result<Vec<CollectionSummary>, CoreError> {
+        editorial::list_collections(self.connection()?, &self.manifest.library_id)
+    }
+
+    pub fn create_collection(&self, name: &str) -> Result<(CollectionSummary, u64), CoreError> {
+        editorial::create_collection(self.connection()?, &self.manifest.library_id, name)
+    }
+
+    pub fn rename_collection(
+        &self,
+        collection_id: &str,
+        expected_revision: u64,
+        name: &str,
+    ) -> Result<(CollectionSummary, u64), CoreError> {
+        editorial::rename_collection(
+            self.connection()?,
+            &self.manifest.library_id,
+            collection_id,
+            expected_revision,
+            name,
+        )
+    }
+
+    pub fn delete_collection(&self, collection_id: &str) -> Result<u64, CoreError> {
+        editorial::delete_collection(self.connection()?, &self.manifest.library_id, collection_id)
+    }
+
+    pub fn set_collection_membership(
+        &self,
+        collection_id: &str,
+        asset_ids: &[String],
+        member: bool,
+    ) -> Result<(u64, u64), CoreError> {
+        editorial::set_collection_membership(
+            self.connection()?,
+            &self.manifest.library_id,
+            collection_id,
+            asset_ids,
+            member,
+        )
+    }
+
+    pub fn add_assets_to_collection(
+        &self,
+        collection_id: &str,
+        asset_ids: &[String],
+    ) -> Result<(u64, u64), CoreError> {
+        self.set_collection_membership(collection_id, asset_ids, true)
+    }
+
+    pub fn remove_assets_from_collection(
+        &self,
+        collection_id: &str,
+        asset_ids: &[String],
+    ) -> Result<(u64, u64), CoreError> {
+        self.set_collection_membership(collection_id, asset_ids, false)
     }
 
     pub fn authorize_resource(

@@ -6,7 +6,8 @@ use std::{
 };
 
 use reference_core::{
-    discovery::scan_root, error::CoreError, manifest::Manifest, schema, session::LibrarySession,
+    SCHEMA_VERSION, discovery::scan_root, error::CoreError, manifest::Manifest, schema,
+    session::LibrarySession,
 };
 use reference_protocol::{AssetProjection, ResourceProfile};
 use rusqlite::params;
@@ -108,8 +109,8 @@ fn package_lock_manifest_and_reopen_are_publicly_safe() {
         LibrarySession::open(project.library_path()),
         Err(CoreError::SchemaUnsupported {
             actual: 999,
-            supported: 1
-        })
+            supported
+        }) if supported == SCHEMA_VERSION
     ));
 }
 

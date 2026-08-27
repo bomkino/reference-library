@@ -133,6 +133,7 @@ fn run_scan(
             root_id: plan.root_id.clone(),
             job_id: plan.job_id.clone(),
             observed_count,
+            unsupported_count: 0,
             terminal: true,
         })
         .ok();
@@ -166,6 +167,7 @@ fn finish_cancelled(
             root_id: plan.root_id.clone(),
             job_id: plan.job_id.clone(),
             observed_count: *observed_count,
+            unsupported_count: 0,
             terminal: true,
         })
         .ok();
@@ -241,6 +243,7 @@ fn flush_batch(
             root_id: plan.root_id.clone(),
             job_id: plan.job_id.clone(),
             observed_count: *observed_count,
+            unsupported_count: 0,
             terminal: false,
         })
         .ok();

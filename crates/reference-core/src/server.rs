@@ -137,6 +137,183 @@ impl CommandEngine {
                 self.session(&session_id)?
                     .query_assets(offset, limit, projection)?,
             )),
+            Command::QueryAssetIndex {
+                session_id,
+                offset,
+                limit,
+                projection,
+                query,
+            } => Ok(CommandResult::AssetPage(
+                self.session(&session_id)?
+                    .query_asset_index(offset, limit, projection, &query)?,
+            )),
+            Command::GetAsset {
+                session_id,
+                asset_id,
+            } => Ok(CommandResult::Asset(
+                self.session(&session_id)?.get_asset(&asset_id)?,
+            )),
+            Command::UpdateAsset {
+                session_id,
+                asset_id,
+                expected_revision,
+                patch,
+            } => {
+                let (asset, library_revision) =
+                    self.session(&session_id)?
+                        .update_asset(&asset_id, expected_revision, patch)?;
+                self.queue_local_event(Event::AssetUpdated {
+                    asset_id: asset.asset_id.clone(),
+                    revision: asset.revision,
+                    library_revision,
+                });
+                Ok(CommandResult::AssetUpdated {
+                    asset,
+                    library_revision,
+                })
+            }
+            Command::UpdateAssetReview {
+                session_id,
+                asset_id,
+                expected_revision,
+                review_state,
+            } => {
+                let (asset, library_revision) = self.session(&session_id)?.update_asset_review(
+                    &asset_id,
+                    expected_revision,
+                    review_state,
+                )?;
+                self.queue_local_event(Event::AssetUpdated {
+                    asset_id: asset.asset_id.clone(),
+                    revision: asset.revision,
+                    library_revision,
+                });
+                Ok(CommandResult::AssetUpdated {
+                    asset,
+                    library_revision,
+                })
+            }
+            Command::UpdateAssetTitle {
+                session_id,
+                asset_id,
+                expected_revision,
+                title,
+            } => {
+                let (asset, library_revision) = self.session(&session_id)?.update_asset_title(
+                    &asset_id,
+                    expected_revision,
+                    title.as_deref(),
+                )?;
+                self.queue_local_event(Event::AssetUpdated {
+                    asset_id: asset.asset_id.clone(),
+                    revision: asset.revision,
+                    library_revision,
+                });
+                Ok(CommandResult::AssetUpdated {
+                    asset,
+                    library_revision,
+                })
+            }
+            Command::UpdateAssetNote {
+                session_id,
+                asset_id,
+                expected_revision,
+                note,
+            } => {
+                let (asset, library_revision) = self.session(&session_id)?.update_asset_note(
+                    &asset_id,
+                    expected_revision,
+                    note.as_deref(),
+                )?;
+                self.queue_local_event(Event::AssetUpdated {
+                    asset_id: asset.asset_id.clone(),
+                    revision: asset.revision,
+                    library_revision,
+                });
+                Ok(CommandResult::AssetUpdated {
+                    asset,
+                    library_revision,
+                })
+            }
+            Command::QueryJobs {
+                session_id,
+                offset,
+                limit,
+                query,
+            } => Ok(CommandResult::JobPage(
+                self.session(&session_id)?
+                    .query_jobs(offset, limit, &query)?,
+            )),
+            Command::ListCollections { session_id } => Ok(CommandResult::Collections {
+                items: self.session(&session_id)?.list_collections()?,
+            }),
+            Command::CreateCollection { session_id, name } => {
+                let (collection, library_revision) =
+                    self.session(&session_id)?.create_collection(&name)?;
+                self.queue_local_event(Event::CollectionsChanged {
+                    collection_id: collection.collection_id.clone(),
+                    library_revision,
+                });
+                Ok(CommandResult::CollectionUpdated {
+                    collection,
+                    library_revision,
+                })
+            }
+            Command::RenameCollection {
+                session_id,
+                collection_id,
+                expected_revision,
+                name,
+            } => {
+                let (collection, library_revision) = self.session(&session_id)?.rename_collection(
+                    &collection_id,
+                    expected_revision,
+                    &name,
+                )?;
+                self.queue_local_event(Event::CollectionsChanged {
+                    collection_id: collection.collection_id.clone(),
+                    library_revision,
+                });
+                Ok(CommandResult::CollectionUpdated {
+                    collection,
+                    library_revision,
+                })
+            }
+            Command::DeleteCollection {
+                session_id,
+                collection_id,
+            } => {
+                let library_revision = self
+                    .session(&session_id)?
+                    .delete_collection(&collection_id)?;
+                self.queue_local_event(Event::CollectionsChanged {
+                    collection_id: collection_id.clone(),
+                    library_revision,
+                });
+                Ok(CommandResult::CollectionDeleted {
+                    collection_id,
+                    library_revision,
+                })
+            }
+            Command::SetCollectionMembership {
+                session_id,
+                collection_id,
+                asset_ids,
+                member,
+            } => {
+                let (affected, library_revision) = self
+                    .session(&session_id)?
+                    .set_collection_membership(&collection_id, &asset_ids, member)?;
+                self.queue_local_event(Event::CollectionsChanged {
+                    collection_id: collection_id.clone(),
+                    library_revision,
+                });
+                Ok(CommandResult::CollectionMembershipUpdated {
+                    collection_id,
+                    affected,
+                    library_revision,
+                })
+            }
             Command::AuthorizeResource {
                 session_id,
                 asset_id,
@@ -206,6 +383,9 @@ impl CommandEngine {
                 }
                 Ok(CommandResult::Shutdown)
             }
+            _ => Err(CoreError::QueryInvalid(
+                "command is not implemented by this Core build".into(),
+            )),
         }
     }
 
