@@ -23,7 +23,11 @@ import {
   LibraryOpenQueue,
   replaceActiveLibraryTransaction,
 } from "./library-open-queue.mjs";
-import { assertPitchLibraryPackage, collectLibraryOpenArguments } from "./library-open.mjs";
+import {
+  assertPitchLibraryPackage,
+  canonicalLibraryCreationPath,
+  collectLibraryOpenArguments,
+} from "./library-open.mjs";
 import { LibraryRecoveryCoordinator } from "./library-recovery.mjs";
 import { denyAllSessionPermissions } from "./permission-policy.mjs";
 import { rendererSafeCoreRestartEvent, rendererSafeError } from "./renderer-error.mjs";
@@ -162,7 +166,8 @@ function registerNamedOperations() {
       title: "New Reference Library", defaultPath: `${name}.pitchlibrary`, buttonLabel: "Create Library",
     });
     if (choice.canceled || !choice.filePath) return null;
-    const libraryPath = path.resolve(choice.filePath.endsWith(".pitchlibrary") ? choice.filePath : `${choice.filePath}.pitchlibrary`);
+    const selected = choice.filePath.endsWith(".pitchlibrary") ? choice.filePath : `${choice.filePath}.pitchlibrary`;
+    const libraryPath = await canonicalLibraryCreationPath(selected);
     return libraryTransitions.run(() => replaceActiveLibrary({ libraryPath, createName: name }));
   }));
 

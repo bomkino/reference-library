@@ -16,6 +16,7 @@ export class CoreSupervisor extends EventEmitter {
   #resourceAuthorizations = new Map();
   #stopping = false;
   #failedGeneration = false;
+  #lastEventSequence = 0;
   #corePath;
   #clientName;
   #enableTestCommands;
@@ -36,6 +37,7 @@ export class CoreSupervisor extends EventEmitter {
     this.#stopping = false;
     this.#failedGeneration = false;
     this.#buffer = Buffer.alloc(0);
+    this.#lastEventSequence = 0;
     const child = this.#spawn(this.#corePath, [], {
       stdio: ["pipe", "pipe", "pipe"],
       env: sanitizedEnvironment(this.#enableTestCommands),
@@ -116,10 +118,7 @@ export class CoreSupervisor extends EventEmitter {
       const request = this.request({ method: "authorize_resource", params }, timeoutMs, { requestId });
       let cleanupDeferred = false;
       try {
-        const response = await Promise.race([
-          request,
-          abortPromise(signal),
-        ]);
+        const response = await withAbort(request, signal);
         if (authorization.aborted || signal?.aborted) throw abortError();
         if (!authorization.jobId) {
           this.#protocolFailure("Reference Core omitted resource job correlation");
@@ -164,6 +163,10 @@ export class CoreSupervisor extends EventEmitter {
         if (!isRecord(frame.event) || typeof frame.event.event !== "string") {
           this.#protocolFailure("Reference Core emitted an invalid event"); return;
         }
+        if (!Number.isSafeInteger(frame.sequence) || frame.sequence <= this.#lastEventSequence) {
+          this.#protocolFailure("Reference Core emitted an invalid event sequence"); return;
+        }
+        this.#lastEventSequence = frame.sequence;
         if (frame.event.event === "resource_authorization_started") {
           if (!this.#receiveResourceAuthorization(frame.event.value)) return;
         } else this.emit("event", frame.event);
@@ -238,7 +241,6 @@ export function encodeFrame(value) {
 }
 
 function resolveCorePath() {
-  if (process.env.REFERENCE_CORE_PATH) return path.resolve(process.env.REFERENCE_CORE_PATH);
   return path.join(process.resourcesPath, "bin", "reference-core");
 }
 function sanitizedEnvironment(enableTestCommands = false) {
@@ -250,12 +252,19 @@ function sanitizedEnvironment(enableTestCommands = false) {
 function isRecord(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
 function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 function abortError() { return new DOMException("Resource request aborted", "AbortError"); }
-function abortPromise(signal) {
-  if (!signal) return new Promise(() => {});
+function withAbort(promise, signal) {
+  if (!signal) return promise;
   if (signal.aborted) return Promise.reject(abortError());
-  return new Promise((_, reject) => signal.addEventListener("abort", () => reject(abortError()), { once: true }));
+  return new Promise((resolve, reject) => {
+    const abort = () => { signal.removeEventListener("abort", abort); reject(abortError()); };
+    signal.addEventListener("abort", abort, { once: true });
+    promise.then(
+      (value) => { signal.removeEventListener("abort", abort); resolve(value); },
+      (error) => { signal.removeEventListener("abort", abort); reject(error); },
+    );
+  });
 }
-function abortableDelay(ms, signal) { return Promise.race([delay(ms), abortPromise(signal)]); }
+function abortableDelay(ms, signal) { return withAbort(delay(ms), signal); }
 function assertResourceRequest(params) {
   if (!isRecord(params) || !["grid_standard", "preview"].includes(params.profile) ||
       typeof params.sessionId !== "string" || typeof params.assetId !== "string") {

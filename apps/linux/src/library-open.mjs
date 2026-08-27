@@ -33,3 +33,10 @@ export async function assertPitchLibraryPackage(candidate) {
   }
   return await realpath(libraryPath);
 }
+
+export async function canonicalLibraryCreationPath(candidate) {
+  const libraryPath = libraryPathFromArgument(candidate);
+  if (!libraryPath) throw new TypeError("Choose a .pitchlibrary package directory");
+  const parent = await realpath(path.dirname(libraryPath));
+  return path.join(parent, path.basename(libraryPath));
+}

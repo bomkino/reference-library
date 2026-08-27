@@ -93,6 +93,36 @@ test("resource abort cancels the exactly correlated Core job", async () => {
   await core.stop();
 });
 
+test("an abort before correlation cancels when the exact job event arrives", async () => {
+  const params = resourceParams();
+  const cancelled = [];
+  const harness = fakeCore(({ envelope, send }) => {
+    if (envelope.command.method === "authorize_resource") {
+      setTimeout(() => send(resourceStarted(envelope.requestId, params, "job-late")), 15);
+      setTimeout(() => send(response(envelope.requestId, {
+        result: "resource_authorized", value: descriptor(params),
+      })), 30);
+      return true;
+    }
+    if (envelope.command.method === "cancel_job") {
+      cancelled.push(envelope.command.params.jobId);
+      send(response(envelope.requestId, { result: "job_cancellation", value: {} }));
+      return true;
+    }
+    return false;
+  });
+  const core = new CoreSupervisor({ spawnProcess: harness.spawn });
+  await core.start();
+  const controller = new AbortController();
+  const authorization = core.authorizeResource(params, { signal: controller.signal });
+  controller.abort();
+  await assert.rejects(authorization, { name: "AbortError" });
+  await waitFor(() => cancelled.length === 1);
+  assert.deepEqual(cancelled, ["job-late"]);
+  await new Promise((resolve) => setTimeout(resolve, 35));
+  await core.stop();
+});
+
 test("retryable queue pressure has a strict bounded retry", async () => {
   const params = resourceParams();
   let attempts = 0;

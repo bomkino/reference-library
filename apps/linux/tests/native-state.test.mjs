@@ -10,7 +10,11 @@ import {
   MAX_LIBRARY_OPEN_INTENTS,
   replaceActiveLibraryTransaction,
 } from "../src/library-open-queue.mjs";
-import { assertPitchLibraryPackage, collectLibraryOpenArguments } from "../src/library-open.mjs";
+import {
+  assertPitchLibraryPackage,
+  canonicalLibraryCreationPath,
+  collectLibraryOpenArguments,
+} from "../src/library-open.mjs";
 import { LibraryRecoveryCoordinator } from "../src/library-recovery.mjs";
 import { rendererSafeError } from "../src/renderer-error.mjs";
 import { forbiddenSandboxArgument } from "../src/runtime-hardening.mjs";
@@ -39,6 +43,10 @@ test("package-open validates real package children and canonicalizes parent alia
     await writeFile(path.join(library, "library.sqlite"), "sqlite");
     await symlink(realParent, aliasParent);
     assert.equal(await assertPitchLibraryPackage(path.join(aliasParent, "Project.pitchlibrary")), library);
+    assert.equal(
+      await canonicalLibraryCreationPath(path.join(aliasParent, "New.pitchlibrary")),
+      path.join(realParent, "New.pitchlibrary"),
+    );
     await symlink(library, path.join(directory, "Linked.pitchlibrary"));
     await assert.rejects(assertPitchLibraryPackage(path.join(directory, "Linked.pitchlibrary")), /real package directory/);
   });
