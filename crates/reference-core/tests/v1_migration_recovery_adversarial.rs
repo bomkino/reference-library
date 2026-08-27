@@ -317,23 +317,20 @@ fn committed_wal_curation_recovers_across_sequential_reopens() {
     fs::copy(&wal, recovery_path.join("library.sqlite-wal")).unwrap();
     drop(connection);
 
-    let result = (|| {
-        for _ in 0..2 {
-            let mut recovered = LibrarySession::open(&recovery_path).unwrap();
-            let detail = recovered.get_asset(&package.ids.asset).unwrap();
-            assert_eq!(detail.custom_title.as_deref(), Some("Recovered title"));
-            assert_eq!(detail.note.as_deref(), Some("Recovered note"));
-            assert_eq!(detail.revision, 1);
-            assert_eq!(detail.collection_ids, vec![collection_id.clone()]);
-            let collections = recovered.list_collections().unwrap();
-            assert_eq!(collections.len(), 1);
-            assert_eq!(collections[0].collection_id, collection_id);
-            assert_eq!(collections[0].asset_count, 1);
-            recovered.close().unwrap();
-        }
-    })();
+    for _ in 0..2 {
+        let mut recovered = LibrarySession::open(&recovery_path).unwrap();
+        let detail = recovered.get_asset(&package.ids.asset).unwrap();
+        assert_eq!(detail.custom_title.as_deref(), Some("Recovered title"));
+        assert_eq!(detail.note.as_deref(), Some("Recovered note"));
+        assert_eq!(detail.revision, 1);
+        assert_eq!(detail.collection_ids, vec![collection_id.clone()]);
+        let collections = recovered.list_collections().unwrap();
+        assert_eq!(collections.len(), 1);
+        assert_eq!(collections[0].collection_id, collection_id);
+        assert_eq!(collections[0].asset_count, 1);
+        recovered.close().unwrap();
+    }
     let _ = fs::remove_dir_all(&recovery_directory);
-    result
 }
 
 fn single_id(connection: &Connection, table: &str) -> String {

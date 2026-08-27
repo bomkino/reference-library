@@ -20,6 +20,7 @@ pub const MAX_TITLE_CHARS: usize = 500;
 pub const MAX_NOTE_CHARS: usize = 5_000;
 pub const MAX_COLLECTION_NAME_CHARS: usize = 200;
 pub const MAX_COLLECTION_MEMBERSHIP_BATCH: usize = 250;
+pub const MAX_LIBRARY_NAME_CHARS: usize = 200;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]

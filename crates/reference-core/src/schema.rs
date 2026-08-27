@@ -22,7 +22,12 @@ const LEDGER: &[(u32, &str, &str)] = &[
 ];
 
 pub fn create_database(path: &Path, manifest: &Manifest) -> Result<Connection, CoreError> {
-    let connection = Connection::open(path)?;
+    let connection = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_WRITE
+            | OpenFlags::SQLITE_OPEN_CREATE
+            | OpenFlags::SQLITE_OPEN_NOFOLLOW,
+    )?;
     configure(&connection)?;
     connection.execute_batch(MIGRATION_0001)?;
     connection.execute(
@@ -43,14 +48,21 @@ pub fn create_database(path: &Path, manifest: &Manifest) -> Result<Connection, C
 }
 
 pub fn open_database(path: &Path, manifest: &Manifest) -> Result<Connection, CoreError> {
+    validate_database_storage(path)?;
     // Refuse corrupt or tampered bytes through a read-only handle before any
     // connection setting, journal transition, or migration can mutate them.
-    let validation = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let validation = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NOFOLLOW,
+    )?;
     validation.busy_timeout(Duration::from_secs(5))?;
     let initial_version = validate_existing(&validation, manifest)?;
     drop(validation);
 
-    let connection = Connection::open(path)?;
+    let connection = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NOFOLLOW,
+    )?;
     let writable_version = validate_existing(&connection, manifest)?;
     if writable_version != initial_version {
         return Err(CoreError::DatabaseIntegrity(
@@ -106,6 +118,18 @@ fn validate_library_identity(
     manifest: &Manifest,
     database_version: u32,
 ) -> Result<(), CoreError> {
+    let identities = connection
+        .query_row("SELECT COUNT(*) FROM library_meta", [], |row| {
+            row.get::<_, u32>(0)
+        })
+        .map_err(|error| {
+            CoreError::DatabaseIntegrity(format!("Library identity could not be read: {error}"))
+        })?;
+    if identities != 1 {
+        return Err(CoreError::DatabaseIntegrity(
+            "canonical database must contain exactly one Library identity".into(),
+        ));
+    }
     let database_identity: Option<(String, u32)> = connection
         .query_row(
             "SELECT id, schema_version FROM library_meta LIMIT 1",
@@ -131,6 +155,63 @@ fn validate_library_identity(
         return Err(CoreError::DatabaseIntegrity(
             "canonical database schema markers disagree".into(),
         ));
+    }
+    let foreign_rows = connection.query_row(
+        "SELECT
+             (SELECT COUNT(*) FROM roots WHERE library_id <> ?1) +
+             (SELECT COUNT(*) FROM sources WHERE library_id <> ?1) +
+             (SELECT COUNT(*) FROM assets WHERE library_id <> ?1) +
+             (SELECT COUNT(*) FROM jobs WHERE library_id <> ?1)",
+        params![manifest.library_id],
+        |row| row.get::<_, i64>(0),
+    )?;
+    let foreign_collections = if database_version >= 2 {
+        connection.query_row(
+            "SELECT COUNT(*) FROM collections WHERE library_id <> ?1",
+            params![manifest.library_id],
+            |row| row.get::<_, i64>(0),
+        )?
+    } else {
+        0
+    };
+    if foreign_rows < 0 || foreign_collections < 0 || foreign_rows + foreign_collections != 0 {
+        return Err(CoreError::DatabaseIntegrity(
+            "canonical database contains foreign Library records".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_database_storage(path: &Path) -> Result<(), CoreError> {
+    validate_database_file(path, true)?;
+    for suffix in ["-wal", "-shm", "-journal"] {
+        let auxiliary = std::path::PathBuf::from(format!("{}{suffix}", path.to_string_lossy()));
+        validate_database_file(&auxiliary, false)?;
+    }
+    Ok(())
+}
+
+fn validate_database_file(path: &Path, required: bool) -> Result<(), CoreError> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if !required && error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return Err(CoreError::DatabaseIntegrity(
+            "canonical database storage is unsafe".into(),
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        // Every SQLite-managed file is writable canonical package state. Do
+        // not mutate a hardlinked external file or one owned by another user.
+        if metadata.nlink() != 1 || metadata.uid() != unsafe { libc::geteuid() } {
+            return Err(CoreError::DatabaseIntegrity(
+                "canonical database storage is unsafe".into(),
+            ));
+        }
     }
     Ok(())
 }

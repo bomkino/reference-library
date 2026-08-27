@@ -2,7 +2,7 @@ use std::{
     cell::RefCell,
     collections::HashMap,
     ffi::CString,
-    fs::{self, File, OpenOptions},
+    fs::{self, File},
     io::{Read, Write},
     path::{Component, Path, PathBuf},
     sync::{
@@ -10,6 +10,9 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
+
+#[cfg(not(unix))]
+use std::fs::OpenOptions;
 
 #[cfg(unix)]
 use std::{
@@ -150,6 +153,7 @@ impl LibrarySession {
             fs::create_dir(&staging)?;
             fs::create_dir(staging.join("embedded"))?;
             let manifest = Manifest::new(name);
+            manifest.validate()?;
             manifest.write_atomic(&staging)?;
             let connection = schema::create_database(&staging.join("library.sqlite"), &manifest)?;
             connection.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
@@ -173,14 +177,15 @@ impl LibrarySession {
     pub fn open(package_path: impl AsRef<Path>) -> Result<Self, CoreError> {
         let package_path = package_path.as_ref();
         validate_package_extension(package_path)?;
+        let package_metadata = fs::symlink_metadata(package_path)
+            .map_err(|_| CoreError::InvalidManifest("Library package storage is invalid".into()))?;
+        if !package_metadata.is_dir() || package_metadata.file_type().is_symlink() {
+            return Err(CoreError::InvalidManifest(
+                "Library package storage is invalid".into(),
+            ));
+        }
         let manifest = Manifest::read(package_path)?;
-        let lock_path = package_path.join(".writer.lock");
-        let mut lock_file = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(&lock_path)?;
+        let mut lock_file = open_writer_lock(package_path)?;
         lock_file
             .try_lock()
             .map_err(|_| CoreError::LibraryLockedByOtherWriter)?;
@@ -1093,6 +1098,77 @@ fn open_canonical_directory(path: &Path) -> Result<File, CoreError> {
         }
     }
     Ok(current)
+}
+
+#[cfg(unix)]
+fn open_writer_lock(package_path: &Path) -> Result<File, CoreError> {
+    let canonical = package_path
+        .canonicalize()
+        .map_err(|_| CoreError::InvalidManifest("Library package storage is invalid".into()))?;
+    let expected = fs::metadata(&canonical)
+        .map_err(|_| CoreError::InvalidManifest("Library package storage is invalid".into()))?;
+    if !expected.is_dir() {
+        return Err(CoreError::InvalidManifest(
+            "Library package storage is invalid".into(),
+        ));
+    }
+    let directory = open_canonical_directory(&canonical)
+        .map_err(|_| CoreError::InvalidManifest("Library package storage is invalid".into()))?;
+    let actual = directory
+        .metadata()
+        .map_err(|_| CoreError::InvalidManifest("Library package storage is invalid".into()))?;
+    if actual.dev() != expected.dev() || actual.ino() != expected.ino() {
+        return Err(CoreError::InvalidManifest(
+            "Library package storage changed during open".into(),
+        ));
+    }
+    let name = CString::new(".writer.lock").expect("static lock name has no NUL");
+    // SAFETY: directory is a retained directory descriptor, name is a valid
+    // C string, and O_CREAT receives an explicit private mode.
+    let fd = unsafe {
+        libc::openat(
+            directory.as_raw_fd(),
+            name.as_ptr(),
+            libc::O_RDWR | libc::O_CREAT | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            0o600,
+        )
+    };
+    if fd < 0 {
+        return Err(CoreError::InvalidManifest(
+            "Library writer lock storage is unsafe".into(),
+        ));
+    }
+    // SAFETY: successful openat returned a new owned descriptor.
+    let file = unsafe { File::from_raw_fd(fd) };
+    let metadata = file
+        .metadata()
+        .map_err(|_| CoreError::InvalidManifest("Library writer lock storage is unsafe".into()))?;
+    if !metadata.is_file() || metadata.nlink() != 1 || metadata.uid() != unsafe { libc::geteuid() }
+    {
+        return Err(CoreError::InvalidManifest(
+            "Library writer lock storage is unsafe".into(),
+        ));
+    }
+    Ok(file)
+}
+
+#[cfg(not(unix))]
+fn open_writer_lock(package_path: &Path) -> Result<File, CoreError> {
+    let lock_path = package_path.join(".writer.lock");
+    if let Ok(metadata) = fs::symlink_metadata(&lock_path)
+        && (!metadata.is_file() || metadata.file_type().is_symlink())
+    {
+        return Err(CoreError::InvalidManifest(
+            "Library writer lock storage is unsafe".into(),
+        ));
+    }
+    OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(lock_path)
+        .map_err(CoreError::from)
 }
 
 #[cfg(unix)]

@@ -242,3 +242,97 @@ fn failed_migration_rolls_back_schema_and_ledger() {
     );
     assert!(connection.prepare("SELECT * FROM collections").is_err());
 }
+
+#[test]
+fn multiple_library_identities_are_rejected_without_mutating_database_bytes() {
+    let directory = std::env::temp_dir().join(format!("reference-v1-identity-{}", Uuid::new_v4()));
+    let path = directory.join("Project.pitchlibrary");
+    fs::create_dir(&directory).unwrap();
+    let mut session = LibrarySession::create(&path, "Identity proof".into()).unwrap();
+    session.close().unwrap();
+    let connection = Connection::open(path.join("library.sqlite")).unwrap();
+    connection
+        .execute(
+            "INSERT INTO library_meta (
+                id, schema_version, name, library_revision, created_at_ms, updated_at_ms
+             ) VALUES (?1, ?2, 'Foreign', 0, 1, 1)",
+            params![Uuid::new_v4().to_string(), SCHEMA_VERSION],
+        )
+        .unwrap();
+    connection
+        .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+        .unwrap();
+    drop(connection);
+    let database = path.join("library.sqlite");
+    let before = fs::read(&database).unwrap();
+
+    let error = match LibrarySession::open(&path) {
+        Ok(_) => panic!("multiple Library identities must be rejected"),
+        Err(error) => error,
+    };
+    assert!(matches!(error, CoreError::DatabaseIntegrity(_)));
+    assert_eq!(
+        error.to_protocol_error().code,
+        "LibraryIntegrityFailedPreserved"
+    );
+    assert_eq!(fs::read(database).unwrap(), before);
+    let _ = fs::remove_dir_all(directory);
+}
+
+#[cfg(unix)]
+#[test]
+fn hostile_writer_lock_links_never_modify_external_bytes() {
+    use std::os::unix::fs::{MetadataExt, symlink};
+
+    for hardlinked in [false, true] {
+        let directory = std::env::temp_dir().join(format!("reference-v1-lock-{}", Uuid::new_v4()));
+        let path = directory.join("Project.pitchlibrary");
+        fs::create_dir(&directory).unwrap();
+        let mut session = LibrarySession::create(&path, "Lock proof".into()).unwrap();
+        session.close().unwrap();
+        let sentinel = directory.join("sentinel.txt");
+        fs::write(&sentinel, b"do-not-truncate").unwrap();
+        let before = fs::metadata(&sentinel).unwrap();
+        if hardlinked {
+            fs::hard_link(&sentinel, path.join(".writer.lock")).unwrap();
+        } else {
+            symlink(&sentinel, path.join(".writer.lock")).unwrap();
+        }
+
+        let error = match LibrarySession::open(&path) {
+            Ok(_) => panic!("hostile writer lock must be rejected"),
+            Err(error) => error,
+        };
+        assert!(matches!(error, CoreError::InvalidManifest(_)));
+        assert_eq!(fs::read(&sentinel).unwrap(), b"do-not-truncate");
+        let after = fs::metadata(&sentinel).unwrap();
+        assert_eq!(after.len(), before.len());
+        assert_eq!(after.mode(), before.mode());
+        let _ = fs::remove_dir_all(directory);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn hostile_database_symlink_is_rejected_without_touching_target() {
+    use std::os::unix::fs::symlink;
+
+    let directory = std::env::temp_dir().join(format!("reference-v1-db-link-{}", Uuid::new_v4()));
+    let path = directory.join("Project.pitchlibrary");
+    fs::create_dir(&directory).unwrap();
+    let mut session = LibrarySession::create(&path, "Database link proof".into()).unwrap();
+    session.close().unwrap();
+    fs::rename(path.join("library.sqlite"), directory.join("real.sqlite")).unwrap();
+    let sentinel = directory.join("sentinel.txt");
+    fs::write(&sentinel, b"not-a-database").unwrap();
+    symlink(&sentinel, path.join("library.sqlite")).unwrap();
+
+    let before = fs::read(&sentinel).unwrap();
+    let error = match LibrarySession::open(&path) {
+        Ok(_) => panic!("hostile database link must be rejected"),
+        Err(error) => error,
+    };
+    assert!(matches!(error, CoreError::DatabaseIntegrity(_)));
+    assert_eq!(fs::read(&sentinel).unwrap(), before);
+    let _ = fs::remove_dir_all(directory);
+}
