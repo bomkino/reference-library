@@ -14,6 +14,11 @@ pub const MAX_FRAME_BYTES: usize = 1024 * 1024;
 pub const MAX_PAGE_SIZE: u32 = 250;
 pub const MAX_JOB_PAGE_SIZE: u32 = 100;
 pub const MAX_CANONICAL_PAGE_SIZE: u32 = 250;
+pub const MAX_SEARCH_CHARS: usize = 200;
+pub const MAX_TITLE_CHARS: usize = 500;
+pub const MAX_NOTE_CHARS: usize = 5_000;
+pub const MAX_COLLECTION_NAME_CHARS: usize = 200;
+pub const MAX_COLLECTION_MEMBERSHIP_BATCH: usize = 250;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -58,10 +63,6 @@ pub enum Command {
         root_id: String,
         authorized_path: String,
     },
-    UnbindRoot {
-        session_id: String,
-        root_id: String,
-    },
     ScanRoot {
         session_id: String,
         root_id: String,
@@ -89,6 +90,24 @@ pub enum Command {
         expected_revision: u64,
         patch: AssetPatch,
     },
+    UpdateAssetReview {
+        session_id: String,
+        asset_id: String,
+        expected_revision: u64,
+        review_state: ReviewState,
+    },
+    UpdateAssetTitle {
+        session_id: String,
+        asset_id: String,
+        expected_revision: u64,
+        title: Option<String>,
+    },
+    UpdateAssetNote {
+        session_id: String,
+        asset_id: String,
+        expected_revision: u64,
+        note: Option<String>,
+    },
     QueryJobs {
         session_id: String,
         offset: u64,
@@ -105,6 +124,7 @@ pub enum Command {
     RenameCollection {
         session_id: String,
         collection_id: String,
+        expected_revision: u64,
         name: String,
     },
     DeleteCollection {
@@ -134,7 +154,7 @@ pub enum Command {
     },
     CanonicalPage {
         session_id: String,
-        digest: String,
+        snapshot_digest: String,
         entity: CanonicalEntity,
         cursor: Option<String>,
         limit: u32,
@@ -237,6 +257,8 @@ pub enum AvailabilityFilter {
     Missing,
     NeedsPermission,
     Unavailable,
+    OfflineVolume,
+    Unreadable,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -308,9 +330,6 @@ pub enum CommandResult {
         items: Vec<RootSummary>,
     },
     RootBound {
-        root: RootSummary,
-    },
-    RootUnbound {
         root: RootSummary,
     },
     RootScanStarted {
@@ -458,6 +477,7 @@ pub struct CollectionSummary {
     pub collection_id: String,
     pub name: String,
     pub asset_count: u64,
+    pub revision: u64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -494,10 +514,11 @@ pub struct CanonicalDigest {
 #[serde(rename_all = "camelCase")]
 pub struct CanonicalPage {
     pub format: String,
-    pub digest: String,
+    pub snapshot_digest: String,
     pub entity: CanonicalEntity,
     pub cursor: Option<String>,
     pub limit: u32,
+    pub total: u64,
     pub records: Vec<CanonicalRecord>,
     pub next_cursor: Option<String>,
 }
@@ -579,7 +600,6 @@ pub struct CanonicalAssetRecord {
     pub custom_title: Option<String>,
     pub review_state: String,
     pub note: Option<String>,
-    pub revision: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
