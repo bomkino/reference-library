@@ -12,6 +12,8 @@ import {
   isTrustedWorkspaceUrl,
   resolveBundledUiPath,
 } from "../src/resource-security.mjs";
+import { denyAllSessionPermissions, disableSessionDownloads } from "../src/permission-policy.mjs";
+import { AwaitedShutdown } from "../src/runtime-hardening.mjs";
 
 const SESSION = "b4c27ebf-1dd5-4a03-9b8b-4eebd43947a0";
 const ASSET = "45c16e93-f8e4-4fb9-970f-783ae9d34c18";
@@ -107,4 +109,55 @@ test("Root authority operations return an explicit replacement-session envelope"
   const main = await readFile(new URL("../src/main.mjs", import.meta.url), "utf8");
   assert.match(main, /return \{ session: publicSession\(recovery\.activeSession\), \.\.\.result \}/);
   assert.match(main, /return \{ session: publicSession\(recovery\.activeSession\), root \}/);
+});
+
+test("session permissions and downloads are denied before destination authority", () => {
+  const handlers = new Map();
+  let requestHandler;
+  let checkHandler;
+  const session = {
+    on: (name, handler) => handlers.set(name, handler),
+    setPermissionRequestHandler: (handler) => { requestHandler = handler; },
+    setPermissionCheckHandler: (handler) => { checkHandler = handler; },
+  };
+  denyAllSessionPermissions(session);
+  disableSessionDownloads(session);
+  disableSessionDownloads(session);
+  let permission;
+  requestHandler(null, "camera", (value) => { permission = value; });
+  assert.equal(permission, false);
+  assert.equal(checkHandler(), false);
+  let prevented = 0;
+  let cancelled = 0;
+  handlers.get("will-download")(
+    { preventDefault: () => { prevented += 1; } },
+    { cancel: () => { cancelled += 1; } },
+  );
+  assert.equal(prevented, 1);
+  assert.equal(cancelled, 1);
+  assert.equal([...handlers.keys()].filter((name) => name === "will-download").length, 1);
+});
+
+test("quit is prevented until one bounded Core shutdown completes", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let stops = 0;
+  let finishes = 0;
+  const shutdown = new AwaitedShutdown({
+    stop: async () => { stops += 1; await gate; },
+    finish: () => { finishes += 1; },
+  });
+  let prevented = 0;
+  const event = { preventDefault: () => { prevented += 1; } };
+  const first = shutdown.request(event);
+  const second = shutdown.request(event);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(stops, 1);
+  assert.equal(finishes, 0);
+  assert.equal(prevented, 2);
+  release();
+  await Promise.all([first, second]);
+  assert.equal(finishes, 1);
+  await shutdown.request(event);
+  assert.equal(prevented, 2);
 });

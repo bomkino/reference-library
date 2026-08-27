@@ -31,11 +31,11 @@ import {
   externalLibraryOpenMessage,
 } from "./library-open.mjs";
 import { LibraryRecoveryCoordinator } from "./library-recovery.mjs";
-import { denyAllSessionPermissions } from "./permission-policy.mjs";
+import { denyAllSessionPermissions, disableSessionDownloads } from "./permission-policy.mjs";
 import { rendererSafeCoreRestartEvent, rendererSafeError } from "./renderer-error.mjs";
 import { authorizedResourceResponse } from "./resource-response.mjs";
 import { isTrustedWorkspaceUrl, mimeForUiPath, resolveBundledUiPath } from "./resource-security.mjs";
-import { forbiddenSandboxArgument, installNavigationGuards } from "./runtime-hardening.mjs";
+import { AwaitedShutdown, forbiddenSandboxArgument, installNavigationGuards } from "./runtime-hardening.mjs";
 import { readPreferences, writePreferences } from "./workspace-preferences.mjs";
 
 protocol.registerSchemesAsPrivileged([
@@ -57,6 +57,14 @@ let rendererReady = false;
 let automaticRecoveryEnabled = false;
 let shuttingDown = false;
 const pendingRendererEvents = [];
+const shutdown = new AwaitedShutdown({
+  stop: async () => {
+    shuttingDown = true;
+    automaticRecoveryEnabled = false;
+    await core.stop();
+  },
+  finish: () => app.quit(),
+});
 
 const forbiddenSwitch = forbiddenSandboxArgument(process.argv.slice(1));
 if (forbiddenSwitch) {
@@ -73,9 +81,12 @@ if (forbiddenSwitch) {
     void receiveExternalArguments([candidate]).catch(reportExternalOpenFailure);
   });
   app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
-  app.on("before-quit", () => { void core.stop(); });
-  app.whenReady().then(startApplication).catch(() => {
+  app.on("before-quit", (event) => { void shutdown.request(event); });
+  app.whenReady().then(startApplication).catch(async () => {
     deliver(rendererSafeCoreRestartEvent());
+    shuttingDown = true;
+    automaticRecoveryEnabled = false;
+    await core.stop().catch(() => {});
     app.exit(1);
   });
 }
@@ -120,6 +131,7 @@ function createWindow() {
     },
   });
   denyAllSessionPermissions(mainWindow.webContents.session);
+  disableSessionDownloads(mainWindow.webContents.session);
   installNavigationGuards(mainWindow.webContents, isTrustedWorkspaceUrl);
   mainWindow.webContents.once("did-finish-load", () => {
     rendererReady = true;
