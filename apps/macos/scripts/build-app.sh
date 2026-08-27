@@ -15,6 +15,7 @@ swift build --package-path apps/macos -c release --arch arm64
 swift_bin="$(swift build --package-path apps/macos -c release --arch arm64 --show-bin-path)"
 
 release_root="$repo_root/release/macos"
+version="$(node -e 'const fs=require("fs"); process.stdout.write(JSON.parse(fs.readFileSync("release-metadata.json","utf8")).version)')"
 app="$release_root/Reference Library.app"
 if [[ -d "$release_root" ]]; then
   archived="$release_root.previous.$(date -u +%Y%m%dT%H%M%SZ)"
@@ -37,7 +38,7 @@ codesign --force --options runtime --timestamp=none --sign - \
 codesign --force --deep --options runtime --timestamp=none --sign - "$app"
 codesign --verify --deep --strict --verbose=2 "$app"
 
-zip_path="$release_root/reference-library-0.1.0-macos-arm64.app.zip"
+zip_path="$release_root/reference-library-$version-macos-arm64.app.zip"
 ditto -c -k --sequesterRsrc --keepParent "$app" "$zip_path"
 shasum -a 256 "$zip_path" > "$zip_path.sha256"
 echo "$zip_path"
