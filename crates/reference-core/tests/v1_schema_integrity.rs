@@ -122,12 +122,12 @@ fn sequential_migrations_preserve_existing_jobs_and_match_the_embedded_ledger() 
             (
                 2,
                 "v1_curation_and_flat_collections".into(),
-                "embedded-migration-0002-v1-domain".into()
+                "679fb0ceb8483bbb486951fb22ac7c5cddb1d80ecfaae188cd17493a1c369f53".into()
             ),
             (
                 3,
                 "v1_async_rendition_jobs".into(),
-                "embedded-migration-0003-rendition-jobs".into()
+                "6670bc4e3fc09b0489f8c1f35611df625f5d5b69c394a8ff7fa7576933132c94".into()
             )
         ]
     );
@@ -241,6 +241,44 @@ fn failed_migration_rolls_back_schema_and_ledger() {
         1
     );
     assert!(connection.prepare("SELECT * FROM collections").is_err());
+}
+
+#[test]
+fn exact_historical_ledger_tokens_remain_compatible() {
+    let package = Package::at_schema_1();
+    let connection = Connection::open(package.database()).unwrap();
+    connection.execute_batch(MIGRATION_0002).unwrap();
+    connection
+        .execute(
+            "UPDATE schema_migrations
+             SET checksum='embedded-migration-0002-v1-domain' WHERE version=2",
+            [],
+        )
+        .unwrap();
+    connection
+        .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+        .unwrap();
+    drop(connection);
+
+    let connection = schema::open_database(&package.database(), &package.manifest).unwrap();
+    assert_eq!(
+        connection
+            .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
+            .unwrap(),
+        SCHEMA_VERSION
+    );
+    connection
+        .execute(
+            "UPDATE schema_migrations
+             SET checksum='embedded-migration-0003-rendition-jobs' WHERE version=3",
+            [],
+        )
+        .unwrap();
+    connection
+        .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+        .unwrap();
+    drop(connection);
+    schema::open_database(&package.database(), &Manifest::read(&package.path).unwrap()).unwrap();
 }
 
 #[test]

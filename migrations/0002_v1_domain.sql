@@ -33,7 +33,7 @@ UPDATE library_meta SET schema_version = 2;
 INSERT INTO schema_migrations (
     version, name, applied_at_ms, application_version, checksum
 ) VALUES (2, 'v1_curation_and_flat_collections', 0, '0.1.0',
-          'embedded-migration-0002-v1-domain');
+          '679fb0ceb8483bbb486951fb22ac7c5cddb1d80ecfaae188cd17493a1c369f53');
 
 PRAGMA user_version = 2;
 COMMIT;

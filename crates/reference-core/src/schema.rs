@@ -12,16 +12,27 @@ const LEDGER: &[(u32, &str, &str)] = &[
     (
         2,
         "v1_curation_and_flat_collections",
-        "embedded-migration-0002-v1-domain",
+        "679fb0ceb8483bbb486951fb22ac7c5cddb1d80ecfaae188cd17493a1c369f53",
     ),
     (
         3,
         "v1_async_rendition_jobs",
-        "embedded-migration-0003-rendition-jobs",
+        "6670bc4e3fc09b0489f8c1f35611df625f5d5b69c394a8ff7fa7576933132c94",
     ),
+];
+const MIGRATION_SOURCE_DIGESTS: [&str; 3] = [
+    "e8302ff0d11a42d0cdbd41abe2194c74dd531ba7174d3da8cd9a2d8bb235f251",
+    "f4f14ab8a407870d0aab212f477d80b761a0d30fce72d694c04642e5a5ba5072",
+    "1849ba86fb1e97f238db2bc7dfaef8f5e1b3a47f4c50cd1a7ba533fbcc9315b0",
+];
+const LEGACY_LEDGER_CHECKSUMS: [&[&str]; 3] = [
+    &[],
+    &["embedded-migration-0002-v1-domain"],
+    &["embedded-migration-0003-rendition-jobs"],
 ];
 
 pub fn create_database(path: &Path, manifest: &Manifest) -> Result<Connection, CoreError> {
+    validate_embedded_migrations()?;
     let connection = Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_WRITE
@@ -48,6 +59,7 @@ pub fn create_database(path: &Path, manifest: &Manifest) -> Result<Connection, C
 }
 
 pub fn open_database(path: &Path, manifest: &Manifest) -> Result<Connection, CoreError> {
+    validate_embedded_migrations()?;
     validate_database_storage(path)?;
     // Refuse corrupt or tampered bytes through a read-only handle before any
     // connection setting, journal transition, or migration can mutate them.
@@ -84,6 +96,27 @@ pub fn open_database(path: &Path, manifest: &Manifest) -> Result<Connection, Cor
         recovered.write_atomic(package)?;
     }
     Ok(connection)
+}
+
+fn validate_embedded_migrations() -> Result<(), CoreError> {
+    for (index, ((version, _, _), sql)) in LEDGER
+        .iter()
+        .zip([MIGRATION_0001, MIGRATION_0002, MIGRATION_0003])
+        .enumerate()
+    {
+        if migration_digest(sql) != MIGRATION_SOURCE_DIGESTS[index] {
+            return Err(CoreError::MigrationLedgerInvalid(*version));
+        }
+    }
+    Ok(())
+}
+
+fn migration_digest(sql: &str) -> String {
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    hasher.update(sql.as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 fn validate_existing(connection: &Connection, manifest: &Manifest) -> Result<u32, CoreError> {
@@ -234,12 +267,15 @@ fn validate_migration_ledger(connection: &Connection, version: u32) -> Result<()
         .map_err(|_| CoreError::MigrationLedgerInvalid(version))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| CoreError::MigrationLedgerInvalid(version))?;
-    let expected = LEDGER
-        .iter()
-        .take(version as usize)
-        .map(|(version, name, checksum)| (*version, (*name).to_owned(), (*checksum).to_owned()))
-        .collect::<Vec<_>>();
-    if actual != expected {
+    if actual.len() != version as usize
+        || actual.iter().enumerate().any(|(index, actual)| {
+            let expected = LEDGER[index];
+            actual.0 != expected.0
+                || actual.1 != expected.1
+                || (actual.2 != expected.2
+                    && !LEGACY_LEDGER_CHECKSUMS[index].contains(&actual.2.as_str()))
+        })
+    {
         return Err(CoreError::MigrationLedgerInvalid(version));
     }
     Ok(())
@@ -299,4 +335,23 @@ pub fn configure(connection: &Connection) -> Result<(), CoreError> {
     connection.pragma_update(None, "journal_mode", "WAL")?;
     connection.pragma_update(None, "synchronous", "NORMAL")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn embedded_checksum_rejects_source_drift_before_execution() {
+        assert_eq!(
+            migration_digest(MIGRATION_0002),
+            MIGRATION_SOURCE_DIGESTS[1]
+        );
+        let altered = MIGRATION_0002.replacen(
+            "ALTER TABLE assets ADD COLUMN note TEXT;",
+            "ALTER TABLE assets ADD COLUMN note TEXT; -- altered",
+            1,
+        );
+        assert_ne!(migration_digest(&altered), MIGRATION_SOURCE_DIGESTS[1]);
+    }
 }

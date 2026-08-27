@@ -36,7 +36,7 @@ UPDATE library_meta SET schema_version = 3;
 INSERT INTO schema_migrations (
     version, name, applied_at_ms, application_version, checksum
 ) VALUES (3, 'v1_async_rendition_jobs', 0, '0.1.0',
-          'embedded-migration-0003-rendition-jobs');
+          '6670bc4e3fc09b0489f8c1f35611df625f5d5b69c394a8ff7fa7576933132c94');
 
 PRAGMA user_version = 3;
 COMMIT;
