@@ -2,9 +2,10 @@ import Foundation
 import WebKit
 
 final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
+    private static let maximumAssetTasks = 32
     private weak var model: AppModel?
     private let taskLock = NSLock()
-    private var assetTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
+    private var assetTasks: [ObjectIdentifier: SchemeTaskRegistration] = [:]
 
     init(model: AppModel) {
         self.model = model
@@ -35,8 +36,13 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
             return
         }
         let identifier = ObjectIdentifier(urlSchemeTask as AnyObject)
+        let registration = SchemeTaskRegistration()
+        guard storeAssetTask(registration, identifier: identifier) else {
+            fail(urlSchemeTask, status: 429)
+            return
+        }
         let task = Task { @MainActor [weak self] in
-            guard let self else { return }
+            guard await registration.waitUntilAttached(), let self else { return }
             do {
                 let descriptor = try await model.authorizeResource(
                     sessionID: sessionID,
@@ -90,7 +96,7 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
             }
             removeAssetTask(identifier)
         }
-        storeAssetTask(task, identifier: identifier)
+        registration.attach(task)
     }
 
     func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {
@@ -98,10 +104,18 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
         takeAssetTask(identifier)?.cancel()
     }
 
-    private func storeAssetTask(_ task: Task<Void, Never>, identifier: ObjectIdentifier) {
+    private func storeAssetTask(
+        _ registration: SchemeTaskRegistration,
+        identifier: ObjectIdentifier
+    ) -> Bool {
         taskLock.lock()
-        assetTasks[identifier] = task
-        taskLock.unlock()
+        defer { taskLock.unlock() }
+        guard assetTasks[identifier] == nil,
+              assetTasks.count < Self.maximumAssetTasks else {
+            return false
+        }
+        assetTasks[identifier] = registration
+        return true
     }
 
     private func removeAssetTask(_ identifier: ObjectIdentifier) {
@@ -110,7 +124,7 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
         taskLock.unlock()
     }
 
-    private func takeAssetTask(_ identifier: ObjectIdentifier) -> Task<Void, Never>? {
+    private func takeAssetTask(_ identifier: ObjectIdentifier) -> SchemeTaskRegistration? {
         taskLock.lock()
         let task = assetTasks.removeValue(forKey: identifier)
         taskLock.unlock()
@@ -210,6 +224,51 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
         case notFound
         case resourceTooLarge
         case sourceChanged
+    }
+}
+
+final class SchemeTaskRegistration: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: Task<Void, Never>?
+    private var waiter: CheckedContinuation<Bool, Never>?
+    private var attached = false
+    private var cancelled = false
+
+    func waitUntilAttached() async -> Bool {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if attached {
+                let permitted = !cancelled
+                lock.unlock()
+                continuation.resume(returning: permitted)
+            } else {
+                precondition(waiter == nil)
+                waiter = continuation
+                lock.unlock()
+            }
+        }
+    }
+
+    func attach(_ task: Task<Void, Never>) {
+        lock.lock()
+        precondition(!attached)
+        self.task = task
+        attached = true
+        let shouldCancel = cancelled
+        let waiter = self.waiter
+        self.waiter = nil
+        lock.unlock()
+
+        if shouldCancel { task.cancel() }
+        waiter?.resume(returning: !shouldCancel)
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        let task = self.task
+        lock.unlock()
+        task?.cancel()
     }
 }
 

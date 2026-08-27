@@ -53,6 +53,9 @@ test("resource delivery opens once without following links and streams bounded c
   assert.match(stream, /func readAndConsume\([\s\S]*await consume\(chunk\)/);
   assert.doesNotMatch(handler, /resourceValues\(forKeys: \[\.fileSizeKey/);
   assert.match(handler, /stream\.cancel\(\)/);
+  assert.match(handler, /maximumAssetTasks = 32/);
+  assert.match(handler, /SchemeTaskRegistration[\s\S]*waitUntilAttached/);
+  assert.match(handler, /storeAssetTask\(registration[\s\S]*registration\.attach\(task\)/);
   assert.match(handler, /maximumBytes\(for: profile\)/);
   assert.match(stream, /await Task\.yield\(\)[\s\S]*Task\.sleep/);
   assert.match(handler, /ResourceFileStreamer\.stream\([\s\S]*afterValidation:[\s\S]*didReceive\(response\)/);
