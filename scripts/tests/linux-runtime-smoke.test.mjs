@@ -1,9 +1,18 @@
 import assert from "node:assert/strict";
+import { cp, mkdir, mkdtemp, rm, unlink } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 
 import { observeSustainedProcess } from "../linux-packaged-runtime-smoke.mjs";
 import { observeWaylandSession } from "../linux-wayland-observation.mjs";
-import { assertPackagedRendererBoundary } from "../linux-sandbox-refusal.mjs";
+import {
+  assertNavigationGuardBehavior,
+  assertPackagedRendererBoundary,
+  validatePackagedRendererBoundary,
+} from "../linux-sandbox-refusal.mjs";
+
+const repository = path.resolve(import.meta.dirname, "../..");
 
 test("runtime smoke distinguishes a sustained process from an early package failure", async () => {
   const sustained = await observeSustainedProcess({
@@ -46,12 +55,12 @@ test("Wayland observation proves a compositor socket rather than environment lab
 
 test("packaged renderer boundary rejects sandbox bypasses and generic IPC", () => {
   const main = `
+    import { installNavigationGuards } from "./runtime-hardening.mjs";
     const win = new BrowserWindow({ webPreferences: {
       sandbox: true, contextIsolation: true, nodeIntegration: false,
       webSecurity: true, allowRunningInsecureContent: false
     }});
-    win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-    win.webContents.on("will-navigate", deny);
+    installNavigationGuards(win.webContents, trusted);
     const header = "Content-Security-Policy default-src 'none'; connect-src 'none'";
   `;
   const preload = `
@@ -59,12 +68,35 @@ test("packaged renderer boundary rejects sandbox bypasses and generic IPC", () =
       openLibrary: () => ipcRenderer.invoke("reference-library:open")
     });
   `;
-  assert.doesNotThrow(() => assertPackagedRendererBoundary({ main, preload }));
+  const hardening = `
+    webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    webContents.on("will-navigate", deny);
+    webContents.on("will-attach-webview", deny);
+  `;
+  assert.doesNotThrow(() => assertPackagedRendererBoundary({ main, preload, hardening }));
   assert.throws(
-    () => assertPackagedRendererBoundary({ main: `${main}\n--no-sandbox`, preload }),
+    () => assertPackagedRendererBoundary({ main: `${main}\n--no-sandbox`, preload, hardening }),
     /--no-sandbox/,
   );
   assert.throws(
-    () => assertPackagedRendererBoundary({ main, preload: `${preload}\nipcRenderer.send("anything")` }),
+    () => assertPackagedRendererBoundary({ main, preload: `${preload}\nipcRenderer.send("anything")`, hardening }),
   );
+  assert.throws(() => assertPackagedRendererBoundary({ main, preload, hardening: "" }));
+  assert.throws(() => assertNavigationGuardBehavior(() => {}));
+});
+
+test("extracted package validation loads and exercises the bundled hardening module", async () => {
+  const temporary = await mkdtemp(path.join(os.tmpdir(), "reference-renderer-boundary-"));
+  const distribution = path.join(temporary, "dist");
+  try {
+    await mkdir(distribution);
+    await Promise.all(["main.mjs", "preload.mjs", "runtime-hardening.mjs"].map((name) =>
+      cp(path.join(repository, "apps/linux/src", name), path.join(distribution, name))));
+    const result = await validatePackagedRendererBoundary(temporary);
+    assert.equal(result.status, "packaged_renderer_boundary_verified");
+    await unlink(path.join(distribution, "runtime-hardening.mjs"));
+    await assert.rejects(validatePackagedRendererBoundary(temporary), { code: "ENOENT" });
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
 });
