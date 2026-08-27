@@ -533,6 +533,14 @@ impl LibrarySession {
     pub fn scan_bound_root(&self, root_id: &str) -> Result<ScanPlan, CoreError> {
         validate_uuid(root_id, CoreError::RootNotFound)?;
         let connection = self.connection()?;
+        let exists: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM roots WHERE id=?1 AND library_id=?2)",
+            params![root_id, self.manifest.library_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(CoreError::RootNotFound);
+        }
         let authority = self
             .authorized_roots
             .borrow()
