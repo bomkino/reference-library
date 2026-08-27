@@ -17,6 +17,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: python3 scripts/check_repository.py
+      - run: node scripts/check-release-metadata.mjs
 
   rust-core:
     runs-on: ubuntu-24.04
@@ -45,8 +46,8 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - run: python3 scripts/generate_dependency_licenses.py
-      - run: git diff --exit-code -- DEPENDENCY-LICENSES.json
+      - run: python3 scripts/generate_dependency_licenses.py --check
+      - run: node scripts/legal-bundle-contract.mjs --directory .
 
   linux-package-directory:
     runs-on: ubuntu-24.04
@@ -57,30 +58,83 @@ jobs:
           node-version: 24
           cache: npm
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libarchive-tools
+      - run: >-
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends
+          file libarchive-tools weston xauth xvfb
       - run: npm ci
       - run: cargo build --release --locked -p reference-core
       - run: npm run build -w @pitchdog/reference-workspace
       - run: npm run package -w @pitchdog/reference-linux
-      - run: test -x release/linux/linux-unpacked/reference-library
-      - run: test -x release/linux/linux-unpacked/resources/bin/reference-core
-      - run: test -f release/linux/linux-unpacked/resources/app.asar
-      - run: test -f release/linux/reference-library-0.1.0-x64.pacman
-      - run: test -f release/linux/reference-library-0.1.0-x86_64.AppImage
-      - run: test -f release/linux/reference-library-0.1.0-x64.tar.gz
-      - run: bsdtar -tf release/linux/reference-library-0.1.0-x64.pacman > "$RUNNER_TEMP/pacman-contents.txt"
-      - run: grep -Fxq 'opt/Reference Library/reference-library' "$RUNNER_TEMP/pacman-contents.txt"
-      - run: tar -tzf release/linux/reference-library-0.1.0-x64.tar.gz > "$RUNNER_TEMP/tar-contents.txt"
-      - run: grep -Fxq 'reference-library-0.1.0-x64/reference-library' "$RUNNER_TEMP/tar-contents.txt"
+      - name: Validate exact extracted Linux artifacts
+        run: >-
+          node scripts/linux-artifact-contract.mjs
+          --repository "$GITHUB_WORKSPACE"
+          --directory release/linux
+          --extract-root "$RUNNER_TEMP/reference-linux-artifacts"
+          > release/linux/LINUX_ARTIFACT_VALIDATION.json
+      - name: Validate packaged renderer boundary
+        run: >-
+          node scripts/linux-sandbox-refusal.mjs
+          --asar-directory "$RUNNER_TEMP/reference-linux-artifacts/asar"
+          > release/linux/LINUX_RENDERER_BOUNDARY.json
+      - name: Rehearse packaged application under X11 without a sandbox bypass
+        run: >-
+          node scripts/linux-packaged-runtime-smoke.mjs
+          --application "$RUNNER_TEMP/reference-linux-artifacts/pacman/opt/Reference Library/reference-library"
+          --display x11 --minimum-ms 4000
+          > release/linux/LINUX_X11_RUNTIME.json
+      - name: Rehearse packaged application under headless Wayland
+        shell: bash
+        run: |
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/reference-wayland-runtime"
+          export WAYLAND_DISPLAY="wayland-reference-ci"
+          install -d -m 700 "$XDG_RUNTIME_DIR"
+          weston --backend=headless-backend.so --socket="$WAYLAND_DISPLAY" --idle-time=0 \
+            > "$RUNNER_TEMP/weston.log" 2>&1 &
+          weston_pid=$!
+          trap 'kill "$weston_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..40}; do
+            if test -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY"; then break; fi
+            if ! kill -0 "$weston_pid" 2>/dev/null; then
+              sed -n '1,200p' "$RUNNER_TEMP/weston.log"
+              exit 1
+            fi
+            sleep 0.25
+          done
+          node scripts/linux-wayland-observation.mjs --require-session \
+            > release/linux/LINUX_WAYLAND_SESSION.json
+          node scripts/linux-packaged-runtime-smoke.mjs \
+            --application "$RUNNER_TEMP/reference-linux-artifacts/pacman/opt/Reference Library/reference-library" \
+            --display wayland --minimum-ms 4000 \
+            > release/linux/LINUX_WAYLAND_RUNTIME.json
+      - name: Reopen through the extracted packaged helper
+        run: >-
+          node scripts/t01-semantic-roundtrip.mjs
+          --core "$RUNNER_TEMP/reference-linux-artifacts/pacman/opt/Reference Library/resources/bin/reference-core"
+      - name: Write and verify clean-source-bound Linux checksums
+        run: |
+          node scripts/write-artifact-checksums.mjs \
+            --source "$GITHUB_SHA" --repository "$GITHUB_WORKSPACE" \
+            --target linux-x86_64 --output release/linux/SHA256SUMS \
+            release/linux/reference-library-0.1.0-x64.pacman \
+            release/linux/reference-library-0.1.0-x86_64.AppImage \
+            release/linux/reference-library-0.1.0-x64.tar.gz
+          node scripts/verify-artifact-checksums.mjs \
+            --require-clean-source --repository "$GITHUB_WORKSPACE" \
+            release/linux/SHA256SUMS
       - run: >-
           node scripts/write-artifact-receipt.mjs
-          --source "$GITHUB_SHA"
+          --source "$GITHUB_SHA" --repository "$GITHUB_WORKSPACE"
           --target linux-x86_64
+          --checksums release/linux/SHA256SUMS
           --output release/linux/T01_BUILD_RECEIPT.json
           release/linux/reference-library-0.1.0-x64.pacman
           release/linux/reference-library-0.1.0-x86_64.AppImage
           release/linux/reference-library-0.1.0-x64.tar.gz
-      - run: node scripts/verify-artifact-receipt.mjs --require-current-target release/linux/T01_BUILD_RECEIPT.json
+      - run: >-
+          node scripts/verify-artifact-receipt.mjs
+          --require-current-target --require-clean-source --repository "$GITHUB_WORKSPACE"
+          release/linux/T01_BUILD_RECEIPT.json
       - if: startsWith(github.ref, 'refs/heads/')
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -89,7 +143,13 @@ jobs:
             release/linux/reference-library-0.1.0-x64.pacman
             release/linux/reference-library-0.1.0-x86_64.AppImage
             release/linux/reference-library-0.1.0-x64.tar.gz
+            release/linux/SHA256SUMS
             release/linux/T01_BUILD_RECEIPT.json
+            release/linux/LINUX_ARTIFACT_VALIDATION.json
+            release/linux/LINUX_RENDERER_BOUNDARY.json
+            release/linux/LINUX_X11_RUNTIME.json
+            release/linux/LINUX_WAYLAND_SESSION.json
+            release/linux/LINUX_WAYLAND_RUNTIME.json
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
@@ -106,26 +166,47 @@ jobs:
         with:
           targets: aarch64-apple-darwin
       - run: npm ci --ignore-scripts
+      - run: node scripts/check-release-metadata.mjs
+      - run: python3 scripts/generate_dependency_licenses.py --check
+      - run: node scripts/legal-bundle-contract.mjs --directory .
       - run: swift test --package-path apps/macos
       - run: apps/macos/scripts/build-app.sh
-      - run: test -f release/macos/reference-library-0.1.0-macos-arm64.app.zip
-      - run: shasum -a 256 -c release/macos/reference-library-0.1.0-macos-arm64.app.zip.sha256
+      - name: Validate extracted Apple-Silicon application artifact
+        run: >-
+          node scripts/macos-artifact-contract.mjs
+          --repository "$GITHUB_WORKSPACE"
+          --directory release/macos
+          --extract-root "$RUNNER_TEMP/reference-macos-artifact"
+          > release/macos/MACOS_ARTIFACT_VALIDATION.json
+      - name: Write and verify clean-source-bound macOS checksums
+        run: |
+          node scripts/write-artifact-checksums.mjs \
+            --source "$GITHUB_SHA" --repository "$GITHUB_WORKSPACE" \
+            --target macos-arm64 --output release/macos/SHA256SUMS \
+            release/macos/reference-library-0.1.0-macos-arm64.app.zip
+          node scripts/verify-artifact-checksums.mjs \
+            --require-clean-source --repository "$GITHUB_WORKSPACE" \
+            release/macos/SHA256SUMS
       - run: >-
           node scripts/write-artifact-receipt.mjs
-          --source "$GITHUB_SHA"
+          --source "$GITHUB_SHA" --repository "$GITHUB_WORKSPACE"
           --target macos-arm64
+          --checksums release/macos/SHA256SUMS
           --output release/macos/T01_BUILD_RECEIPT.json
           release/macos/reference-library-0.1.0-macos-arm64.app.zip
-          release/macos/reference-library-0.1.0-macos-arm64.app.zip.sha256
-      - run: node scripts/verify-artifact-receipt.mjs --require-current-target release/macos/T01_BUILD_RECEIPT.json
+      - run: >-
+          node scripts/verify-artifact-receipt.mjs
+          --require-current-target --require-clean-source --repository "$GITHUB_WORKSPACE"
+          release/macos/T01_BUILD_RECEIPT.json
       - if: startsWith(github.ref, 'refs/heads/')
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: reference-library-macos-arm64-${{ github.sha }}
           path: |
             release/macos/reference-library-0.1.0-macos-arm64.app.zip
-            release/macos/reference-library-0.1.0-macos-arm64.app.zip.sha256
+            release/macos/SHA256SUMS
             release/macos/T01_BUILD_RECEIPT.json
+            release/macos/MACOS_ARTIFACT_VALIDATION.json
           if-no-files-found: error
           retention-days: 30
           compression-level: 0

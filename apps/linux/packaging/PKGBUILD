@@ -28,4 +28,6 @@ package() {
     "$pkgdir/usr/bin/reference-library"
   install -Dm644 "$srcdir/reference-library-$pkgver/apps/linux/packaging/io.pitchdog.ReferenceLibrary.desktop" \
     "$pkgdir/usr/share/applications/io.pitchdog.ReferenceLibrary.desktop"
+  install -Dm644 "$srcdir/reference-library-$pkgver/apps/linux/packaging/io.pitchdog.ReferenceLibrary.xml" \
+    "$pkgdir/usr/share/mime/packages/io.pitchdog.ReferenceLibrary.xml"
 }

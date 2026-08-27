@@ -24,6 +24,8 @@ test("release metadata rejects a stale native bundle version", async () => {
       "Cargo.toml",
       "apps/linux/package.json",
       "apps/linux/packaging/PKGBUILD",
+      "apps/linux/packaging/io.pitchdog.ReferenceLibrary.desktop",
+      "apps/linux/packaging/io.pitchdog.ReferenceLibrary.xml",
       "apps/macos/Info.plist",
       "packages/bridge-contract/package.json",
       "packages/workspace/package.json",

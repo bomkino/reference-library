@@ -38,6 +38,29 @@ export async function verifyReleaseMetadata(repository) {
   const linuxPackage = packages.find(([file]) => file === "apps/linux/package.json")[1];
   assert.equal(linuxPackage.build.appId, metadata.bundleIdentifier);
   assert.equal(linuxPackage.build.productName, metadata.productName);
+  assert.deepEqual(linuxPackage.build.fileAssociations, [{
+    ext: "pitchlibrary",
+    name: "Reference Library package",
+    description: "Reference Library package",
+    mimeType: "application/x-pitchdog-reference-library",
+    role: "Editor",
+  }]);
+  const desktop = await readFile(
+    path.join(repository, "apps/linux/packaging/io.pitchdog.ReferenceLibrary.desktop"),
+    "utf8",
+  );
+  assert.match(desktop, /^Exec=reference-library %F$/m, "Linux desktop Exec drift");
+  assert.match(
+    desktop,
+    /^MimeType=application\/x-pitchdog-reference-library;$/m,
+    "Linux desktop MIME drift",
+  );
+  const mimePackage = await readFile(
+    path.join(repository, "apps/linux/packaging/io.pitchdog.ReferenceLibrary.xml"),
+    "utf8",
+  );
+  assert.match(mimePackage, /type="application\/x-pitchdog-reference-library"/);
+  assert.match(mimePackage, /pattern="\*\.pitchlibrary"/);
 
   const packageLock = JSON.parse(await readFile(path.join(repository, "package-lock.json"), "utf8"));
   for (const packagePath of ["", "apps/linux", "packages/bridge-contract", "packages/workspace"]) {

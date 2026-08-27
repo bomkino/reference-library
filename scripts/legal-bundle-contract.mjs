@@ -11,11 +11,15 @@ const { values } = parseArgs({
   },
 });
 const directory = path.resolve(values.directory);
-const required = ["DEPENDENCY-LICENSES.json", "THIRD_PARTY-NOTICES.txt", "LICENSE", "NOTICE"];
-if (values["electron-distribution"]) {
-  required.push("LICENSE.electron.txt", "LICENSES.chromium.html");
-}
+const required = values["electron-distribution"]
+  ? ["LICENSE.electron.txt", "LICENSES.chromium.html"]
+  : ["DEPENDENCY-LICENSES.json", "THIRD_PARTY-NOTICES.txt", "LICENSE", "NOTICE"];
 await Promise.all(required.map((file) => access(path.join(directory, file))));
+
+if (values["electron-distribution"]) {
+  process.stdout.write(`Electron legal files OK in ${directory}\n`);
+  process.exit(0);
+}
 
 const inventory = JSON.parse(
   await readFile(path.join(directory, "DEPENDENCY-LICENSES.json"), "utf8"),

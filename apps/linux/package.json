@@ -34,6 +34,23 @@
       {
         "from": "../../target/release/reference-core",
         "to": "bin/reference-core"
+      },
+      {
+        "from": "packaging/io.pitchdog.ReferenceLibrary.desktop",
+        "to": "share/applications/io.pitchdog.ReferenceLibrary.desktop"
+      },
+      {
+        "from": "packaging/io.pitchdog.ReferenceLibrary.xml",
+        "to": "share/mime/packages/io.pitchdog.ReferenceLibrary.xml"
+      }
+    ],
+    "fileAssociations": [
+      {
+        "ext": "pitchlibrary",
+        "name": "Reference Library package",
+        "description": "Reference Library package",
+        "mimeType": "application/x-pitchdog-reference-library",
+        "role": "Editor"
       }
     ],
     "linux": {

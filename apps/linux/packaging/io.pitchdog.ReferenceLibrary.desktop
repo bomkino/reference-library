@@ -2,7 +2,7 @@
 Type=Application
 Name=Reference Library
 Comment=Private project visual research library
-Exec=reference-library %U
+Exec=reference-library %F
 Terminal=false
 Categories=Graphics;
 MimeType=application/x-pitchdog-reference-library;
