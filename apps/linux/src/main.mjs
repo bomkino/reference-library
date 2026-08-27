@@ -36,6 +36,7 @@ import { rendererSafeCoreRestartEvent, rendererSafeError } from "./renderer-erro
 import { authorizedResourceResponse } from "./resource-response.mjs";
 import { isTrustedWorkspaceUrl, mimeForUiPath, resolveBundledUiPath } from "./resource-security.mjs";
 import { AwaitedShutdown, forbiddenSandboxArgument, installNavigationGuards } from "./runtime-hardening.mjs";
+import { SessionResourceAuthority } from "./session-resource-authority.mjs";
 import { readPreferences, writePreferences } from "./workspace-preferences.mjs";
 
 protocol.registerSchemesAsPrivileged([
@@ -50,6 +51,7 @@ const recovery = new LibraryRecoveryCoordinator();
 const libraryTransitions = new LibraryOpenQueue();
 const externalLibraryOpens = new ExternalLibraryOpenQueue();
 const openIntents = new LibraryOpenIntentQueue();
+const resourceAuthority = new SessionResourceAuthority();
 const startupArguments = process.argv.slice(1);
 let mainWindow = null;
 let preferencePath = null;
@@ -61,6 +63,7 @@ const shutdown = new AwaitedShutdown({
   stop: async () => {
     shuttingDown = true;
     automaticRecoveryEnabled = false;
+    await resourceAuthority.revokeAll();
     await core.stop();
   },
   finish: () => app.quit(),
@@ -93,9 +96,13 @@ if (forbiddenSwitch) {
 
 core.on("event", (event) => {
   if (event.event === "core_needs_restart") {
+    const failedSessionId = recovery.activeSession?.sessionId ?? null;
     recovery.markCoreFailure();
+    const drained = failedSessionId
+      ? resourceAuthority.revoke(failedSessionId)
+      : resourceAuthority.revokeAll();
     deliver(rendererSafeCoreRestartEvent());
-    if (automaticRecoveryEnabled && !shuttingDown) void performRecovery().catch(() => {});
+    if (automaticRecoveryEnabled && !shuttingDown) void drained.then(() => performRecovery()).catch(() => {});
     return;
   }
   if (RENDERER_EVENTS.has(event.event)) deliver(event);
@@ -164,15 +171,26 @@ function registerProtocols() {
       assertSession(recovery.activeSession, url.host);
       assertUuid(assetId, "assetId");
       assetResourceUrl({ sessionId: url.host, assetId, profile });
-      const result = await core.authorizeResource(
-        { sessionId: url.host, assetId, profile },
-        { signal: request.signal },
-      );
-      const descriptor = expectResult(result, "resource_authorized");
-      if (descriptor.sessionId !== url.host || descriptor.assetId !== assetId || descriptor.profile !== profile) {
-        throw new Error("ResourceDenied");
+      const lease = resourceAuthority.acquire(url.host, request.signal);
+      let streamOwnsLease = false;
+      try {
+        const result = await core.authorizeResource(
+          { sessionId: url.host, assetId, profile },
+          { signal: lease.signal },
+        );
+        const descriptor = expectResult(result, "resource_authorized");
+        if (descriptor.sessionId !== url.host || descriptor.assetId !== assetId || descriptor.profile !== profile) {
+          throw new Error("ResourceDenied");
+        }
+        const response = await authorizedResourceResponse(descriptor, {
+          signal: lease.signal,
+          onHandleClosed: lease.release,
+        });
+        streamOwnsLease = true;
+        return response;
+      } finally {
+        if (!streamOwnsLease) lease.release();
       }
-      return await authorizedResourceResponse(descriptor, { signal: request.signal });
     } catch (error) {
       if (error?.name === "AbortError") return new Response(null, { status: 499 });
       return new Response(error?.code === "SessionClosed" ? "Session closed" : "Resource denied", {
@@ -227,7 +245,7 @@ function registerNamedOperations() {
 
   ipcMain.handle(IPC.closeLibrary, trusted(async (_event, sessionId) => libraryTransitions.run(async () => {
     assertSession(recovery.activeSession, sessionId);
-    expectResult(await core.request({ method: "close_library", params: { sessionId } }), "library_closed");
+    await closeCoreLibrary(sessionId);
     recovery.clearLibrary();
   })));
 
@@ -346,16 +364,18 @@ function registerNamedOperations() {
 }
 
 async function performRecovery() {
+  await resourceAuthority.revokeAll();
   const opened = await recovery.recover({
     runTransition: (operation) => libraryTransitions.run(operation),
     restartCore: () => core.restart(),
     openLibrary: (libraryPath) => openCoreLibrary(libraryPath),
     bindRoot: (sessionId, rootId, authorizedPath) => bindCoreRoot(sessionId, rootId, authorizedPath),
-    closeLibrary: async (sessionId) => {
-      expectResult(await core.request({ method: "close_library", params: { sessionId } }), "library_closed");
-    },
+    closeLibrary: closeCoreLibrary,
   });
-  if (opened) deliver({ event: "library_opened", value: opened });
+  if (opened) {
+    resourceAuthority.adopt(opened.sessionId);
+    deliver({ event: "library_opened", value: opened });
+  }
   drainOpenIntent();
   return opened;
 }
@@ -366,15 +386,16 @@ async function replaceActiveLibrary({ libraryPath, createName }) {
     recovery,
     libraryPath,
     createName,
-    closeLibrary: async (sessionId) => {
-      expectResult(await core.request({ method: "close_library", params: { sessionId } }), "library_closed");
-    },
+    closeLibrary: closeCoreLibrary,
     openLibrary: openCoreLibrary,
     createLibrary: async (target, name) => expectResult(await core.request({
       method: "create_library", params: { path: target, name },
     }), "session_opened"),
     bindRoot: bindCoreRoot,
-    onOpened: (opened) => deliver({ event: "library_opened", value: opened }),
+    onOpened: (opened) => {
+      resourceAuthority.adopt(opened.sessionId);
+      deliver({ event: "library_opened", value: opened });
+    },
     onClosed: (sessionId) => deliver({ event: "library_closed", value: { sessionId } }),
   });
 }
@@ -411,6 +432,10 @@ async function openCoreLibrary(libraryPath) {
 }
 async function bindCoreRoot(sessionId, rootId, authorizedPath) {
   return expectResult(await core.request({ method: "bind_root", params: { sessionId, rootId, authorizedPath } }), "root_bound").root;
+}
+async function closeCoreLibrary(sessionId) {
+  await resourceAuthority.revoke(sessionId);
+  expectResult(await core.request({ method: "close_library", params: { sessionId } }), "library_closed");
 }
 async function chooseDirectory(title, buttonLabel) {
   const choice = await dialog.showOpenDialog(mainWindow, { title, properties: ["openDirectory"], buttonLabel });

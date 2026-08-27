@@ -22,7 +22,7 @@ test("the packaged runtime contains the complete native import graph", async () 
   }
 });
 
-test("main's seven split native modules are all in the build graph", async () => {
+test("main's eight split native modules are all in the build graph", async () => {
   const expected = new Set([
     "library-open-queue.mjs",
     "library-open.mjs",
@@ -30,6 +30,7 @@ test("main's seven split native modules are all in the build graph", async () =>
     "permission-policy.mjs",
     "renderer-error.mjs",
     "runtime-hardening.mjs",
+    "session-resource-authority.mjs",
     "workspace-preferences.mjs",
   ]);
   const source = await import("node:fs/promises").then(({ readFile }) =>
