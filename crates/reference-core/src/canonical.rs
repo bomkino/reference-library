@@ -8,8 +8,8 @@ use reference_protocol::{
     CanonicalAssetOriginRecord, CanonicalAssetRecord, CanonicalCollectionMembershipRecord,
     CanonicalCollectionRecord, CanonicalDigest, CanonicalEntity, CanonicalEntityCount,
     CanonicalLibraryRecord, CanonicalLocationRecord, CanonicalPage, CanonicalRecord,
-    CanonicalRootRecord, CanonicalSourceRecord, CanonicalSourceRevisionRecord,
-    MAX_CANONICAL_PAGE_SIZE,
+    CanonicalRootRecord, CanonicalSourceRecord, CanonicalSourceRevisionRecord, CommandResult,
+    MAX_CANONICAL_PAGE_SIZE, MAX_FRAME_BYTES, MAX_REQUEST_ID_BYTES, PROTOCOL_VERSION, ServerFrame,
 };
 use rusqlite::{Connection, Row, params};
 use serde_json::{Map, Value, json};
@@ -75,10 +75,38 @@ pub fn page(
     }
 
     let mut records = Vec::with_capacity(limit as usize);
+    let mut record_content_bytes = 0_usize;
+    let mut first_record_exceeds_frame = false;
     visit_records(&transaction, entity, Some((offset, limit)), |record| {
+        let record_bytes = serde_json::to_vec(&record)?.len();
+        let candidate_count = records.len() as u64 + 1;
+        let candidate_next_cursor =
+            (offset + candidate_count < total).then(|| encode_cursor(offset + candidate_count));
+        let empty_envelope_bytes = empty_page_envelope_size(
+            &current.digest,
+            entity,
+            cursor,
+            limit,
+            total,
+            candidate_next_cursor,
+        )?;
+        let separator_bytes = usize::from(!records.is_empty());
+        let candidate_record_bytes = record_content_bytes
+            .saturating_add(separator_bytes)
+            .saturating_add(record_bytes);
+        if empty_envelope_bytes.saturating_add(candidate_record_bytes) > MAX_FRAME_BYTES {
+            first_record_exceeds_frame = records.is_empty();
+            return Ok(false);
+        }
+        record_content_bytes = candidate_record_bytes;
         records.push(record);
-        Ok(())
+        Ok(true)
     })?;
+    if first_record_exceeds_frame {
+        return Err(CoreError::QueryInvalid(
+            "canonical record exceeds framed response limit".into(),
+        ));
+    }
     let returned = records.len() as u64;
     let next_cursor = (offset + returned < total).then(|| encode_cursor(offset + returned));
     let result = CanonicalPage {
@@ -91,8 +119,42 @@ pub fn page(
         records,
         next_cursor,
     };
+    if page_envelope_size(&result)? > MAX_FRAME_BYTES {
+        return Err(CoreError::QueryInvalid(
+            "canonical page exceeds framed response limit".into(),
+        ));
+    }
     transaction.commit()?;
     Ok(result)
+}
+
+fn empty_page_envelope_size(
+    snapshot_digest: &str,
+    entity: CanonicalEntity,
+    cursor: Option<&str>,
+    limit: u32,
+    total: u64,
+    next_cursor: Option<String>,
+) -> Result<usize, CoreError> {
+    page_envelope_size(&CanonicalPage {
+        format: PROJECTION_FORMAT.into(),
+        snapshot_digest: snapshot_digest.into(),
+        entity,
+        cursor: cursor.map(str::to_owned),
+        limit,
+        total,
+        records: Vec::new(),
+        next_cursor,
+    })
+}
+
+fn page_envelope_size(page: &CanonicalPage) -> Result<usize, CoreError> {
+    let frame = ServerFrame::Response {
+        protocol_version: PROTOCOL_VERSION,
+        request_id: "r".repeat(MAX_REQUEST_ID_BYTES),
+        result: CommandResult::CanonicalPage(page.clone()),
+    };
+    Ok(serde_json::to_vec(&frame)?.len())
 }
 
 fn digest_snapshot(connection: &Connection) -> Result<CanonicalDigest, CoreError> {
@@ -106,7 +168,7 @@ fn digest_snapshot(connection: &Connection) -> Result<CanonicalDigest, CoreError
         visit_records(connection, entity, None, |record| {
             let bytes = canonical_json(&record)?;
             frame(&mut hasher, &bytes);
-            Ok(())
+            Ok(true)
         })?;
         counts.push(CanonicalEntityCount { entity, count });
     }
@@ -200,7 +262,7 @@ fn visit_records(
     connection: &Connection,
     entity: CanonicalEntity,
     window: Option<(u64, u32)>,
-    mut visit: impl FnMut(CanonicalRecord) -> Result<(), CoreError>,
+    mut visit: impl FnMut(CanonicalRecord) -> Result<bool, CoreError>,
 ) -> Result<(), CoreError> {
     let (offset, limit) = window
         .map(|(offset, limit)| (offset as i64, limit as i64))
@@ -212,7 +274,9 @@ fn visit_records(
             let mut statement = connection.prepare(&sql)?;
             let mut rows = statement.query(params![limit, offset])?;
             while let Some(row) = rows.next()? {
-                visit(($map)(row)?)?;
+                if !visit(($map)(row)?)? {
+                    break;
+                }
             }
         }};
     }

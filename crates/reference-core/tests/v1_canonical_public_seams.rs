@@ -8,7 +8,8 @@ use std::{
 use reference_core::{canonical, error::CoreError};
 use reference_protocol::{
     CanonicalEntity, CanonicalRecord, ClientFrame, Command, CommandResult, MAX_CANONICAL_PAGE_SIZE,
-    MAX_FRAME_BYTES, PROTOCOL_VERSION, ServerFrame, read_frame, write_frame,
+    MAX_FRAME_BYTES, MAX_NOTE_CHARS, MAX_REQUEST_ID_BYTES, PROTOCOL_VERSION, ServerFrame,
+    read_frame, write_frame,
 };
 use rusqlite::{Connection, params};
 use uuid::Uuid;
@@ -415,6 +416,112 @@ fn one_hundred_thousand_assets_use_small_digest_and_page_frames() {
     assert_eq!(page.records.len(), MAX_CANONICAL_PAGE_SIZE as usize);
     assert_eq!(page.next_cursor.as_deref(), Some("250"));
     assert!(serde_json::to_vec(&page).unwrap().len() < MAX_FRAME_BYTES);
+}
+
+#[test]
+fn maximum_unicode_notes_page_exhaustively_without_exceeding_the_frame() {
+    let mut connection = empty_database();
+    let maximum_note = "🦀".repeat(MAX_NOTE_CHARS);
+    let transaction = connection.transaction().unwrap();
+    {
+        let mut statement = transaction
+            .prepare(
+                "INSERT INTO assets (
+                    id, library_id, custom_title, review_state, created_at_ms,
+                    updated_at_ms, note, revision
+                 ) VALUES (?1, 'library-a', NULL, 'unreviewed', ?2, ?2, ?3, 0)",
+            )
+            .unwrap();
+        for index in 0..300_u64 {
+            statement
+                .execute(params![
+                    format!("asset-{index:06}"),
+                    index as i64,
+                    &maximum_note
+                ])
+                .unwrap();
+        }
+    }
+    transaction.commit().unwrap();
+
+    let digest = canonical::digest(&connection).unwrap();
+    let mut cursor = None;
+    let mut ids = Vec::new();
+    let mut page_count = 0;
+    loop {
+        let page = canonical::page(
+            &connection,
+            &digest.digest,
+            CanonicalEntity::Assets,
+            cursor.as_deref(),
+            MAX_CANONICAL_PAGE_SIZE,
+        )
+        .unwrap();
+        assert_eq!(page.cursor, cursor);
+        assert!(!page.records.is_empty());
+        assert!(page.records.len() < MAX_CANONICAL_PAGE_SIZE as usize);
+
+        let frame = ServerFrame::Response {
+            protocol_version: PROTOCOL_VERSION,
+            request_id: "r".repeat(MAX_REQUEST_ID_BYTES),
+            result: CommandResult::CanonicalPage(page.clone()),
+        };
+        let mut encoded = Vec::new();
+        write_frame(&mut encoded, &frame).unwrap();
+        assert!(encoded.len() <= MAX_FRAME_BYTES + size_of::<u32>());
+
+        for record in &page.records {
+            let CanonicalRecord::Asset(asset) = record else {
+                panic!("Assets page returned a different canonical record type")
+            };
+            ids.push(asset.id.clone());
+        }
+        let expected_next = (ids.len() < 300).then(|| ids.len().to_string());
+        assert_eq!(page.next_cursor, expected_next);
+        cursor = page.next_cursor;
+        page_count += 1;
+        if cursor.is_none() {
+            break;
+        }
+    }
+
+    assert!(page_count > 1);
+    assert_eq!(ids.len(), 300);
+    assert_eq!(
+        ids,
+        (0..300)
+            .map(|index| format!("asset-{index:06}"))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn one_canonical_record_that_cannot_fit_fails_with_a_path_free_error() {
+    let connection = empty_database();
+    connection
+        .execute(
+            "INSERT INTO assets (
+                id, library_id, custom_title, review_state, created_at_ms,
+                updated_at_ms, note, revision
+             ) VALUES ('asset-too-large', 'library-a', NULL, 'unreviewed',
+                       1, 1, ?1, 0)",
+            ["x".repeat(MAX_FRAME_BYTES + 1)],
+        )
+        .unwrap();
+    let digest = canonical::digest(&connection).unwrap();
+    let error = canonical::page(
+        &connection,
+        &digest.digest,
+        CanonicalEntity::Assets,
+        None,
+        MAX_CANONICAL_PAGE_SIZE,
+    )
+    .unwrap_err();
+    assert!(matches!(error, CoreError::QueryInvalid(_)));
+    let protocol_error = error.to_protocol_error();
+    assert_eq!(protocol_error.code, "QueryInvalid");
+    assert!(!protocol_error.message.contains('/'));
+    assert!(!protocol_error.message.contains("asset-too-large"));
 }
 
 fn semantic_database() -> Connection {
