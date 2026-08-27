@@ -60,6 +60,10 @@ test("supervision is lazy, generation-bound, fail-all, and resource-correlated",
   assert.match(core, /cancelAuthorization/);
   assert.match(core, /guard self\.generation == generation/);
   assert.match(core, /for item in pending\.values/);
+  assert.match(core, /maximumPendingRequests = 128/);
+  assert.match(core, /maximumAuthorizations = 32/);
+  assert.match(core, /BoundedRegistry<String, Pending>/);
+  assert.match(core, /BoundedRegistry<String, Authorization>/);
   assert.match(core, /Darwin\.kill\(process\.processIdentifier, SIGKILL\)/);
   assert.match(core, /sequence\.uint64Value > lastEventSequence/);
 });
@@ -74,4 +78,19 @@ test("integrity errors remain fixed, preserved, and path-free", async () => {
   assert.doesNotMatch(errors, /\/Users\//);
   assert.match(bridge, /model\.rendererMessage\(for: error\)/);
   assert.doesNotMatch(bridge, /error\.localizedDescription/);
+});
+
+test("Core results are structurally rebuilt before renderer delivery", async () => {
+  const model = await source("AppModel.swift");
+  const validator = await source("CoreResultValidator.swift");
+  const core = await source("CoreSupervisor.swift");
+  for (const seam of [
+    "assetPage", "assetUpdated", "jobPage", "roots", "collections",
+    "capabilities", "resourceDescriptor", "location",
+  ]) assert.match(model, new RegExp(`CoreResultValidator\\.${seam}`));
+  assert.doesNotMatch(await source("WorkspaceBridge.swift"), /canonicalDump/);
+  assert.match(validator, /Set\(value\.keys\) == keys/);
+  assert.match(validator, /relativePath[\s\S]*!value\.hasPrefix\("\/"\)/);
+  assert.match(core, /Set\(payload\.keys\) == \["code", "message", "retryable"\]/);
+  assert.match(model, /CoreSupervisor\.Failure\.capacityExceeded[\s\S]*requestCapacityExceeded/);
 });

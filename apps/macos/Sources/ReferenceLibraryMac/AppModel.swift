@@ -117,20 +117,21 @@ final class AppModel: ObservableObject {
         case "scanRoot":
             guard !writesFrozen else { throw ModelFailure.restartRequired }
             let sessionID = try requireActiveSession(payload)
-            value = try await epochCheckedRequest(
+            value = try CoreResultValidator.rootScanStarted(try await epochCheckedRequest(
                 method: "scan_root",
                 params: ["sessionId": sessionID, "rootId": try Self.opaqueID(payload, "rootId")],
                 expected: "root_scan_started",
                 sessionID: sessionID
-            )
+            ))
         case "cancelJob":
             let sessionID = try requireActiveSession(payload)
-            _ = try await epochCheckedRequest(
+            let jobID = try Self.opaqueID(payload, "jobId")
+            _ = try CoreResultValidator.jobCancellation(try await epochCheckedRequest(
                 method: "cancel_job",
-                params: ["sessionId": sessionID, "jobId": try Self.opaqueID(payload, "jobId")],
+                params: ["sessionId": sessionID, "jobId": jobID],
                 expected: "job_cancellation",
                 sessionID: sessionID
-            )
+            ), expectedJobID: jobID)
             value = NSNull()
         case "queryJobs":
             value = try await queryJobs(payload)
@@ -138,35 +139,34 @@ final class AppModel: ObservableObject {
             value = try await queryAssets(payload)
         case "getAsset":
             let sessionID = try requireActiveSession(payload)
-            value = try await epochCheckedRequest(
+            value = try CoreResultValidator.asset(try await epochCheckedRequest(
                 method: "get_asset",
                 params: ["sessionId": sessionID, "assetId": try Self.opaqueID(payload, "assetId")],
                 expected: "asset",
                 sessionID: sessionID
-            )
+            ))
         case "updateAsset":
             guard !writesFrozen else { throw ModelFailure.restartRequired }
             value = try await updateAsset(payload)
         case "listCollections":
             let sessionID = try requireActiveSession(payload)
-            let result = try Self.dictionary(try await epochCheckedRequest(
+            value = try CoreResultValidator.collections(try await epochCheckedRequest(
                 method: "list_collections", params: ["sessionId": sessionID],
                 expected: "collections", sessionID: sessionID
-            ), "collections")
-            value = result["items"] ?? []
+            ))
         case "createCollection":
             guard !writesFrozen else { throw ModelFailure.restartRequired }
             let sessionID = try requireActiveSession(payload)
-            let result = try Self.dictionary(try await epochCheckedRequest(
+            let result = try CoreResultValidator.collectionUpdated(try await epochCheckedRequest(
                 method: "create_collection",
                 params: ["sessionId": sessionID, "name": try Self.text(payload, "name", maximumScalars: 200)],
                 expected: "collection_updated", sessionID: sessionID
-            ), "collection")
-            value = result["collection"] ?? NSNull()
+            ))
+            value = result["collection"]!
         case "renameCollection":
             guard !writesFrozen else { throw ModelFailure.restartRequired }
             let sessionID = try requireActiveSession(payload)
-            let result = try Self.dictionary(try await epochCheckedRequest(
+            let result = try CoreResultValidator.collectionUpdated(try await epochCheckedRequest(
                 method: "rename_collection",
                 params: [
                     "sessionId": sessionID,
@@ -175,16 +175,17 @@ final class AppModel: ObservableObject {
                     "name": try Self.text(payload, "name", maximumScalars: 200)
                 ],
                 expected: "collection_updated", sessionID: sessionID
-            ), "collection")
-            value = result["collection"] ?? NSNull()
+            ))
+            value = result["collection"]!
         case "deleteCollection":
             guard !writesFrozen else { throw ModelFailure.restartRequired }
             let sessionID = try requireActiveSession(payload)
-            _ = try await epochCheckedRequest(
+            let collectionID = try Self.opaqueID(payload, "collectionId")
+            try CoreResultValidator.collectionDeleted(try await epochCheckedRequest(
                 method: "delete_collection",
-                params: ["sessionId": sessionID, "collectionId": try Self.opaqueID(payload, "collectionId")],
+                params: ["sessionId": sessionID, "collectionId": collectionID],
                 expected: "collection_deleted", sessionID: sessionID
-            )
+            ), expectedCollectionID: collectionID)
             value = NSNull()
         case "setCollectionMembership":
             guard !writesFrozen else { throw ModelFailure.restartRequired }
@@ -199,10 +200,7 @@ final class AppModel: ObservableObject {
                 expected: "location_resolved"
             )
             try requireCurrentTransition(epoch, sessionID: sessionID)
-            guard let dictionary = location as? [String: Any],
-                  let nativePath = dictionary["nativePathForShell"] as? String else {
-                throw ModelFailure.invalidCoreResponse
-            }
+            let nativePath = try CoreResultValidator.location(location, expectedLocationID: locationID)
             NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: nativePath)])
             value = NSNull()
         case "readPreferences":
@@ -228,30 +226,25 @@ final class AppModel: ObservableObject {
                 expected: "capabilities"
             )
             try requireCurrentTransition(capabilityEpoch, sessionID: requestedSession)
-            if let dictionary = capabilities as? [String: Any], let detail = dictionary["detail"] {
-                value = detail
-            } else {
-                throw ModelFailure.invalidCoreResponse
-            }
-        case "canonicalDump":
-            let sessionID = try requireActiveSession(payload)
-            let epoch = transitionEpoch
-            let result = try await requestValue(
-                method: "canonical_dump",
-                params: ["sessionId": sessionID],
-                expected: "canonical_dump"
-            )
-            try requireCurrentTransition(epoch, sessionID: sessionID)
-            guard let dictionary = result as? [String: Any], let dump = dictionary["dump"] else {
-                throw ModelFailure.invalidCoreResponse
-            }
-            value = dump
+            value = try CoreResultValidator.capabilities(capabilities)
         case "restartCore":
             value = try await transitions.run { [self] in try await restartCore() } ?? NSNull()
         default:
             throw ModelFailure.unknownCommand
         }
         return try Self.jsonString(value)
+    }
+
+    func canonicalDumpForHarness(sessionID: String) async throws -> [String: Any] {
+        guard sessionID == activeSessionID else { throw ModelFailure.sessionClosed }
+        let epoch = transitionEpoch
+        let result = try await requestValue(
+            method: "canonical_dump",
+            params: ["sessionId": sessionID],
+            expected: "canonical_dump"
+        )
+        try requireCurrentTransition(epoch, sessionID: sessionID)
+        return try CoreResultValidator.canonicalDump(result)
     }
 
     func rendererMessage(for error: Error) -> String {
@@ -284,20 +277,23 @@ final class AppModel: ObservableObject {
             frame = try await core.authorizeResource(sessionID: sessionID, assetID: assetID, profile: profile)
         } catch let failure as CoreSupervisor.RequestFailure {
             throw ModelFailure.core(failure.code)
+        } catch CoreSupervisor.Failure.capacityExceeded {
+            throw ModelFailure.requestCapacityExceeded
         } catch {
             throw ModelFailure.restartRequired
         }
         try requireCurrentTransition(epoch, sessionID: sessionID)
         let value = try CoreSupervisor.responseValue(frame, expected: "resource_authorized")
-        guard let dictionary = value as? [String: Any],
-              dictionary["sessionId"] as? String == sessionID,
-              dictionary["assetId"] as? String == assetID,
-              dictionary["profile"] as? String == profile,
-              let nativePath = dictionary["nativePathForHandler"] as? String,
+        let dictionary = try CoreResultValidator.resourceDescriptor(
+            value,
+            sessionID: sessionID,
+            assetID: assetID,
+            profile: profile,
+            maximumBytes: ResourceFileStreamer.maximumBytes
+        )
+        guard let nativePath = dictionary["nativePathForHandler"] as? String,
               let mimeType = dictionary["mimeType"] as? String,
-              let length = dictionary["contentLength"] as? NSNumber,
-              Self.nonnegativeInteger(length),
-              length.intValue <= ResourceFileStreamer.maximumBytes else {
+              let length = dictionary["contentLength"] as? NSNumber else {
             throw ModelFailure.invalidCoreResponse
         }
         return ResourceDescriptor(
@@ -588,13 +584,12 @@ final class AppModel: ObservableObject {
     }
 
     private func roots(sessionID: String) async throws -> Any {
-        let result = try Self.dictionary(try await epochCheckedRequest(
+        try CoreResultValidator.roots(try await epochCheckedRequest(
             method: "list_roots",
             params: ["sessionId": sessionID],
             expected: "roots",
             sessionID: sessionID
-        ), "roots")
-        return result["items"] ?? []
+        ))
     }
 
     private func queryJobs(_ payload: [String: Any]) async throws -> Any {
@@ -609,7 +604,7 @@ final class AppModel: ObservableObject {
             maximum: Self.jobStates.count,
             name: "states"
         )
-        return try await epochCheckedRequest(
+        return try CoreResultValidator.jobPage(try await epochCheckedRequest(
             method: "query_jobs",
             params: [
                 "sessionId": sessionID,
@@ -619,7 +614,7 @@ final class AppModel: ObservableObject {
             ],
             expected: "job_page",
             sessionID: sessionID
-        )
+        ))
     }
 
     private func queryAssets(_ payload: [String: Any]) async throws -> Any {
@@ -648,7 +643,7 @@ final class AppModel: ObservableObject {
         guard let sort = query["sort"] as? String, Self.sorts.contains(sort) else {
             throw ModelFailure.invalidArgument
         }
-        return try await epochCheckedRequest(
+        return try CoreResultValidator.assetPage(try await epochCheckedRequest(
             method: "query_asset_index",
             params: [
                 "sessionId": sessionID,
@@ -659,7 +654,7 @@ final class AppModel: ObservableObject {
             ],
             expected: "asset_page",
             sessionID: sessionID
-        )
+        ))
     }
 
     private func updateAsset(_ payload: [String: Any]) async throws -> Any {
@@ -672,7 +667,7 @@ final class AppModel: ObservableObject {
                 throw ModelFailure.invalidArgument
             }
         }
-        return try await epochCheckedRequest(
+        return try CoreResultValidator.assetUpdated(try await epochCheckedRequest(
             method: "update_asset",
             params: [
                 "sessionId": sessionID,
@@ -684,7 +679,7 @@ final class AppModel: ObservableObject {
             ],
             expected: "asset_updated",
             sessionID: sessionID
-        )
+        ))
     }
 
     private func setCollectionMembership(_ payload: [String: Any]) async throws -> Any {
@@ -696,17 +691,18 @@ final class AppModel: ObservableObject {
               let member = payload["member"] as? Bool else {
             throw ModelFailure.invalidArgument
         }
-        return try await epochCheckedRequest(
+        let collectionID = try Self.opaqueID(payload, "collectionId")
+        return try CoreResultValidator.collectionMembershipUpdated(try await epochCheckedRequest(
             method: "set_collection_membership",
             params: [
                 "sessionId": sessionID,
-                "collectionId": try Self.opaqueID(payload, "collectionId"),
+                "collectionId": collectionID,
                 "assetIds": assetIDs,
                 "member": member
             ],
             expected: "collection_membership_updated",
             sessionID: sessionID
-        )
+        ), expectedCollectionID: collectionID)
     }
 
     private func completeOpenIntent(id: String, decision: String) async throws -> Any? {
@@ -782,6 +778,8 @@ final class AppModel: ObservableObject {
             )
         } catch let failure as CoreSupervisor.RequestFailure {
             throw ModelFailure.core(failure.code)
+        } catch CoreSupervisor.Failure.capacityExceeded {
+            throw ModelFailure.requestCapacityExceeded
         } catch let failure as ModelFailure {
             throw failure
         } catch {
@@ -808,23 +806,7 @@ final class AppModel: ObservableObject {
         if let params { command["params"] = params }
         let commandData = try JSONSerialization.data(withJSONObject: command)
         let frame = try await core.request(commandData: commandData)
-        return try Self.value(from: frame, expected: expected)
-    }
-
-    private static func value(from frame: Data, expected: String) throws -> Any {
-        guard let object = try? JSONSerialization.jsonObject(with: frame) as? [String: Any],
-              let kind = object["kind"] as? String else {
-            throw ModelFailure.invalidCoreResponse
-        }
-        if kind == "error" {
-            throw ModelFailure.coreRequestFailed
-        }
-        guard kind == "response",
-              let result = object["result"] as? [String: Any],
-              result["result"] as? String == expected else {
-            throw ModelFailure.invalidCoreResponse
-        }
-        return result["value"] ?? NSNull()
+        return try CoreSupervisor.responseValue(frame, expected: expected)
     }
 
     private func requireActiveSession(_ payload: [String: Any]) throws -> String {
@@ -834,33 +816,18 @@ final class AppModel: ObservableObject {
     }
 
     private static func openedSession(from value: Any) throws -> OpenedSession {
-        guard let dictionary = value as? [String: Any],
-              let sessionID = dictionary["sessionId"] as? String,
-              let libraryID = dictionary["libraryId"] as? String,
-              let schemaVersion = dictionary["schemaVersion"] as? NSNumber,
-              schemaVersion.intValue >= 1,
-              Double(schemaVersion.intValue) == schemaVersion.doubleValue,
-              let name = dictionary["name"] as? String,
-              safeDisplayName(name, maximumScalars: 120),
-              BridgeValidation.isOpaqueID(sessionID),
-              BridgeValidation.isOpaqueID(libraryID) else {
+        let safeValue = try CoreResultValidator.sessionOpened(value)
+        guard let sessionID = safeValue["sessionId"] as? String,
+              let libraryID = safeValue["libraryId"] as? String else {
             throw ModelFailure.invalidCoreResponse
         }
-        let safeValue: [String: Any] = [
-            "sessionId": sessionID,
-            "libraryId": libraryID,
-            "schemaVersion": schemaVersion,
-            "name": name
-        ]
         return OpenedSession(value: safeValue, sessionID: sessionID, libraryID: libraryID)
     }
 
     private static func addedRoot(from value: Any, session: OpenedSession) throws -> AddedRoot {
-        guard let dictionary = value as? [String: Any],
-              let rootID = dictionary["rootId"] as? String,
-              let jobID = dictionary["jobId"] as? String,
-              BridgeValidation.isOpaqueID(rootID),
-              BridgeValidation.isOpaqueID(jobID) else {
+        let dictionary = try CoreResultValidator.rootAdded(value)
+        guard let rootID = dictionary["rootId"] as? String,
+              let jobID = dictionary["jobId"] as? String else {
             throw ModelFailure.invalidCoreResponse
         }
         return AddedRoot(rootID: rootID, jobID: jobID, session: session)
@@ -871,39 +838,7 @@ final class AppModel: ObservableObject {
         expectedRootID: String,
         session: OpenedSession
     ) throws -> BoundRoot {
-        guard let dictionary = value as? [String: Any],
-              let root = dictionary["root"] as? [String: Any],
-              root["rootId"] as? String == expectedRootID,
-              let displayName = root["displayName"] as? String,
-              safeDisplayName(displayName, maximumScalars: 255),
-              let rootKind = root["rootKind"] as? String,
-              safeToken(rootKind),
-              let state = root["state"] as? String,
-              safeToken(state),
-              let authorized = root["authorized"] as? Bool,
-              let observedCount = root["observedCount"] as? NSNumber,
-              nonnegativeInteger(observedCount),
-              let unsupportedCount = root["unsupportedCount"] as? NSNumber,
-              nonnegativeInteger(unsupportedCount) else {
-            throw ModelFailure.invalidCoreResponse
-        }
-        let activeJobID: Any
-        if let candidate = root["activeJobId"] as? String {
-            guard BridgeValidation.isOpaqueID(candidate) else { throw ModelFailure.invalidCoreResponse }
-            activeJobID = candidate
-        } else {
-            activeJobID = NSNull()
-        }
-        let safeRoot: [String: Any] = [
-            "rootId": expectedRootID,
-            "displayName": displayName,
-            "rootKind": rootKind,
-            "state": state,
-            "authorized": authorized,
-            "activeJobId": activeJobID,
-            "observedCount": observedCount,
-            "unsupportedCount": unsupportedCount
-        ]
+        let safeRoot = try CoreResultValidator.rootBound(value, expectedRootID: expectedRootID)
         return BoundRoot(root: safeRoot, session: session)
     }
 
@@ -963,11 +898,7 @@ final class AppModel: ObservableObject {
                     expected: "root_bound"
                 )
                 try requireCurrentTransition(epoch)
-                guard let dictionary = bound as? [String: Any],
-                      let root = dictionary["root"] as? [String: Any],
-                      root["rootId"] as? String == rootID else {
-                    throw ModelFailure.invalidCoreResponse
-                }
+                _ = try CoreResultValidator.rootBound(bound, expectedRootID: rootID)
             }
         } catch {
             await closeProvisionalSessionOrRestart(opened.sessionID)
@@ -1033,9 +964,7 @@ final class AppModel: ObservableObject {
                 expected: "library_closed"
             )
             try requireCurrentTransition(epoch, sessionID: sessionID)
-            guard let closed = value as? [String: Any], closed["sessionId"] as? String == sessionID else {
-                throw ModelFailure.invalidCoreResponse
-            }
+            try CoreResultValidator.libraryClosed(value, expectedSessionID: sessionID)
         } catch {
             writesFrozen = true
             coreStatus = "Reference Core stopped"
@@ -1054,9 +983,7 @@ final class AppModel: ObservableObject {
                     params: ["sessionId": sessionID],
                     expected: "library_closed"
                 )
-                guard let closed = value as? [String: Any], closed["sessionId"] as? String == sessionID else {
-                    throw ModelFailure.invalidCoreResponse
-                }
+                try CoreResultValidator.libraryClosed(value, expectedSessionID: sessionID)
             },
             restartHelper: { [self] in try await core.restart() }
         )
@@ -1279,21 +1206,6 @@ final class AppModel: ObservableObject {
         return libraryID
     }
 
-    private static func safeDisplayName(_ value: String, maximumScalars: Int) -> Bool {
-        let forbidden = CharacterSet(charactersIn: "/\\").union(.controlCharacters)
-        return !value.isEmpty && value.unicodeScalars.count <= maximumScalars &&
-            value.rangeOfCharacter(from: forbidden) == nil
-    }
-
-    private static func safeToken(_ value: String) -> Bool {
-        value.range(of: "^[a-z][a-z0-9_]{0,39}$", options: .regularExpression) != nil
-    }
-
-    private static func nonnegativeInteger(_ number: NSNumber) -> Bool {
-        CFGetTypeID(number) != CFBooleanGetTypeID() && number.doubleValue.isFinite && number.doubleValue >= 0 &&
-            number.doubleValue.rounded(.towardZero) == number.doubleValue
-    }
-
     private static func jsonString(_ value: Any) throws -> String {
         let data = try JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed])
         guard let string = String(data: data, encoding: .utf8) else {
@@ -1355,6 +1267,7 @@ final class AppModel: ObservableObject {
         case rootAuthorizationNeedsRepair
         case coreRequestFailed
         case invalidArgument
+        case requestCapacityExceeded
         case core(String)
 
         var errorDescription: String? {
@@ -1371,6 +1284,7 @@ final class AppModel: ObservableObject {
                 "The Root was added, but its authorization must be chosen again."
             case .coreRequestFailed: "Reference Core could not complete the request."
             case .invalidArgument: "The native operation received an invalid argument."
+            case .requestCapacityExceeded: "Too many Reference Library operations are active. Try again shortly."
             case let .core(code): RendererErrorPolicy.message(code: code)
             }
         }

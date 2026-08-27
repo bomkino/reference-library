@@ -33,7 +33,7 @@ final class AppModelEventPolicyTests: XCTestCase {
         XCTAssertEqual(events.first, "event-17")
     }
 
-    func testKnownEventIsRebuiltWithoutUnexpectedOrPathFields() throws {
+    func testKnownEventRejectsUnexpectedOrPathFields() throws {
         let frame = try JSONSerialization.data(withJSONObject: [
             "kind": "event",
             "protocolVersion": 1,
@@ -48,11 +48,7 @@ final class AppModelEventPolicyTests: XCTestCase {
             ]
         ])
 
-        let event = try XCTUnwrap(AppModelEventPolicy.rendererEvent(fromCoreFrame: frame))
-        XCTAssertTrue(event.json.contains(rootID))
-        XCTAssertTrue(event.json.contains("ready"))
-        XCTAssertFalse(event.json.contains("nativePath"))
-        XCTAssertFalse(event.json.contains("/Users/"))
+        XCTAssertNil(AppModelEventPolicy.rendererEvent(fromCoreFrame: frame))
     }
 
     func testUnknownEventAndPathShapedStateAreRejected() throws {

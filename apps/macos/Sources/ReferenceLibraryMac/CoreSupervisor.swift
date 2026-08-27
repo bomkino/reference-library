@@ -1,13 +1,16 @@
 import Darwin
+import CoreFoundation
 import Foundation
 
 actor CoreSupervisor {
     static let protocolVersion = 1
     static let maximumFrameBytes = 1_048_576
+    static let maximumPendingRequests = 128
+    static let maximumAuthorizations = 32
     static let resourceRetryDelaysNanoseconds: [UInt64] = [25_000_000, 75_000_000]
 
     enum Failure: LocalizedError {
-        case coreNotFound, coreExited, invalidFrame, oversizedFrame, protocolMismatch, timedOut
+        case coreNotFound, coreExited, invalidFrame, oversizedFrame, protocolMismatch, timedOut, capacityExceeded
 
         var errorDescription: String? {
             switch self {
@@ -17,6 +20,7 @@ actor CoreSupervisor {
             case .oversizedFrame: "Reference Core emitted a frame larger than 1 MiB."
             case .protocolMismatch: "Reference Core protocol validation failed."
             case .timedOut: "Reference Core did not reply in time."
+            case .capacityExceeded: "Reference Core request capacity is full."
             }
         }
     }
@@ -44,8 +48,8 @@ actor CoreSupervisor {
     private var output: FileHandle?
     private var errorOutput: FileHandle?
     private var generation: UUID?
-    private var pending: [String: Pending] = [:]
-    private var authorizations: [String: Authorization] = [:]
+    private var pending = BoundedRegistry<String, Pending>(limit: maximumPendingRequests)
+    private var authorizations = BoundedRegistry<String, Authorization>(limit: maximumAuthorizations)
     private var isStopping = false
     private var generationFailed = false
     private var lastEventSequence: UInt64 = 0
@@ -88,10 +92,10 @@ actor CoreSupervisor {
                 method: "hello",
                 params: ["clientName": "apple-silicon-swiftui-webkit", "supportedVersions": [Self.protocolVersion]]
             ))
-            guard let result = try Self.responseValue(frame, expected: "hello") as? [String: Any],
-                  (result["protocolVersion"] as? NSNumber)?.intValue == Self.protocolVersion else {
-                throw Failure.protocolMismatch
-            }
+            try CoreResultValidator.hello(
+                Self.responseValue(frame, expected: "hello"),
+                protocolVersion: Self.protocolVersion
+            )
         } catch {
             failGeneration(Failure.protocolMismatch)
             throw error
@@ -106,9 +110,9 @@ actor CoreSupervisor {
         for attempt in 0...Self.resourceRetryDelaysNanoseconds.count {
             try Task.checkCancellation()
             let requestID = UUID().uuidString.lowercased()
-            authorizations[requestID] = Authorization(
+            guard authorizations.insert(Authorization(
                 sessionID: sessionID, assetID: assetID, profile: profile, jobID: nil, cancelled: false
-            )
+            ), forKey: requestID) else { throw Failure.capacityExceeded }
             do {
                 let command = try Self.commandData(method: "authorize_resource", params: [
                     "sessionId": sessionID, "assetId": assetID, "profile": profile,
@@ -159,11 +163,19 @@ actor CoreSupervisor {
         guard commandData.count <= Self.maximumFrameBytes else { throw Failure.oversizedFrame }
         let envelope = try Self.envelope(commandData: commandData, requestID: requestID)
         return try await withCheckedThrowingContinuation { continuation in
+            guard pending.count < Self.maximumPendingRequests else {
+                continuation.resume(throwing: Failure.capacityExceeded)
+                return
+            }
             let timeout = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: timeoutNanoseconds)
                 await self?.requestTimedOut(requestID: requestID)
             }
-            pending[requestID] = Pending(continuation: continuation, timeout: timeout)
+            guard pending.insert(Pending(continuation: continuation, timeout: timeout), forKey: requestID) else {
+                timeout.cancel()
+                continuation.resume(throwing: Failure.capacityExceeded)
+                return
+            }
             do { try Self.writeFrame(envelope, to: input) }
             catch { failGeneration(Failure.coreExited) }
         }
@@ -172,15 +184,24 @@ actor CoreSupervisor {
     private func receive(_ frame: Data, generation: UUID) {
         guard self.generation == generation, !generationFailed,
               let object = try? JSONSerialization.jsonObject(with: frame) as? [String: Any],
-              (object["protocolVersion"] as? NSNumber)?.intValue == Self.protocolVersion,
+              let protocolNumber = object["protocolVersion"] as? NSNumber,
+              CFGetTypeID(protocolNumber) != CFBooleanGetTypeID(),
+              protocolNumber.intValue == Self.protocolVersion,
+              protocolNumber.doubleValue == Double(Self.protocolVersion),
               let kind = object["kind"] as? String else {
             failGeneration(Failure.invalidFrame); return
         }
         if kind == "event" {
-            guard let event = object["event"] as? [String: Any], let name = event["event"] as? String else {
+            guard Set(object.keys) == ["kind", "protocolVersion", "sequence", "event"],
+                  let event = object["event"] as? [String: Any],
+                  Set(event.keys) == ["event", "value"],
+                  let name = event["event"] as? String,
+                  name.range(of: "^[a-z][a-z0-9_]{0,63}$", options: .regularExpression) != nil,
+                  event["value"] is [String: Any] else {
                 failGeneration(Failure.invalidFrame); return
             }
             guard let sequence = object["sequence"] as? NSNumber,
+                  CFGetTypeID(sequence) != CFBooleanGetTypeID(),
                   sequence.doubleValue >= 0,
                   sequence.doubleValue.rounded(.towardZero) == sequence.doubleValue,
                   sequence.uint64Value > lastEventSequence else {
@@ -192,19 +213,22 @@ actor CoreSupervisor {
             } else { eventSink?(frame) }
             return
         }
-        guard (kind == "response" || kind == "error"), let requestID = object["requestId"] as? String,
+        guard (kind == "response" || kind == "error"),
+              let requestID = object["requestId"] as? String,
               let item = pending.removeValue(forKey: requestID) else {
             failGeneration(Failure.protocolMismatch); return
         }
         item.timeout.cancel()
         if kind == "error" {
-            guard let payload = object["error"] as? [String: Any], let code = payload["code"] as? String else {
+            guard Set(object.keys) == ["kind", "protocolVersion", "requestId", "error"],
+                  let failure = try? Self.requestFailure(object["error"]) else {
                 item.continuation.resume(throwing: Failure.invalidFrame)
                 failGeneration(Failure.invalidFrame); return
             }
-            item.continuation.resume(throwing: RequestFailure(code: code, retryable: payload["retryable"] as? Bool ?? false))
+            item.continuation.resume(throwing: failure)
         } else {
-            guard object["result"] is [String: Any] else {
+            guard Set(object.keys) == ["kind", "protocolVersion", "requestId", "result"],
+                  object["result"] is [String: Any] else {
                 item.continuation.resume(throwing: Failure.invalidFrame)
                 failGeneration(Failure.invalidFrame); return
             }
@@ -213,10 +237,12 @@ actor CoreSupervisor {
     }
 
     private func receiveAuthorizationStarted(_ value: [String: Any]?) {
-        guard let value, let requestID = value["requestId"] as? String,
+        guard let value,
+              Set(value.keys) == ["requestId", "jobId", "assetId", "profile"],
+              let requestID = value["requestId"] as? String,
               let jobID = value["jobId"] as? String, var authorization = authorizations[requestID],
               authorization.jobID == nil,
-              (value["sessionId"] == nil || value["sessionId"] as? String == authorization.sessionID),
+              Self.isOpaqueID(jobID),
               value["assetId"] as? String == authorization.assetID,
               value["profile"] as? String == authorization.profile else {
             failGeneration(Failure.protocolMismatch); return
@@ -318,11 +344,34 @@ actor CoreSupervisor {
 
     static func responseValue(_ frame: Data, expected: String) throws -> Any {
         guard let object = try? JSONSerialization.jsonObject(with: frame) as? [String: Any],
+              Set(object.keys) == ["kind", "protocolVersion", "requestId", "result"],
               object["kind"] as? String == "response",
-              let result = object["result"] as? [String: Any], result["result"] as? String == expected else {
+              let result = object["result"] as? [String: Any],
+              Set(result.keys) == ["result", "value"],
+              result["result"] as? String == expected else {
             throw Failure.invalidFrame
         }
         return result["value"] ?? NSNull()
+    }
+
+    static func requestFailure(_ value: Any?) throws -> RequestFailure {
+        guard let payload = value as? [String: Any],
+              Set(payload.keys) == ["code", "message", "retryable"],
+              let code = payload["code"] as? String,
+              code.range(of: "^[A-Za-z][A-Za-z0-9]{0,79}$", options: .regularExpression) != nil,
+              let message = payload["message"] as? String,
+              !message.isEmpty,
+              message.unicodeScalars.count <= 500,
+              !message.unicodeScalars.contains(where: { $0.value == 0 }),
+              let retryableNumber = payload["retryable"] as? NSNumber,
+              CFGetTypeID(retryableNumber) == CFBooleanGetTypeID() else {
+            throw Failure.invalidFrame
+        }
+        return RequestFailure(code: code, retryable: retryableNumber.boolValue)
+    }
+
+    private static func isOpaqueID(_ value: String) -> Bool {
+        UUID(uuidString: value) != nil && !value.contains("/") && !value.contains("\\")
     }
 
     private static func restartFrame() -> Data {
@@ -349,4 +398,45 @@ actor CoreSupervisor {
 private final class FileHandleBox: @unchecked Sendable {
     let handle: FileHandle
     init(_ handle: FileHandle) { self.handle = handle }
+}
+
+struct BoundedRegistry<Key: Hashable, Value> {
+    let limit: Int
+    private var storage: [Key: Value] = [:]
+
+    init(limit: Int) {
+        precondition(limit > 0)
+        self.limit = limit
+    }
+
+    var count: Int { storage.count }
+    var values: Dictionary<Key, Value>.Values { storage.values }
+
+    subscript(key: Key) -> Value? {
+        get { storage[key] }
+        set {
+            if let newValue {
+                precondition(storage[key] != nil || storage.count < limit)
+                storage[key] = newValue
+            } else {
+                storage.removeValue(forKey: key)
+            }
+        }
+    }
+
+    @discardableResult
+    mutating func insert(_ value: Value, forKey key: Key) -> Bool {
+        guard storage[key] != nil || storage.count < limit else { return false }
+        storage[key] = value
+        return true
+    }
+
+    @discardableResult
+    mutating func removeValue(forKey key: Key) -> Value? {
+        storage.removeValue(forKey: key)
+    }
+
+    mutating func removeAll() {
+        storage.removeAll(keepingCapacity: true)
+    }
 }

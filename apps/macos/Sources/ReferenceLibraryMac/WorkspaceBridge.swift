@@ -90,7 +90,6 @@ final class WorkspaceBridge: NSObject, WKScriptMessageHandlerWithReply {
         readPreferences: () => call('readPreferences'),
         writePreferences: (patch) => call('writePreferences', {patch}),
         queryCapabilities: (sessionId) => call('queryCapabilities', sessionId ? {sessionId: opaque(sessionId, 'sessionId')} : {}),
-        canonicalDump: (sessionId) => call('canonicalDump', {sessionId: opaque(sessionId, 'sessionId')}),
         restartCore: () => call('restartCore'),
         subscribe: (listener) => {
           if (typeof listener !== 'function') throw new TypeError('listener must be a function');

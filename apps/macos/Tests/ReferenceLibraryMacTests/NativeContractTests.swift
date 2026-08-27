@@ -85,8 +85,18 @@ final class NativeContractTests: XCTestCase {
     }
 
     func testResponseParserRejectsWrongPublicResult() throws {
-        let valid = Data(#"{"kind":"response","result":{"result":"roots","value":{"items":[]}}}"#.utf8)
+        let valid = Data(#"{"kind":"response","protocolVersion":1,"requestId":"11111111-1111-4111-8111-111111111111","result":{"result":"roots","value":{"items":[]}}}"#.utf8)
         XCTAssertNoThrow(try CoreSupervisor.responseValue(valid, expected: "roots"))
         XCTAssertThrowsError(try CoreSupervisor.responseValue(valid, expected: "asset_page"))
+
+        let invented = Data(#"{"kind":"response","protocolVersion":1,"requestId":"11111111-1111-4111-8111-111111111111","result":{"result":"roots","value":{"items":[]},"nativePath":"/Users/private"}}"#.utf8)
+        XCTAssertThrowsError(try CoreSupervisor.responseValue(invented, expected: "roots"))
+
+        XCTAssertNoThrow(try CoreSupervisor.requestFailure([
+            "code": "SessionClosed", "message": "/Users/private is ignored", "retryable": false
+        ]))
+        XCTAssertThrowsError(try CoreSupervisor.requestFailure([
+            "code": "SessionClosed", "message": "closed", "retryable": false, "path": "/Users/private"
+        ]))
     }
 }

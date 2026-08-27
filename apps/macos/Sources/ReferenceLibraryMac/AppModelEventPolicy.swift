@@ -35,29 +35,32 @@ enum AppModelEventPolicy {
         let safeValue: [String: Any]
         switch name {
         case "core_needs_restart":
+            guard exact(value, keys: ["reason"]) else { return nil }
             safeValue = ["reason": restartReason]
         case "root_state_changed":
-            guard let rootID = opaqueID(value["rootId"]),
+            guard exact(value, keys: ["rootId", "state"]),
+                  let rootID = opaqueID(value["rootId"]),
                   let state = safeState(value["state"]) else { return nil }
             safeValue = ["rootId": rootID, "state": state]
         case "scan_progress_changed":
-            guard let rootID = opaqueID(value["rootId"]),
+            guard exact(value, keys: ["rootId", "jobId", "observedCount", "unsupportedCount", "terminal"]),
+                  let rootID = opaqueID(value["rootId"]),
                   let jobID = opaqueID(value["jobId"]),
                   let observedCount = nonnegativeInteger(value["observedCount"]),
-                  let terminal = value["terminal"] as? Bool else { return nil }
+                  let terminalNumber = value["terminal"] as? NSNumber,
+                  CFGetTypeID(terminalNumber) == CFBooleanGetTypeID() else { return nil }
             var projection: [String: Any] = [
                 "rootId": rootID,
                 "jobId": jobID,
                 "observedCount": observedCount,
-                "terminal": terminal
+                "terminal": terminalNumber.boolValue
             ]
-            if value["unsupportedCount"] != nil {
-                guard let unsupportedCount = nonnegativeInteger(value["unsupportedCount"]) else { return nil }
-                projection["unsupportedCount"] = unsupportedCount
-            }
+            guard let unsupportedCount = nonnegativeInteger(value["unsupportedCount"]) else { return nil }
+            projection["unsupportedCount"] = unsupportedCount
             safeValue = projection
         case "assets_inserted":
-            guard let rootID = opaqueID(value["rootId"]),
+            guard exact(value, keys: ["rootId", "assetIds", "libraryRevision"]),
+                  let rootID = opaqueID(value["rootId"]),
                   let assetIDs = value["assetIds"] as? [String],
                   assetIDs.count <= 250,
                   assetIDs.allSatisfy(BridgeValidation.isOpaqueID),
@@ -68,11 +71,13 @@ enum AppModelEventPolicy {
                 "libraryRevision": libraryRevision
             ]
         case "job_updated":
-            guard let jobID = opaqueID(value["jobId"]),
+            guard exact(value, keys: ["jobId", "state"]),
+                  let jobID = opaqueID(value["jobId"]),
                   let state = safeState(value["state"]) else { return nil }
             safeValue = ["jobId": jobID, "state": state]
         case "resource_authorization_started":
-            guard let requestID = opaqueID(value["requestId"]),
+            guard exact(value, keys: ["requestId", "jobId", "assetId", "profile"]),
+                  let requestID = opaqueID(value["requestId"]),
                   let jobID = opaqueID(value["jobId"]),
                   let assetID = opaqueID(value["assetId"]),
                   let profile = value["profile"] as? String,
@@ -84,18 +89,19 @@ enum AppModelEventPolicy {
                 "profile": profile
             ]
         case "asset_updated":
-            guard let assetID = opaqueID(value["assetId"]),
-                  let revision = nonnegativeInteger(value["revision"]),
+            guard exact(value, keys: ["assetId", "revision", "libraryRevision"]),
+                  let assetID = opaqueID(value["assetId"]),
+                  nonnegativeInteger(value["revision"]) != nil,
                   let libraryRevision = nonnegativeInteger(value["libraryRevision"]) else { return nil }
             safeValue = [
                 "assetId": assetID,
-                "revision": revision,
                 "libraryRevision": libraryRevision
             ]
         case "collections_changed":
-            guard let collectionID = opaqueID(value["collectionId"]),
+            guard exact(value, keys: ["collectionId", "libraryRevision"]),
+                  opaqueID(value["collectionId"]) != nil,
                   let libraryRevision = nonnegativeInteger(value["libraryRevision"]) else { return nil }
-            safeValue = ["collectionId": collectionID, "libraryRevision": libraryRevision]
+            safeValue = ["libraryRevision": libraryRevision]
         default:
             return nil
         }
@@ -123,6 +129,10 @@ enum AppModelEventPolicy {
     private static func opaqueID(_ value: Any?) -> String? {
         guard let value = value as? String, BridgeValidation.isOpaqueID(value) else { return nil }
         return value
+    }
+
+    private static func exact(_ value: [String: Any], keys: Set<String>) -> Bool {
+        Set(value.keys) == keys
     }
 
     private static func safeState(_ value: Any?) -> String? {
