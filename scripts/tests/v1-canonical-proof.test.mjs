@@ -12,6 +12,8 @@ test("exact-head CI executes the daily-use semantic round trip", async () => {
   const workflow = await readFile(path.join(repository, ".github/workflows/ci.yml"), "utf8");
   const rustJob = workflow.match(/  rust-core:[\s\S]*?\n  workspace-and-linux-source:/)?.[0];
   assert.ok(rustJob, "Rust CI job is missing");
+  assert.match(rustJob, /cargo install cargo-audit --locked --version 0\.22\.2/);
+  assert.match(rustJob, /run: cargo audit/);
   assert.match(rustJob, /v1-semantic-roundtrip\.mjs --core target\/debug\/reference-core/);
 });
 
