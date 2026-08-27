@@ -37,7 +37,9 @@ export async function verifyReleaseMetadata(repository) {
   }
   const linuxPackage = packages.find(([file]) => file === "apps/linux/package.json")[1];
   assert.equal(linuxPackage.build.appId, metadata.bundleIdentifier);
-  assert.equal(linuxPackage.build.productName, metadata.productName);
+  assert.equal(linuxPackage.desktopName, metadata.productName);
+  assert.equal(linuxPackage.build.productName, "reference-library");
+  assert.equal(linuxPackage.build.linux.desktop.entry.Name, metadata.productName);
   assert.equal(
     linuxPackage.build.linux.icon,
     "../../assets/branding/reference-library-icon-1024.png",

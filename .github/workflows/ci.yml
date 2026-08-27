@@ -82,14 +82,14 @@ jobs:
       - name: Reproduce installed Chromium sandbox ownership
         shell: bash
         run: |
-          sandbox_path="$RUNNER_TEMP/reference-linux-artifacts/pacman/opt/Reference Library/chrome-sandbox"
+          sandbox_path="$RUNNER_TEMP/reference-linux-artifacts/pacman/opt/reference-library/chrome-sandbox"
           sudo chown root:root "$sandbox_path"
           sudo chmod 4755 "$sandbox_path"
           test "$(stat -c '%u:%g:%a' "$sandbox_path")" = "0:0:4755"
       - name: Rehearse deterministic packaged journey under X11
         run: >-
           node scripts/linux-packaged-runtime-smoke.mjs
-          --application "$RUNNER_TEMP/reference-linux-artifacts/pacman/opt/Reference Library/reference-library"
+          --application "$RUNNER_TEMP/reference-linux-artifacts/pacman/opt/reference-library/reference-library"
           --display x11 --timeout-ms 15000
           > release/linux/LINUX_X11_RUNTIME.json
       - name: Rehearse packaged application under headless Wayland
@@ -113,13 +113,13 @@ jobs:
           node scripts/linux-wayland-observation.mjs --require-session \
             > release/linux/LINUX_WAYLAND_SESSION.json
           node scripts/linux-packaged-runtime-smoke.mjs \
-            --application "$RUNNER_TEMP/reference-linux-artifacts/pacman/opt/Reference Library/reference-library" \
+            --application "$RUNNER_TEMP/reference-linux-artifacts/pacman/opt/reference-library/reference-library" \
             --display wayland --timeout-ms 15000 \
             > release/linux/LINUX_WAYLAND_RUNTIME.json
       - name: Reopen through the extracted packaged helper
         run: >-
           node scripts/t01-semantic-roundtrip.mjs
-          --core "$RUNNER_TEMP/reference-linux-artifacts/pacman/opt/Reference Library/resources/bin/reference-core"
+          --core "$RUNNER_TEMP/reference-linux-artifacts/pacman/opt/reference-library/resources/bin/reference-core"
       - name: Write and verify clean-source-bound Linux checksums
         run: |
           node scripts/write-artifact-checksums.mjs \

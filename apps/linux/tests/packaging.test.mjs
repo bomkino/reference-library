@@ -12,6 +12,8 @@ test("all Linux packaging paths declare the exact .pitchlibrary association", as
     readFile(new URL("../packaging/PKGBUILD", import.meta.url), "utf8"),
   ]);
   const configuration = JSON.parse(packageSource).build;
+  assert.equal(configuration.productName, "reference-library");
+  assert.equal(configuration.linux.desktop.entry.Name, "Reference Library");
   assert.deepEqual(configuration.fileAssociations, [{
     ext: "pitchlibrary",
     name: "Reference Library package",

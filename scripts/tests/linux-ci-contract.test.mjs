@@ -17,6 +17,7 @@ test("Ubuntu package CI extracts every format and rehearses hardened X11 and Way
     "sudo chown root:root",
     "sudo chmod 4755",
     "0:0:4755",
+    "/opt/reference-library/reference-library",
     "linux-packaged-runtime-smoke.mjs",
     "--display x11",
     "weston --backend=headless-backend.so",
