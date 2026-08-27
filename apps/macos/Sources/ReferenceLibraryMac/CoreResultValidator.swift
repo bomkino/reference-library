@@ -574,7 +574,7 @@ enum CoreResultValidator {
     private static func display(_ value: Any?, maximum: Int) throws -> String {
         let value = try text(value, maximum: maximum)
         guard !value.isEmpty,
-              value.rangeOfCharacter(from: CharacterSet(charactersIn: "/\\").union(.controlCharacters)) == nil else {
+              value.rangeOfCharacter(from: CharacterSet(charactersIn: "/").union(.controlCharacters)) == nil else {
             throw Failure.invalid
         }
         return value
@@ -605,7 +605,7 @@ enum CoreResultValidator {
         let components = value.split(separator: "/", omittingEmptySubsequences: false)
         guard !value.isEmpty,
               !value.hasPrefix("/"),
-              !value.contains("\\"),
+              value.rangeOfCharacter(from: .controlCharacters) == nil,
               components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else {
             throw Failure.invalid
         }

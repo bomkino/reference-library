@@ -78,6 +78,68 @@ final class CoreResultValidatorTests: XCTestCase {
         ]))
     }
 
+    func testLegalBackslashUnicodeAndPunctuationRemainDisplayData() throws {
+        let weirdName = "draft\\final – 你好 (100%) #1.png"
+        var summary = assetSummary()
+        summary["displayName"] = weirdName
+        summary["relativeDisplayPath"] = "References/Client (A)/\(weirdName)"
+        let page = try CoreResultValidator.assetPage([
+            "offset": 0, "limit": 1, "total": 1, "items": [summary],
+            "nextOffset": NSNull(), "libraryRevision": 4
+        ])
+        let safeSummary = try XCTUnwrap((page["items"] as? [[String: Any]])?.first)
+        XCTAssertEqual(safeSummary["displayName"] as? String, weirdName)
+        XCTAssertEqual(
+            safeSummary["relativeDisplayPath"] as? String,
+            "References/Client (A)/\(weirdName)"
+        )
+
+        let detail = try CoreResultValidator.asset([
+            "assetId": assetID,
+            "locationId": locationID,
+            "originalDisplayName": weirdName,
+            "relativeDisplayPath": "References/Client (A)/\(weirdName)",
+            "mediaFamily": "still_image",
+            "availability": "present",
+            "reviewState": "unreviewed",
+            "customTitle": NSNull(),
+            "note": NSNull(),
+            "revision": 0,
+            "collectionIds": []
+        ])
+        XCTAssertEqual(detail["originalDisplayName"] as? String, weirdName)
+
+        var maximumUnicode = assetSummary()
+        maximumUnicode["displayName"] = String(repeating: "界", count: 255)
+        XCTAssertNoThrow(try CoreResultValidator.assetPage([
+            "offset": 0, "limit": 1, "total": 1, "items": [maximumUnicode],
+            "nextOffset": NSNull(), "libraryRevision": 4
+        ]))
+    }
+
+    func testDisplayHierarchyAndControlCharactersRemainRejected() {
+        var hierarchy = assetSummary()
+        hierarchy["displayName"] = "folder/still.png"
+        XCTAssertThrowsError(try CoreResultValidator.assetPage([
+            "offset": 0, "limit": 1, "total": 1, "items": [hierarchy],
+            "nextOffset": NSNull(), "libraryRevision": 4
+        ]))
+
+        var traversal = assetSummary()
+        traversal["relativeDisplayPath"] = "References/../still.png"
+        XCTAssertThrowsError(try CoreResultValidator.assetPage([
+            "offset": 0, "limit": 1, "total": 1, "items": [traversal],
+            "nextOffset": NSNull(), "libraryRevision": 4
+        ]))
+
+        var control = assetSummary()
+        control["relativeDisplayPath"] = "References/draft\nfinal.png"
+        XCTAssertThrowsError(try CoreResultValidator.assetPage([
+            "offset": 0, "limit": 1, "total": 1, "items": [control],
+            "nextOffset": NSNull(), "libraryRevision": 4
+        ]))
+    }
+
     func testCapabilitiesRejectUnexpectedFieldsAndInvalidEnums() {
         let valid: [String: Any] = [
             "chooseRoot": true,
