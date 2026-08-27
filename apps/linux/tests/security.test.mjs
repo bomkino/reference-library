@@ -37,11 +37,25 @@ test("query contract caps pages and names projections", () => {
       offset: 100,
       limit: 250,
       projection: "contact_sheet_standard",
+      query: {
+        search: null,
+        rootId: null,
+        reviewStates: [],
+        availability: ["offline_volume", "unreadable"],
+        collectionId: null,
+        sort: "created_ascending",
+      },
     }).limit,
     250,
   );
   assert.throws(
-    () => assertAssetQuery({ sessionId: SESSION, offset: 0, limit: 251, projection: "contact_sheet_standard" }),
+    () => assertAssetQuery({
+      sessionId: SESSION,
+      offset: 0,
+      limit: 251,
+      projection: "contact_sheet_standard",
+      query: { search: null, rootId: null, reviewStates: [], availability: [], collectionId: null, sort: "created_ascending" },
+    }),
     /between 1 and 250/,
   );
 });
@@ -57,16 +71,31 @@ test("workspace resources and senders stay inside named origin", () => {
 
 test("preload exposes only fixed named IPC channels", () => {
   assert.deepEqual(Object.keys(IPC).sort(), [
+    "cancelJob",
     "canonicalDump",
     "capabilities",
     "chooseRoot",
     "closeLibrary",
+    "completeOpenIntent",
+    "createCollection",
     "createLibrary",
+    "deleteCollection",
     "event",
+    "getAsset",
+    "listCollections",
+    "listRoots",
     "openLibrary",
     "queryAssets",
+    "queryJobs",
+    "readPreferences",
+    "reauthorizeRoot",
+    "renameCollection",
     "restartCore",
     "revealLocation",
+    "scanRoot",
+    "setCollectionMembership",
+    "updateAsset",
+    "writePreferences",
   ]);
   for (const channel of Object.values(IPC)) {
     assert.match(channel, /^reference-library:[a-z-]+$/);

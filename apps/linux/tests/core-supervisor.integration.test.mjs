@@ -87,14 +87,14 @@ test("Electron supervisor exercises the framed T01 lifecycle and restart seam", 
           profile: "preview",
         },
       }),
-      /closed session/i,
+      (error) => error.code === "SessionClosed" && !error.message.includes(temporary),
     );
 
     const reopened = expectResult(
       await core.request({ method: "open_library", params: { path: libraryPath } }),
       "session_opened",
     );
-    await assert.rejects(core.request({ method: "test_crash" }), /exited/i);
+    await assert.rejects(core.request({ method: "test_crash" }), /stopped/i);
     await waitFor(() => events.some((event) => event.event === "core_needs_restart"));
 
     await core.restart();
