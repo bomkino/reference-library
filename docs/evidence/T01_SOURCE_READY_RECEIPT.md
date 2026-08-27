@@ -6,11 +6,12 @@
 Repository: https://github.com/bomkino/reference-library
 Expected and actual start SHA: 622237237e4492292df91b8912f9109cb3a0bf1e
 Branch: codex/reference-library-tracer-01
-Reviewed implementation head: c9db5624cadc4894c8dd34b27d52007a65321dd0
+Reviewed implementation head: d252121d1cca9022f679212d0f8c198fa04d20d3
 Spec/Standards review commit: 2472966c4bc66a205ca0b61019e5e5a115bc8ba8
+Follow-up Spec/Standards review source: d252121d1cca9022f679212d0f8c198fa04d20d3
 Local environment: Linux 6.18.35 x86_64
 CI environments: ubuntu-24.04 x86_64; macos-26 arm64
-Recorded: 26 August 2026 UTC
+Recorded: 27 August 2026 UTC
 ```
 
 ## Result
@@ -36,6 +37,8 @@ This is not a claim of target integration. No release was published, no deployme
 | `d158534` | Immutable-SHA pinning for every third-party CI action | Subsequent five-job CI passed |
 | `c9db562` | Complete Linux release metadata | pacman/AppImage/tar assembled in compatible Linux environment |
 | `2472966` | Spec and Standards reviews | No blocking source-level deviation; target gates kept open |
+| `b95841a` | Bounded opaque-resource streaming in both shells | 64 KiB/cancellation tests passed; Swift source compiled on Apple Silicon |
+| `d252121` | Exact source-bound target packages and receipts | Five-job CI passed; macOS and Linux artifacts uploaded |
 
 ## Public seams
 
@@ -65,7 +68,8 @@ node scripts/t01-semantic-roundtrip.mjs --core target/debug/reference-core
   pass: 3 Assets; stable Library ID; semanticDiffCount 0
 
 npm run check
-  pass: TypeScript; 5 workspace tests; 6 Linux tests; workspace and shell builds
+  pass: TypeScript; 2 receipt tests; 5 workspace tests; 8 Linux tests;
+  workspace and shell builds
 
 npm audit --audit-level=high
   pass: 0 known vulnerabilities
@@ -95,20 +99,26 @@ bsdtar -tf release/linux/reference-library-0.1.0-x64.pacman
 tar -tzf release/linux/reference-library-0.1.0-x64.tar.gz
   pass: archives contain packaged workspace and release core
 
+node scripts/verify-artifact-receipt.mjs --require-current-target <receipt>
+  pass: exact source commit, platform/architecture, regular files, byte sizes,
+  SHA-256 values and honest claim exclusions
+
 release/linux/reference-library-0.1.0-x86_64.AppImage --appimage-extract-and-run --version
   structural extraction passed; graphical launch stopped at absent X server/DBus
 ```
 
-GitHub Actions run [`33020944489`](https://github.com/bomkino/reference-library/actions/runs/33020944489) passed all five jobs at reviewed implementation head `c9db562`. On `macos-26` arm64, two Swift bridge tests passed, the release Swift executable and `aarch64-apple-darwin` Rust core compiled, ad-hoc codesign verification passed, and the app ZIP checksum verified.
+GitHub Actions run [`33036147773`](https://github.com/bomkino/reference-library/actions/runs/33036147773) passed all five jobs at reviewed implementation head `d252121`. On `macos-26` arm64, Swift tests compiled the cancellable WebKit resource handler, the release Swift executable and `aarch64-apple-darwin` Rust core compiled, ad-hoc codesign verification passed, and the app ZIP checksum and source-bound receipt verified. On Ubuntu x86_64, the complete pacman/AppImage/tar set assembled, archive contents and source-bound receipt verified, and both target bundles uploaded as expiring workflow artifacts.
+
+Artifact `9632095326`, `reference-library-macos-arm64-d252121d1cca9022f679212d0f8c198fa04d20d3`, is 1,792,984 bytes with workflow-container digest `sha256:12ddf66d3d1d9a815a32e243be5d3b4792927aad3df5a9aaf4d20c68511e9846`. Artifact `9632141919`, `reference-library-linux-x86_64-d252121d1cca9022f679212d0f8c198fa04d20d3`, is 338,660,499 bytes with workflow-container digest `sha256:91d5b8923fbf6e78dddf381d10734ef51f970c77d8f844991f28cb4da160d746`. Both expire on 26 September 2026. These are CI artifacts, not releases.
 
 ## Build truth
 
 | Target | Honest status | Verified artifact or behavior | Remaining gate |
 |---|---|---|---|
-| Canonical Rust core | Source-ready; production candidate | Release build, SQLite/WAL public seams, supervised crash/restart | C1 |
+| Canonical Rust core | Source-ready; production candidate | Release build, SQLite/WAL public seams, supervised crash/restart; source-level bounded resource delivery | C1 |
 | Shared workspace | Source-ready | Bounded contact sheet, focus, explicit states, independent scales | M1/L1 assistive-tech and compositor checks |
-| Electron/Linux | Packaged in a compatible Linux x86_64 environment | pacman `1a9af203…`, AppImage `989b25f2…`, tar `540465bf…`; each contains workspace and release core | L1 |
-| Swift/macOS | Compiled and packaged on Apple-Silicon CI | Ad-hoc-signed `.app` ZIP with verified checksum | M1 |
+| Electron/Linux | Packaged in a compatible Linux x86_64 environment | Full pacman/AppImage/tar bundle and exact source-bound receipt retained in CI artifact `9632141919` | L1 |
+| Swift/macOS | Compiled and packaged on Apple-Silicon CI | Ad-hoc-signed `.app` ZIP, checksum and exact source-bound receipt retained in CI artifact `9632095326` | M1 |
 | Cross-platform semantics | Host-neutral pass | Electron-labelled create → Swift-labelled reopen, zero semantic diff | X1 |
 
 ## Security and source-safety evidence
@@ -117,6 +127,7 @@ GitHub Actions run [`33020944489`](https://github.com/bomkino/reference-library/
 - Electron uses sandboxing, context isolation, disabled Node integration, fixed IPC names, restrictive CSP and custom local protocols.
 - WebKit accepts only main-frame messages from `pitchdog-ui://app`; external navigation is denied.
 - Raw paths, wrong/closed sessions, unknown profiles, changed sources and resources above 512 MiB fail before renderer delivery.
+- Both shells deliver authorised resources in cancellable 64 KiB chunks rather than buffering an entire still; target backpressure behavior remains C1.
 - Native paths remain inside privileged core-to-shell descriptors for custom resource handling and native reveal.
 - Source mutation is explicitly absent; scan preserves originals and models missing files as state.
 - Helper exit rejects pending work, freezes shell writes, preserves committed metadata and requires explicit restart.
@@ -124,17 +135,17 @@ GitHub Actions run [`33020944489`](https://github.com/bomkino/reference-library/
 
 ## Spec review
 
-The review in `T01_SPEC_REVIEW.md` found every bounded T01 source requirement satisfied. It retained the accepted WKWebView fallback and recorded only target/release limitations: real bookmark/Finder/VoiceOver behavior, Garuda/KDE integration, real Mac–Garuda–Mac parity, target resource backpressure, signing/notarization, release checksum substitution and final iconography. Deferred features remained absent.
+The review in `T01_SPEC_REVIEW.md`, including its 27 August follow-up at `d252121`, found every bounded T01 source requirement satisfied. It retained the accepted WKWebView fallback and recorded only target/release limitations: real bookmark/Finder/VoiceOver behavior, Garuda/KDE integration, real Mac–Garuda–Mac parity, target resource backpressure, signing/notarization, release checksum substitution and final iconography. Deferred features remained absent.
 
 ## Standards review
 
-The review in `T01_STANDARDS_REVIEW.md` found no Critical or High source-level defect. Rust format/clippy/tests, TypeScript and shell tests/builds, audits, licence inventory, dependency duplication check, bridge security, accessibility semantics, recovery and compatible package assembly passed. The default placeholder icon and unperformed target assistive-tech/signing journeys remain explicit limitations.
+The review in `T01_STANDARDS_REVIEW.md`, including its 27 August follow-up at `d252121`, found no Critical or High source-level defect. Rust format/clippy/tests, TypeScript and shell tests/builds, audits, licence inventory, dependency duplication check, bridge security, bounded resource delivery, accessibility semantics, recovery and compatible package assembly passed. The default placeholder icon and unperformed target assistive-tech/signing journeys remain explicit limitations.
 
 ## Honest limits
 
 - **Verified complete:** package/schema/identity core seam, framed commands/events/cancellation/restart, bounded queries and virtualization, opaque authorization/reveal, host-neutral zero semantic diff.
 - **Source-ready:** shared workspace, Electron shell, SwiftUI/WebKit shell and packaging source.
-- **Packaged in compatible environments:** Linux x86_64 pacman/AppImage/tar; Apple-Silicon CI `.app.zip`.
+- **Packaged in compatible environments:** source-bound Linux x86_64 pacman/AppImage/tar and Apple-Silicon CI `.app.zip` bundles retained through 26 September 2026.
 - **Target-machine blocked:** M1, L1, X1 and therefore C1/ADR acceptance.
 - **Not attempted because outside T01:** source mutation, Excerpts, similarity, duplicate review, broad formats, MCP, accounts, telemetry, AI and release publishing.
 - **Known packaging limitation:** placeholder app icon; Apple package is ad-hoc signed and not notarized.
@@ -159,4 +170,4 @@ Close ADR-004 only after M1 and L1 prove the supervised Rust executable's signin
 
 ## Next exact vertical slice
 
-Run M1 on a representative Apple-Silicon Mac using the exact CI package recipe: clean-account ZIP extraction; create/open one Library; authorize one still Root; verify bookmark restore, progressive Contact Sheet, opaque Preview, Finder reveal, Interface Scale, keyboard/VoiceOver, forced core restart and canonical dump. Pass requires no raw path exposure, no curation loss, valid signing/bundle paths and an appended target receipt. Do not begin T02 before M1/L1/X1/C1 are resolved or explicitly rescheduled.
+Run M1 on a representative Apple-Silicon Mac using artifact `reference-library-macos-arm64-d252121d1cca9022f679212d0f8c198fa04d20d3`: verify its included receipt; perform clean-account ZIP extraction; create/open one Library; authorize one still Root; verify bookmark restore, progressive Contact Sheet, opaque Preview, Finder reveal, Interface Scale, keyboard/VoiceOver, forced core restart and canonical dump. Pass requires no raw path exposure, no curation loss, valid signing/bundle paths and an appended target receipt. Do not begin T02 before M1/L1/X1/C1 are resolved or explicitly rescheduled.

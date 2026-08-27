@@ -4,7 +4,7 @@
 
 Create/open one Library, authorize one Root, progressively discover common stills, browse a bounded Editorial Contact Sheet, select and Preview one Asset through an opaque resource, reveal its Location natively, close/reopen, and produce a host-neutral semantic round-trip.
 
-Source head `621cd4192b6073ffbb0f93a26112c2c8e162da0c` passes the repository, core, workspace, Linux package-directory and Apple-Silicon package jobs. Target integration still requires M1, L1 and X1. ADR-004 remains proposed until C1.
+Source head `d252121d1cca9022f679212d0f8c198fa04d20d3` passes the repository, core, workspace, full Linux package and Apple-Silicon package jobs. Exact source-bound CI artifacts are retained through 26 September 2026. Target integration still requires M1, L1 and X1. ADR-004 remains proposed until C1.
 
 ## Next exact work
 

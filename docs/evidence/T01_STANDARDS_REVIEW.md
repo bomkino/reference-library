@@ -65,3 +65,15 @@ Consequential seams were designed twice where evidence found a fault: restart re
 ## Complexity rejected
 
 No test farm, coverage target, plugin framework, broad media pipeline, source-operation engine, AI layer, updater or abstraction for deferred formats was introduced. Tests remain at package, protocol, bridge, renderer-authority, virtualization, restart and semantic-dump seams.
+
+## 27 August 2026 follow-up hardening review
+
+**Reviewed source:** `d252121d1cca9022f679212d0f8c198fa04d20d3`
+
+- Electron no longer allocates an entire authorised resource before responding. Node stream cancellation follows the request abort signal; tests bound chunks to 64 KiB and reject changed source length before delivery.
+- WebKit now performs the same regular-file/length preflight, streams 64 KiB chunks off the main actor, and cancels the load when WebKit stops its scheme task. Apple-Silicon Swift tests and release compilation passed.
+- Build receipts hash files by stream, reject symlinks, unsafe filenames, byte drift and wrong runner architecture, and preserve explicit claim exclusions.
+- Third-party artifact upload remains pinned to verified `actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02` (`v4.6.2`). Workflow permissions remain read-only.
+- Full packages and their receipts were uploaded only as expiring CI artifacts. No tag, release, deployment or publication was created.
+
+**Finding:** no Critical or High source-level defect introduced. Target cancellation/backpressure, signing, desktop integration and assistive technology remain M1/L1/C1 evidence, not cloud claims.

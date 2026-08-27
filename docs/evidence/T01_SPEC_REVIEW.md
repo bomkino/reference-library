@@ -52,3 +52,14 @@ No source move/copy/Trash, similarity, duplicate review, Excerpt authoring, broa
 ## Next gate
 
 Run M1 and L1 with the exact packages, then X1. Keep ADR-004 and ADR-006 Proposed until those measurements exist.
+
+## 27 August 2026 follow-up hardening review
+
+**Reviewed source:** `d252121d1cca9022f679212d0f8c198fa04d20d3`
+
+- Both privileged opaque-resource handlers now deliver authorised stills in cancellable 64 KiB chunks after an exact regular-file length preflight. The renderer contract and 512 MiB ceiling did not change.
+- CI now builds the complete Linux pacman/AppImage/tar set and Apple-Silicon `.app.zip`, creates SHA-256 receipts bound to the full source commit, verifies each receipt on the matching runner architecture, and retains both bundles as workflow artifacts.
+- Receipt vocabulary explicitly excludes `installed`, `target_integrated` and `released`; artifact upload is not treated as a release.
+- No T02 capability, new renderer authority, format expansion, source mutation, AI, account, telemetry or cloud product dependency was added.
+
+**Finding:** no new T01 deviation. The source-level backpressure gap is reduced; real WebKit/Electron cancellation and memory behavior remain C1 measurements inside M1/L1.
