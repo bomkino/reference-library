@@ -51,13 +51,10 @@ test("Electron supervisor exercises the framed T01 lifecycle and restart seam", 
     const page = await waitForAsset(core, created.sessionId);
     const asset = page.items[0];
     const descriptor = expectResult(
-      await core.request({
-        method: "authorize_resource",
-        params: {
-          sessionId: created.sessionId,
-          assetId: asset.assetId,
-          profile: "preview",
-        },
+      await core.authorizeResource({
+        sessionId: created.sessionId,
+        assetId: asset.assetId,
+        profile: "preview",
       }),
       "resource_authorized",
     );
@@ -79,13 +76,10 @@ test("Electron supervisor exercises the framed T01 lifecycle and restart seam", 
       "library_closed",
     );
     await assert.rejects(
-      core.request({
-        method: "authorize_resource",
-        params: {
-          sessionId: created.sessionId,
-          assetId: asset.assetId,
-          profile: "preview",
-        },
+      core.authorizeResource({
+        sessionId: created.sessionId,
+        assetId: asset.assetId,
+        profile: "preview",
       }),
       (error) => error.code === "SessionClosed" && !error.message.includes(temporary),
     );
