@@ -79,6 +79,8 @@ pub enum CoreError {
     RawPathResourceDenied,
     #[error("protocol version {0} is unsupported")]
     ProtocolVersionUnsupported(u32),
+    #[error("canonical snapshot changed; request a new digest")]
+    CanonicalSnapshotChanged,
     #[error("test-only command is disabled")]
     TestCommandDisabled,
 }
@@ -121,6 +123,7 @@ impl CoreError {
             Self::RenditionCancelled => ("RenditionCancelled", true),
             Self::RawPathResourceDenied => ("RawPathResourceDenied", false),
             Self::ProtocolVersionUnsupported(_) => ("ProtocolVersionUnsupported", false),
+            Self::CanonicalSnapshotChanged => ("CanonicalSnapshotChanged", true),
             Self::TestCommandDisabled => ("TestCommandDisabled", false),
             Self::Io(_) | Self::Database(_) | Self::ManifestJson(_) => ("CoreFailure", true),
         };

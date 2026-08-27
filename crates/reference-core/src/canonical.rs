@@ -1,8 +1,384 @@
-use rusqlite::Connection;
-use serde_json::{Value, json};
+//! Deterministic projections of durable Library meaning.
+//!
+//! `generate` is the legacy whole-document T01 diagnostic. V1 evidence uses
+//! `digest` plus snapshot-bound, bounded `page` calls so a large Library is
+//! never materialized in one control frame.
+
+use reference_protocol::{
+    CanonicalAssetOriginRecord, CanonicalAssetRecord, CanonicalCollectionMembershipRecord,
+    CanonicalCollectionRecord, CanonicalDigest, CanonicalEntity, CanonicalEntityCount,
+    CanonicalLibraryRecord, CanonicalLocationRecord, CanonicalPage, CanonicalRecord,
+    CanonicalRootRecord, CanonicalSourceRecord, CanonicalSourceRevisionRecord,
+    MAX_CANONICAL_PAGE_SIZE,
+};
+use rusqlite::{Connection, Row, params};
+use serde_json::{Map, Value, json};
+use sha2::{Digest, Sha256};
 
 use crate::error::CoreError;
 
+const PROJECTION_FORMAT: &str = "pitchdog-reference-canonical-projection-v1";
+const DUMP_FORMAT: &str = "pitchdog-reference-canonical-dump-v1";
+const DIGEST_DOMAIN: &[u8] = b"pitchdog-reference-canonical-projection\0v1";
+
+const ENTITIES: [CanonicalEntity; 9] = [
+    CanonicalEntity::Library,
+    CanonicalEntity::Roots,
+    CanonicalEntity::Sources,
+    CanonicalEntity::SourceRevisions,
+    CanonicalEntity::Locations,
+    CanonicalEntity::AssetOrigins,
+    CanonicalEntity::Assets,
+    CanonicalEntity::Collections,
+    CanonicalEntity::CollectionMemberships,
+];
+
+/// Compute a deterministic digest and per-entity counts from one SQLite read
+/// snapshot. Records are streamed through SHA-256 one at a time.
+pub fn digest(connection: &Connection) -> Result<CanonicalDigest, CoreError> {
+    let transaction = connection.unchecked_transaction()?;
+    let result = digest_snapshot(&transaction)?;
+    transaction.commit()?;
+    Ok(result)
+}
+
+/// Return one bounded diagnostic page, but only when the caller's digest still
+/// describes the same durable read snapshot. Operational writes excluded from
+/// canonical meaning are intentionally allowed between digest and page calls.
+pub fn page(
+    connection: &Connection,
+    snapshot_digest: &str,
+    entity: CanonicalEntity,
+    cursor: Option<&str>,
+    limit: u32,
+) -> Result<CanonicalPage, CoreError> {
+    if limit == 0 || limit > MAX_CANONICAL_PAGE_SIZE {
+        return Err(CoreError::QueryPageTooLarge(limit));
+    }
+    let offset = decode_cursor(cursor)?;
+    let transaction = connection.unchecked_transaction()?;
+    let current = digest_snapshot(&transaction)?;
+    if current.digest != snapshot_digest {
+        return Err(CoreError::CanonicalSnapshotChanged);
+    }
+
+    let total = current
+        .counts
+        .iter()
+        .find(|entry| entry.entity == entity)
+        .map(|entry| entry.count)
+        .unwrap_or_default();
+    if offset > total {
+        return Err(CoreError::QueryInvalid(
+            "canonical cursor is outside this entity snapshot".into(),
+        ));
+    }
+
+    let mut records = Vec::with_capacity(limit as usize);
+    visit_records(&transaction, entity, Some((offset, limit)), |record| {
+        records.push(record);
+        Ok(())
+    })?;
+    let returned = records.len() as u64;
+    let next_cursor = (offset + returned < total).then(|| encode_cursor(offset + returned));
+    let result = CanonicalPage {
+        format: PROJECTION_FORMAT.into(),
+        snapshot_digest: current.digest,
+        entity,
+        cursor: cursor.map(str::to_owned),
+        limit,
+        total,
+        records,
+        next_cursor,
+    };
+    transaction.commit()?;
+    Ok(result)
+}
+
+fn digest_snapshot(connection: &Connection) -> Result<CanonicalDigest, CoreError> {
+    let mut hasher = Sha256::new();
+    frame(&mut hasher, DIGEST_DOMAIN);
+    let mut counts = Vec::with_capacity(ENTITIES.len());
+    for entity in ENTITIES {
+        let count = entity_count(connection, entity)?;
+        frame(&mut hasher, entity_name(entity).as_bytes());
+        frame(&mut hasher, &count.to_be_bytes());
+        visit_records(connection, entity, None, |record| {
+            let bytes = canonical_json(&record)?;
+            frame(&mut hasher, &bytes);
+            Ok(())
+        })?;
+        counts.push(CanonicalEntityCount { entity, count });
+    }
+    Ok(CanonicalDigest {
+        format: PROJECTION_FORMAT.into(),
+        algorithm: "sha256".into(),
+        digest: format!("sha256:{}", hex(&hasher.finalize())),
+        counts,
+    })
+}
+
+fn frame(hasher: &mut Sha256, bytes: &[u8]) {
+    hasher.update((bytes.len() as u64).to_be_bytes());
+    hasher.update(bytes);
+}
+
+fn canonical_json(record: &CanonicalRecord) -> Result<Vec<u8>, CoreError> {
+    let value = serde_json::to_value(record)?;
+    let mut output = Vec::new();
+    write_canonical_json(&value, &mut output)?;
+    Ok(output)
+}
+
+fn write_canonical_json(value: &Value, output: &mut Vec<u8>) -> Result<(), CoreError> {
+    match value {
+        Value::Null => output.extend_from_slice(b"null"),
+        Value::Bool(value) => output.extend_from_slice(if *value { b"true" } else { b"false" }),
+        Value::Number(value) => output.extend_from_slice(value.to_string().as_bytes()),
+        Value::String(value) => serde_json::to_writer(output, value)?,
+        Value::Array(values) => {
+            output.push(b'[');
+            for (index, value) in values.iter().enumerate() {
+                if index != 0 {
+                    output.push(b',');
+                }
+                write_canonical_json(value, output)?;
+            }
+            output.push(b']');
+        }
+        Value::Object(values) => {
+            output.push(b'{');
+            let mut keys = values.keys().collect::<Vec<_>>();
+            keys.sort_unstable();
+            for (index, key) in keys.into_iter().enumerate() {
+                if index != 0 {
+                    output.push(b',');
+                }
+                serde_json::to_writer(&mut *output, key)?;
+                output.push(b':');
+                write_canonical_json(&values[key], output)?;
+            }
+            output.push(b'}');
+        }
+    }
+    Ok(())
+}
+
+fn entity_count(connection: &Connection, entity: CanonicalEntity) -> Result<u64, CoreError> {
+    let table = match entity {
+        CanonicalEntity::Library => "library_meta",
+        CanonicalEntity::Roots => "roots",
+        CanonicalEntity::Sources => "sources",
+        CanonicalEntity::SourceRevisions => "source_revisions",
+        CanonicalEntity::Locations => "locations",
+        CanonicalEntity::AssetOrigins => "asset_origins",
+        CanonicalEntity::Assets => "assets",
+        CanonicalEntity::Collections => "collections",
+        CanonicalEntity::CollectionMemberships => "collection_assets",
+    };
+    let count = connection.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+        row.get::<_, i64>(0)
+    })?;
+    Ok(count as u64)
+}
+
+fn entity_name(entity: CanonicalEntity) -> &'static str {
+    match entity {
+        CanonicalEntity::Library => "library",
+        CanonicalEntity::Roots => "roots",
+        CanonicalEntity::Sources => "sources",
+        CanonicalEntity::SourceRevisions => "source_revisions",
+        CanonicalEntity::Locations => "locations",
+        CanonicalEntity::AssetOrigins => "asset_origins",
+        CanonicalEntity::Assets => "assets",
+        CanonicalEntity::Collections => "collections",
+        CanonicalEntity::CollectionMemberships => "collection_memberships",
+    }
+}
+
+fn visit_records(
+    connection: &Connection,
+    entity: CanonicalEntity,
+    window: Option<(u64, u32)>,
+    mut visit: impl FnMut(CanonicalRecord) -> Result<(), CoreError>,
+) -> Result<(), CoreError> {
+    let (offset, limit) = window
+        .map(|(offset, limit)| (offset as i64, limit as i64))
+        .unwrap_or((0, i64::MAX));
+
+    macro_rules! visit_query {
+        ($sql:expr, $map:expr) => {{
+            let sql = format!("{} LIMIT ?1 OFFSET ?2", $sql);
+            let mut statement = connection.prepare(&sql)?;
+            let mut rows = statement.query(params![limit, offset])?;
+            while let Some(row) = rows.next()? {
+                visit(($map)(row)?)?;
+            }
+        }};
+    }
+
+    match entity {
+        CanonicalEntity::Library => visit_query!(
+            "SELECT id, name FROM library_meta ORDER BY id",
+            |row: &Row<'_>| -> rusqlite::Result<CanonicalRecord> {
+                Ok(CanonicalRecord::Library(CanonicalLibraryRecord {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                }))
+            }
+        ),
+        CanonicalEntity::Roots => visit_query!(
+            "SELECT id, display_name, root_kind FROM roots ORDER BY id",
+            |row: &Row<'_>| -> rusqlite::Result<CanonicalRecord> {
+                Ok(CanonicalRecord::Root(CanonicalRootRecord {
+                    id: row.get(0)?,
+                    display_name: row.get(1)?,
+                    root_kind: row.get(2)?,
+                }))
+            }
+        ),
+        CanonicalEntity::Sources => visit_query!(
+            "SELECT id, media_family, current_revision_id FROM sources ORDER BY id",
+            |row: &Row<'_>| -> rusqlite::Result<CanonicalRecord> {
+                Ok(CanonicalRecord::Source(CanonicalSourceRecord {
+                    id: row.get(0)?,
+                    media_family: row.get(1)?,
+                    current_revision_id: row.get(2)?,
+                }))
+            }
+        ),
+        CanonicalEntity::SourceRevisions => visit_query!(
+            "SELECT id, source_id, byte_size, quick_fingerprint, mime_detected,
+                    extension_observed, media_metadata_json
+             FROM source_revisions ORDER BY id",
+            |row: &Row<'_>| -> rusqlite::Result<CanonicalRecord> {
+                Ok(CanonicalRecord::SourceRevision(
+                    CanonicalSourceRevisionRecord {
+                        id: row.get(0)?,
+                        source_id: row.get(1)?,
+                        byte_size: row.get::<_, i64>(2)? as u64,
+                        quick_fingerprint: row.get(3)?,
+                        mime_detected: row.get(4)?,
+                        extension_observed: row.get(5)?,
+                        media_metadata: json_column(row, 6)?,
+                    },
+                ))
+            }
+        ),
+        CanonicalEntity::Locations => visit_query!(
+            "SELECT id, root_id, source_id, relative_path_bytes, relative_path_display
+             FROM locations ORDER BY id",
+            |row: &Row<'_>| -> rusqlite::Result<CanonicalRecord> {
+                Ok(CanonicalRecord::Location(CanonicalLocationRecord {
+                    id: row.get(0)?,
+                    root_id: row.get(1)?,
+                    source_id: row.get(2)?,
+                    relative_path_bytes_hex: hex(&row.get::<_, Vec<u8>>(3)?),
+                    relative_path_display: row.get(4)?,
+                }))
+            }
+        ),
+        CanonicalEntity::AssetOrigins => visit_query!(
+            "SELECT id, asset_id, source_id, origin_kind, origin_spec_json, revision_binding
+             FROM asset_origins ORDER BY id",
+            |row: &Row<'_>| -> rusqlite::Result<CanonicalRecord> {
+                Ok(CanonicalRecord::AssetOrigin(CanonicalAssetOriginRecord {
+                    id: row.get(0)?,
+                    asset_id: row.get(1)?,
+                    source_id: row.get(2)?,
+                    origin_kind: row.get(3)?,
+                    origin_spec: json_column(row, 4)?,
+                    revision_binding: row.get(5)?,
+                }))
+            }
+        ),
+        CanonicalEntity::Assets => visit_query!(
+            "SELECT id, custom_title, review_state, note FROM assets ORDER BY id",
+            |row: &Row<'_>| -> rusqlite::Result<CanonicalRecord> {
+                Ok(CanonicalRecord::Asset(CanonicalAssetRecord {
+                    id: row.get(0)?,
+                    custom_title: row.get(1)?,
+                    review_state: row.get(2)?,
+                    note: row.get(3)?,
+                }))
+            }
+        ),
+        CanonicalEntity::Collections => visit_query!(
+            "SELECT id, name FROM collections ORDER BY id",
+            |row: &Row<'_>| -> rusqlite::Result<CanonicalRecord> {
+                Ok(CanonicalRecord::Collection(CanonicalCollectionRecord {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                }))
+            }
+        ),
+        CanonicalEntity::CollectionMemberships => visit_query!(
+            "SELECT collection_id, asset_id FROM collection_assets
+             ORDER BY collection_id, asset_id",
+            |row: &Row<'_>| -> rusqlite::Result<CanonicalRecord> {
+                Ok(CanonicalRecord::CollectionMembership(
+                    CanonicalCollectionMembershipRecord {
+                        collection_id: row.get(0)?,
+                        asset_id: row.get(1)?,
+                    },
+                ))
+            }
+        ),
+    }
+    Ok(())
+}
+
+fn json_column(row: &Row<'_>, index: usize) -> rusqlite::Result<Value> {
+    let text: String = row.get(index)?;
+    let value = serde_json::from_str(&text).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            index,
+            rusqlite::types::Type::Text,
+            Box::new(error),
+        )
+    })?;
+    Ok(normalize_json(value))
+}
+
+fn normalize_json(value: Value) -> Value {
+    match value {
+        Value::Array(values) => Value::Array(values.into_iter().map(normalize_json).collect()),
+        Value::Object(values) => {
+            let mut entries = values.into_iter().collect::<Vec<_>>();
+            entries.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+            let mut normalized = Map::new();
+            for (key, value) in entries {
+                normalized.insert(key, normalize_json(value));
+            }
+            Value::Object(normalized)
+        }
+        value => value,
+    }
+}
+
+fn decode_cursor(cursor: Option<&str>) -> Result<u64, CoreError> {
+    match cursor {
+        None => Ok(0),
+        Some(value)
+            if !value.is_empty()
+                && value.bytes().all(|byte| byte.is_ascii_digit())
+                && (value == "0" || !value.starts_with('0')) =>
+        {
+            value
+                .parse::<u64>()
+                .map_err(|_| CoreError::QueryInvalid("canonical cursor is malformed".into()))
+        }
+        Some(_) => Err(CoreError::QueryInvalid(
+            "canonical cursor is malformed".into(),
+        )),
+    }
+}
+
+fn encode_cursor(offset: u64) -> String {
+    offset.to_string()
+}
+
+/// Legacy whole-document diagnostic retained for T01/T02 compatibility.
 pub fn generate(connection: &Connection) -> Result<Value, CoreError> {
     let library = connection.query_row(
         "SELECT id, schema_version, name, library_revision FROM library_meta LIMIT 1",
@@ -17,7 +393,7 @@ pub fn generate(connection: &Connection) -> Result<Value, CoreError> {
         },
     )?;
     Ok(json!({
-        "format": "pitchdog-reference-canonical-dump-v1",
+        "format": DUMP_FORMAT,
         "library": library,
         "roots": rows(connection,
             "SELECT id, display_name, root_kind, state FROM roots ORDER BY id", 4,
