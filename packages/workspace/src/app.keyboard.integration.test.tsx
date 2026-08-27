@@ -231,6 +231,7 @@ describe("V1 keyboard daily-use seams", () => {
     await waitFor(() => expect(button("Delete Final Selects")).not.toBeNull());
     await focusAndPress(button("Delete Final Selects"), " ");
     expect(host.querySelector('[role="alertdialog"]')).not.toBeNull();
+    expect(document.activeElement).toBe(button("Delete Collection"));
     await press("Escape");
     expect(host.querySelector('[role="alertdialog"]')).toBeNull();
     await focusAndPress(button("Delete Final Selects"), "Enter");

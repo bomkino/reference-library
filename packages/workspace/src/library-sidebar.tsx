@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   MAX_COLLECTION_NAME_SCALARS,
   type CollectionSummary,
@@ -29,6 +29,7 @@ export function LibrarySidebar(props: {
   const [rename, setRename] = useState("");
   const [deleting, setDeleting] = useState<CollectionSummary | null>(null);
   const renameInput = useRef<HTMLInputElement>(null);
+  const deleteConfirm = useRef<HTMLButtonElement>(null);
   const returnFocus = useRef<HTMLButtonElement>(null);
   const allAssets = useRef<HTMLButtonElement>(null);
   const restoreFocus = () => requestAnimationFrame(() => {
@@ -53,6 +54,16 @@ export function LibrarySidebar(props: {
 
   useEffect(() => { void load(); }, [props.revisionPulse, props.sessionId]);
   useEffect(() => { if (editing) renameInput.current?.focus(); }, [editing]);
+  useLayoutEffect(() => {
+    if (!deleting) return;
+    const frame = requestAnimationFrame(() => deleteConfirm.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [deleting]);
+
+  const dismissDelete = () => {
+    setDeleting(null);
+    restoreFocus();
+  };
 
   const createError = textLimitError(newName, MAX_COLLECTION_NAME_SCALARS, "Collection name", true);
   const renameError = textLimitError(rename, MAX_COLLECTION_NAME_SCALARS, "Collection name", true);
@@ -99,7 +110,17 @@ export function LibrarySidebar(props: {
   };
 
   return (
-    <aside className="sidebar" aria-label="Library navigation">
+    <aside
+      className="sidebar"
+      aria-label="Library navigation"
+      onKeyDownCapture={(event) => {
+        if (deleting && event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          dismissDelete();
+        }
+      }}
+    >
       <div>
         <p className="eyebrow">Library</p>
         <p className="sidebar__count">{props.total.toLocaleString()} {props.total === 1 ? "Asset" : "Assets"}</p>
@@ -162,10 +183,10 @@ export function LibrarySidebar(props: {
       </section>
 
       {deleting && (
-        <div className="confirmation" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" onKeyDown={(event) => handleDialogKey(event, () => { setDeleting(null); restoreFocus(); })}>
+        <div className="confirmation" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" onKeyDown={(event) => handleDialogKey(event, dismissDelete)}>
           <h3 id="delete-title">Delete “{deleting.name}”?</h3>
           <p>Assets and original files remain unchanged.</p>
-          <div className="button-row"><button autoFocus onClick={() => void confirmDelete()}>Delete Collection</button><button className="button--secondary" onClick={() => { setDeleting(null); restoreFocus(); }}>Cancel</button></div>
+          <div className="button-row"><button ref={deleteConfirm} autoFocus onClick={() => void confirmDelete()}>Delete Collection</button><button className="button--secondary" onClick={dismissDelete}>Cancel</button></div>
         </div>
       )}
     </aside>
