@@ -1,12 +1,12 @@
 use std::{
     fs,
-    io::{BufReader, BufWriter},
+    io::{BufReader, BufWriter, Write},
     process::{Child, ChildStdin, ChildStdout, Command as ProcessCommand, Stdio},
 };
 
 use reference_protocol::{
-    AssetProjection, ClientFrame, Command, CommandResult, Event, PROTOCOL_VERSION, ReviewState,
-    ServerFrame, read_frame, write_frame,
+    AssetProjection, ClientFrame, Command, CommandResult, Event, MAX_NOTE_CHARS, MAX_TITLE_CHARS,
+    PROTOCOL_VERSION, ProtocolError, ReviewState, ServerFrame, read_frame, write_frame,
 };
 use uuid::Uuid;
 
@@ -74,6 +74,40 @@ impl CoreProcess {
                 | ServerFrame::Error { .. } => {}
             }
         }
+    }
+
+    fn protocol_error(&mut self, request_id: &str) -> ProtocolError {
+        loop {
+            match read_frame::<ServerFrame>(&mut self.output)
+                .unwrap()
+                .unwrap()
+            {
+                ServerFrame::Error {
+                    request_id: actual,
+                    error,
+                    ..
+                } if actual == request_id => return error,
+                ServerFrame::Response {
+                    request_id: actual,
+                    result,
+                    ..
+                } if actual == request_id => {
+                    panic!("expected Core error, received {result:?}")
+                }
+                ServerFrame::Event { .. }
+                | ServerFrame::Response { .. }
+                | ServerFrame::Error { .. } => {}
+            }
+        }
+    }
+
+    fn send_raw_json(&mut self, value: serde_json::Value) {
+        let bytes = serde_json::to_vec(&value).unwrap();
+        self.input
+            .write_all(&(bytes.len() as u32).to_be_bytes())
+            .unwrap();
+        self.input.write_all(&bytes).unwrap();
+        self.input.flush().unwrap();
     }
 
     fn wait_for_completed_job(&mut self, job_id: &str) {
@@ -369,6 +403,167 @@ fn committed_curation_and_collection_survive_two_supervised_recovery_cycles() {
     fs::remove_dir_all(directory).unwrap();
 }
 
+#[test]
+fn framed_curation_and_collection_failures_are_typed_path_free_and_non_mutating() {
+    let directory = std::env::temp_dir().join(format!("pitchdog-errors-{}", Uuid::new_v4()));
+    let root = directory.join("Secret Root");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("secret-still.png"), PNG).unwrap();
+    let library = directory.join("Private Editorial.pitchlibrary");
+    let mut core = CoreProcess::start();
+
+    core.send(
+        "create-errors",
+        Command::CreateLibrary {
+            path: library.to_string_lossy().into_owned(),
+            name: "Editorial errors".into(),
+        },
+    );
+    let CommandResult::SessionOpened(opened) = core.response("create-errors") else {
+        panic!("wrong create response")
+    };
+    core.send(
+        "add-errors-root",
+        Command::AddRoot {
+            session_id: opened.session_id.clone(),
+            authorized_path: root.to_string_lossy().into_owned(),
+            display_name: "Secret Root".into(),
+        },
+    );
+    let CommandResult::RootAdded { job_id, .. } = core.response("add-errors-root") else {
+        panic!("wrong add response")
+    };
+    core.wait_for_completed_job(&job_id);
+    core.send(
+        "query-errors",
+        Command::QueryAssets {
+            session_id: opened.session_id.clone(),
+            offset: 0,
+            limit: 1,
+            projection: AssetProjection::ContactSheetStandard,
+        },
+    );
+    let CommandResult::AssetPage(page) = core.response("query-errors") else {
+        panic!("wrong query response")
+    };
+    let asset_id = page.items[0].asset_id.clone();
+    let wrong_session = Uuid::new_v4().to_string();
+
+    core.send(
+        "wrong-curation-session",
+        Command::UpdateAssetTitle {
+            session_id: wrong_session.clone(),
+            asset_id: asset_id.clone(),
+            expected_revision: 0,
+            title: Some("Must not write".into()),
+        },
+    );
+    assert_public_error(
+        core.protocol_error("wrong-curation-session"),
+        "SessionClosed",
+        &directory,
+    );
+    core.send(
+        "wrong-collection-session",
+        Command::CreateCollection {
+            session_id: wrong_session,
+            name: "Must not exist".into(),
+        },
+    );
+    assert_public_error(
+        core.protocol_error("wrong-collection-session"),
+        "SessionClosed",
+        &directory,
+    );
+    core.send(
+        "unknown-asset",
+        Command::UpdateAssetReview {
+            session_id: opened.session_id.clone(),
+            asset_id: Uuid::new_v4().to_string(),
+            expected_revision: 0,
+            review_state: ReviewState::Reject,
+        },
+    );
+    assert_public_error(
+        core.protocol_error("unknown-asset"),
+        "AssetNotFound",
+        &directory,
+    );
+    core.send(
+        "oversized-title",
+        Command::UpdateAssetTitle {
+            session_id: opened.session_id.clone(),
+            asset_id: asset_id.clone(),
+            expected_revision: 0,
+            title: Some("🦀".repeat(MAX_TITLE_CHARS + 1)),
+        },
+    );
+    assert_public_error(
+        core.protocol_error("oversized-title"),
+        "QueryInvalid",
+        &directory,
+    );
+    core.send(
+        "oversized-note",
+        Command::UpdateAssetNote {
+            session_id: opened.session_id.clone(),
+            asset_id: asset_id.clone(),
+            expected_revision: 0,
+            note: Some("🧭".repeat(MAX_NOTE_CHARS + 1)),
+        },
+    );
+    assert_public_error(
+        core.protocol_error("oversized-note"),
+        "QueryInvalid",
+        &directory,
+    );
+    core.send(
+        "unchanged-after-errors",
+        Command::GetAsset {
+            session_id: opened.session_id.clone(),
+            asset_id: asset_id.clone(),
+        },
+    );
+    let CommandResult::Asset(unchanged) = core.response("unchanged-after-errors") else {
+        panic!("wrong detail response")
+    };
+    assert_eq!(unchanged.revision, 0);
+    assert_eq!(unchanged.custom_title, None);
+    assert_eq!(unchanged.note, None);
+    assert_eq!(unchanged.review_state, "unreviewed");
+    core.send(
+        "collections-after-errors",
+        Command::ListCollections {
+            session_id: opened.session_id.clone(),
+        },
+    );
+    assert!(matches!(
+        core.response("collections-after-errors"),
+        CommandResult::Collections { items } if items.is_empty()
+    ));
+
+    core.send_raw_json(serde_json::json!({
+        "protocolVersion": PROTOCOL_VERSION,
+        "requestId": "invalid-review",
+        "command": {
+            "method": "update_asset_review",
+            "params": {
+                "sessionId": opened.session_id,
+                "assetId": asset_id,
+                "expectedRevision": 0,
+                "reviewState": "archive"
+            }
+        }
+    }));
+    assert_public_error(
+        core.protocol_error("invalid-frame"),
+        "ProtocolFrameInvalid",
+        &directory,
+    );
+    assert!(core.child.wait().unwrap().success());
+    fs::remove_dir_all(directory).unwrap();
+}
+
 fn crash_and_wait(core: &mut CoreProcess) {
     core.send("crash", Command::TestCrash);
     while read_frame::<ServerFrame>(&mut core.output)
@@ -426,4 +621,16 @@ fn open_and_assert_editorial(
                 && items[0].asset_count == 1
     ));
     opened.session_id
+}
+
+fn assert_public_error(error: ProtocolError, code: &str, private_directory: &std::path::Path) {
+    assert_eq!(error.code, code);
+    assert!(!error.retryable);
+    assert!(
+        !error
+            .message
+            .contains(&private_directory.to_string_lossy()[..])
+    );
+    assert!(!error.message.contains("Secret Root"));
+    assert!(!error.message.contains("secret-still.png"));
 }
