@@ -23,6 +23,7 @@ import {
   mimeForUiPath,
   resolveBundledUiPath,
 } from "./resource-security.mjs";
+import { authorizedResourceResponse } from "./resource-response.mjs";
 
 protocol.registerSchemesAsPrivileged([
   { scheme: "pitchdog-ui", privileges: { standard: true, secure: true, supportFetchAPI: true } },
@@ -120,16 +121,7 @@ function registerProtocols() {
       ) {
         throw new Error("Resource authorization mismatch");
       }
-      const bytes = await readFile(descriptor.nativePathForHandler);
-      if (bytes.length !== descriptor.contentLength) throw new Error("Source changed during read");
-      return new Response(bytes, {
-        headers: {
-          "Content-Type": descriptor.mimeType,
-          "Content-Length": String(bytes.length),
-          "Cache-Control": "private, no-store",
-          "X-Content-Type-Options": "nosniff",
-        },
-      });
+      return await authorizedResourceResponse(descriptor, { signal: request.signal });
     } catch (error) {
       const status = error?.code === "SessionClosed" ? 410 : 403;
       return new Response(status === 410 ? "Session closed" : "Resource denied", { status });

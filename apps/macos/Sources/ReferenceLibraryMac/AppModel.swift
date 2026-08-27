@@ -382,7 +382,7 @@ final class AppModel: ObservableObject {
     }
 }
 
-struct ResourceDescriptor {
+struct ResourceDescriptor: Sendable {
     let nativePath: String
     let mimeType: String
     let contentLength: Int
