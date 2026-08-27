@@ -159,3 +159,36 @@ Do not rewrite or delete entries. Corrections append a superseding entry.
 **Fresh measurement:** GitHub branch readback returned the exact V1 SHA on `main`. Run `33120794811` then passed all five jobs on the actual `main` ref. Main-scoped artifacts are Apple arm64 `9666411956` (workflow ZIP SHA-256 `46466368be45f203592d30170aeedc1f6f8241f79e5ab415e9374831d085463e`) and Linux x86_64 `9666523446` (workflow ZIP SHA-256 `cf63aac91c147375739b4e11b497db49d4c265d9edd592a755a5686632d36af9`).
 
 **Decision:** treat `main` as canonical source-ready V1. Target integration and public release remain separate states. Close documentation on `main`, require exact-head CI, and delete only obsolete branches already proved to be ancestors.
+
+
+## 2026-08-28 — Repository lifecycle and CI hardening
+
+**Hypothesis:** completed worker controls and ambient toolchain drift can leave source behavior correct while leaking runtime capacity or making later evidence irreproducible.
+
+**Change:** release every finished scan control even when terminal ledger persistence fails; ignore preference-read failures after their workspace unmounts; add focused regressions; pin Node and Rust; bind CI to those pins; add concurrency cancellation, job timeouts, stronger repository checks and maintenance documentation.
+
+**Fresh measurement:** the repair bootstrap passed the expanded repository-boundary check and `git diff --check`. Full Rust, Node, Linux-package and macOS-package evidence remains required on the exact branch head before integration.
+
+**Decision:** keep the narrow lifecycle and maintenance repairs only if the complete five-job workflow passes. Preserve the existing source-ready/target-integrated distinction; M1, L1, X1 and C1 remain open.
+
+
+## 2026-08-28 — Finished rendition controls release after persistence failure
+
+**Hypothesis:** a completed resource worker whose terminal job-state write failed was removed from in-flight capacity but retained in the Core job map indefinitely.
+
+**Change:** release the completed in-memory resource control unconditionally after consuming its response. The persistence failure remains an error and already emits `CoreNeedsRestart`. Add a focused regression covering the failed-persistence path.
+
+**Fresh measurement:** the focused Core regression and repository boundary must pass before this repair is committed; the complete five-job workflow remains the integration gate.
+
+**Decision:** use one lifecycle invariant for scan and rendition workers: finished work never occupies live in-memory control state, while durable-state failures remain explicit restart conditions.
+
+
+## 2026-08-28 — Session shutdown releases completed controls
+
+**Hypothesis:** `stop_jobs_for_session` waited for workers and joined scan threads but left their `JobControl` records resident. A dropped terminal event or failed terminal write could therefore consume future scan capacity after a Library closed.
+
+**Change:** after every worker for the session confirms completion, remove each scan and resource control; join the owned scan handle before dropping it. Add a regression containing both worker kinds.
+
+**Fresh measurement:** the focused shutdown regression, format gate and repository boundary must pass before commit; the complete five-job workflow remains the integration gate.
+
+**Decision:** successful session shutdown is now the final in-memory ownership boundary. Timed-out workers remain retained because the session and writer lock must stay alive until quiescence.

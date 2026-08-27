@@ -659,13 +659,12 @@ impl CommandEngine {
             let Some(mut job) = self.jobs.remove(&job_id) else {
                 continue;
             };
-            let persisted = job
-                .handle
-                .take()
-                .and_then(|handle| handle.join().ok())
-                .unwrap_or(false);
-            if !persisted {
-                self.jobs.insert(job_id, job);
+            // A finished worker must release its in-memory capacity even when
+            // writing the terminal ledger state failed. scan_root already
+            // emitted CoreNeedsRestart; retaining a consumed JoinHandle would
+            // make the slot impossible to reap in this process.
+            if let Some(handle) = job.handle.take() {
+                let _ = handle.join();
             }
         }
     }
@@ -709,8 +708,10 @@ impl CommandEngine {
             }
         }
         for job_id in &job_ids {
-            if let Some(job) = self.jobs.get_mut(job_id)
-                && job.kind == JobKind::Scan
+            let Some(mut job) = self.jobs.remove(job_id) else {
+                continue;
+            };
+            if job.kind == JobKind::Scan
                 && let Some(handle) = job.handle.take()
             {
                 let _ = handle.join();
@@ -738,9 +739,11 @@ impl CommandEngine {
     fn take_async_response(&mut self) -> Option<ServerFrame> {
         let response = self.async_receiver.try_recv().ok()?;
         self.resource_inflight = self.resource_inflight.saturating_sub(1);
-        if response.terminal_persisted {
-            self.jobs.remove(&response.job_id);
-        }
+        // The worker is finished even when its terminal ledger write failed.
+        // run_job_outcome already returned an error and emitted
+        // CoreNeedsRestart; retaining this control would only leak the job map.
+        debug_assert!(response.terminal_persisted || response.result.is_err());
+        self.jobs.remove(&response.job_id);
         let result = if self.sessions.contains_key(&response.session_id) {
             response.result
         } else {
@@ -1032,7 +1035,7 @@ mod tests {
     }
 
     #[test]
-    fn finished_scan_control_is_reaped_even_when_its_terminal_event_was_dropped() {
+    fn finished_scan_control_is_reaped_after_terminal_persistence_failure() {
         let mut engine = CommandEngine::new();
         let job_id = "finished-scan".to_owned();
         engine.jobs.insert(
@@ -1040,7 +1043,7 @@ mod tests {
             JobControl {
                 session_id: "closed-session".into(),
                 cancelled: Arc::new(AtomicBool::new(false)),
-                handle: Some(thread::spawn(|| true)),
+                handle: Some(thread::spawn(|| false)),
                 kind: JobKind::Scan,
                 completion: None,
             },
@@ -1057,5 +1060,75 @@ mod tests {
             .unwrap();
         assert!(matches!(result, CommandResult::Capabilities(_)));
         assert!(!engine.jobs.contains_key(&job_id));
+    }
+
+    #[test]
+    fn finished_resource_control_is_reaped_after_terminal_persistence_failure() {
+        let mut engine = CommandEngine::new();
+        let (async_sender, async_receiver) = mpsc::channel();
+        engine.async_receiver = async_receiver;
+        let job_id = "finished-resource".to_owned();
+        engine.jobs.insert(
+            job_id.clone(),
+            JobControl {
+                session_id: "closed-session".into(),
+                cancelled: Arc::new(AtomicBool::new(false)),
+                handle: None,
+                kind: JobKind::Resource,
+                completion: None,
+            },
+        );
+        engine.resource_inflight = 1;
+        async_sender
+            .send(AsyncResponse {
+                request_id: "resource".into(),
+                job_id: job_id.clone(),
+                session_id: "closed-session".into(),
+                result: Err(CoreError::RenditionCacheFailure),
+                terminal_persisted: false,
+            })
+            .unwrap();
+
+        let response = engine.take_async_response().unwrap();
+        assert!(matches!(
+            response,
+            ServerFrame::Error { request_id, error, .. }
+                if request_id == "resource" && error.code == "RenditionCancelled"
+        ));
+        assert_eq!(engine.resource_inflight, 0);
+        assert!(!engine.jobs.contains_key(&job_id));
+    }
+
+    #[test]
+    fn stopping_session_releases_all_completed_job_controls() {
+        let mut engine = CommandEngine::new();
+        let session_id = "closing-session".to_owned();
+        let scan_id = "completed-scan".to_owned();
+        let resource_id = "completed-resource".to_owned();
+        engine.jobs.insert(
+            scan_id.clone(),
+            JobControl {
+                session_id: session_id.clone(),
+                cancelled: Arc::new(AtomicBool::new(false)),
+                handle: Some(thread::spawn(|| false)),
+                kind: JobKind::Scan,
+                completion: Some(Arc::new((Mutex::new(true), Condvar::new()))),
+            },
+        );
+        engine.jobs.insert(
+            resource_id.clone(),
+            JobControl {
+                session_id: session_id.clone(),
+                cancelled: Arc::new(AtomicBool::new(false)),
+                handle: None,
+                kind: JobKind::Resource,
+                completion: Some(Arc::new((Mutex::new(true), Condvar::new()))),
+            },
+        );
+
+        engine.stop_jobs_for_session(&session_id).unwrap();
+
+        assert!(!engine.jobs.contains_key(&scan_id));
+        assert!(!engine.jobs.contains_key(&resource_id));
     }
 }
