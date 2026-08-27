@@ -92,3 +92,10 @@ Do not rewrite or delete entries. Corrections append a superseding entry.
 **Change:** common-still scans now retain Unix device/inode evidence, require a unique single-link file identity plus matching current Revision and absent old path before updating the existing Location, and reactivate a Source when its original path returns. Insufficient evidence inserts a separate Source/Location/Asset and leaves the unseen original Missing.
 **Fresh measurement:** `cargo test --workspace` passed 12 tests. Three new T02 public-seam fixtures proved stable Source, SourceRevision, Location, AssetOrigin and Asset IDs across rename/reopen; identical delete-plus-copy produced two equal fingerprints but distinct Assets with the original Missing; original-path restoration returned the same Source and Asset to `active`/`present`. The 100,000-Asset T01 window remained green in 7.91 seconds. Rust format, Clippy with warnings denied, repository boundary and diff checks passed.
 **Decision:** keep the strict relocation predicate. Accept visible false negatives when host evidence is missing or ambiguous; never manufacture a lineage merge from path, filename, size or fingerprint.
+
+## 2026-08-27 — T02 stable editorial selection
+
+**Hypothesis:** the bounded contact sheet can reflect a reconciled rename or Missing transition without dropping selection, reopening renderer authority or retaining a stale inspector summary.
+**Change:** loaded Asset pages now rebind selection and Preview by stable Asset ID; a Missing Preview renders an explicit unavailable state while retaining curation. The core advertises external rename reconciliation without adding a command or source-mutation capability.
+**Fresh measurement:** `npm run check` passed TypeScript, 6 workspace tests, 8 Linux shell tests and both production builds. The new selection fixture kept identity while refreshing renamed and Missing summaries and preserved an unloaded selection. Existing opaque-resource and supervisor tests remained green.
+**Decision:** keep ID-based summary refresh inside the workspace. Do not add a reconciliation panel or mutation control to T02.

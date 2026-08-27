@@ -38,6 +38,7 @@ No renderer or shell authority is added. Existing terminal job events cause the 
 
 - A same-filesystem external rename preserves Source, Location, Asset, AssetOrigin and SourceRevision IDs.
 - The renamed Asset reports its new display path and remains previewable and revealable.
+- A selected or previewed Asset keeps its Asset ID while its loaded summary refreshes to the renamed or Missing state.
 - Delete-plus-copy with identical bytes does not infer identity from content; the old Asset is Missing and a distinct present Asset is created.
 - Missing then restoring the original path returns the original Source to `active` without replacing its Asset ID.
 - Close/reopen preserves the reconciled canonical meaning.

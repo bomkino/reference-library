@@ -73,6 +73,7 @@ impl CommandEngine {
                     features: vec![
                         "package-v1".into(),
                         "progressive-common-stills".into(),
+                        "external-rename-reconciliation".into(),
                         "opaque-resources".into(),
                         "canonical-dump-v1".into(),
                     ],
@@ -171,7 +172,7 @@ impl CommandEngine {
                         CapabilityDetail {
                             name: "source-mutation".into(),
                             state: "intentionally_absent".into(),
-                            reason: Some("outside T01".into()),
+                            reason: Some("outside T02".into()),
                         },
                     ],
                 }))

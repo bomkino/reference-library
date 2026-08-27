@@ -1,4 +1,17 @@
+import type { AssetSummary } from "@pitchdog/reference-bridge";
+
 export type NavigationKey = "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown" | "Home" | "End";
+
+export function refreshSelectedAsset(
+  selected: AssetSummary | null,
+  loadedItems: Iterable<AssetSummary>,
+): AssetSummary | null {
+  if (!selected) return null;
+  for (const item of loadedItems) {
+    if (item.assetId === selected.assetId) return item;
+  }
+  return selected;
+}
 
 export function moveSelectionIndex(
   current: number,

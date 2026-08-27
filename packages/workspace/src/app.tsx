@@ -7,6 +7,7 @@ import type {
   WorkspaceEvent,
 } from "@pitchdog/reference-bridge";
 import { ContactSheet } from "./contact-sheet";
+import { refreshSelectedAsset } from "./selection";
 import { useAssetPager } from "./use-asset-pager";
 
 const INTERFACE_SCALES: InterfaceScale[] = [0.8, 1, 1.25, 1.5];
@@ -174,6 +175,13 @@ function OpenWorkspace(props: OpenWorkspaceProps) {
     [pager.total],
   );
 
+  useEffect(() => {
+    const refreshedSelection = refreshSelectedAsset(props.selected, pager.items.values());
+    if (refreshedSelection !== props.selected) props.setSelected(refreshedSelection);
+    const refreshedPreview = refreshSelectedAsset(props.preview, pager.items.values());
+    if (refreshedPreview !== props.preview) props.setPreview(refreshedPreview);
+  }, [pager.items, props.preview, props.selected, props.setPreview, props.setSelected]);
+
   const chooseRoot = async () => {
     props.setShellError(null);
     try {
@@ -320,13 +328,18 @@ function OpenWorkspace(props: OpenWorkspaceProps) {
 
 function AssetPreview(props: { asset: AssetSummary; source: string; onClose(): void }) {
   const [failed, setFailed] = useState(false);
+  const unavailable = props.asset.availability !== "present";
   return (
     <div className="preview" role="dialog" aria-modal="true" aria-label={`Preview ${props.asset.displayName}`}>
       <button className="preview__close" autoFocus onClick={props.onClose}>Close Preview</button>
-      {failed ? (
+      {failed || unavailable ? (
         <div className="preview__error" role="alert">
           <strong>Preview unavailable</strong>
-          <span>The original remains catalogued. Its source was not changed.</span>
+          <span>
+            {unavailable
+              ? `The source is ${props.asset.availability}. Its curation remains catalogued.`
+              : "The original remains catalogued. Its source was not changed."}
+          </span>
         </div>
       ) : (
         <img alt={props.asset.displayName} src={props.source} onError={() => setFailed(true)} />
