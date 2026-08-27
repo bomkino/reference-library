@@ -1,5 +1,6 @@
 pub mod canonical;
 pub mod discovery;
+pub mod editorial;
 pub mod error;
 pub mod manifest;
 pub mod schema;
