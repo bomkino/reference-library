@@ -22,6 +22,12 @@ import { assetDraftErrors, useAssetEditor } from "./use-asset-editor";
 import { useAssetPager } from "./use-asset-pager";
 import { handleDialogKey } from "./dialog-keys";
 import { safeErrorMessage } from "./safe-errors";
+import {
+  WorkspaceEventInvalidator,
+  applyInvalidationBatch,
+  initialWorkspaceInvalidations,
+  type WorkspaceInvalidations,
+} from "./workspace-events";
 
 const INTERFACE_SCALES: InterfaceScale[] = [0.8, 1, 1.25, 1.5];
 
@@ -35,29 +41,42 @@ export function App() {
 
 function LibraryWorkspace({ bridge }: { bridge: ReferenceWorkspaceBridge }) {
   const [session, setSession] = useState<SessionOpened | null>(null);
-  const [eventPulse, setEventPulse] = useState(0);
+  const [invalidations, setInvalidations] = useState(initialWorkspaceInvalidations);
   const [busy, setBusy] = useState(false);
   const [shellError, setShellError] = useState<string | null>(null);
   const [needsRestart, setNeedsRestart] = useState(false);
   const [openIntent, setOpenIntent] = useState<{ intentId: string; displayName: string } | null>(null);
 
-  useEffect(() => bridge.subscribe((event: WorkspaceEvent) => {
-    if (event.event === "library_opened") {
-      setSession(event.value);
-      setOpenIntent(null);
-      setNeedsRestart(false);
-      setShellError(null);
-    }
-    if (event.event === "library_open_requested") setOpenIntent(event.value);
-    if (event.event === "library_closed") setSession((current) => current?.sessionId === event.value.sessionId ? null : current);
-    if (["root_state_changed", "scan_progress_changed", "assets_inserted", "asset_updated", "collections_changed", "job_updated"].includes(event.event)) {
-      setEventPulse((value) => value + 1);
-    }
-    if (event.event === "core_needs_restart") {
-      setShellError("Reference Core stopped. Restart it to continue.");
-      setNeedsRestart(true);
-    }
-  }), [bridge]);
+  useEffect(() => {
+    const invalidator = new WorkspaceEventInvalidator((batch) => {
+      setInvalidations((current) => applyInvalidationBatch(current, batch));
+    });
+    const unsubscribe = bridge.subscribe((event: WorkspaceEvent) => {
+      if (event.event === "library_opened") {
+        invalidator.reset();
+        setInvalidations(initialWorkspaceInvalidations());
+        setSession(event.value);
+        setOpenIntent(null);
+        setNeedsRestart(false);
+        setShellError(null);
+      } else if (event.event === "library_open_requested") {
+        setOpenIntent(event.value);
+      } else if (event.event === "library_closed") {
+        invalidator.reset();
+        setInvalidations(initialWorkspaceInvalidations());
+        setSession((current) => current?.sessionId === event.value.sessionId ? null : current);
+      } else if (event.event === "core_needs_restart") {
+        setShellError("Reference Core stopped. Restart it to continue.");
+        setNeedsRestart(true);
+      } else {
+        invalidator.accept(event);
+      }
+    });
+    return () => {
+      unsubscribe();
+      invalidator.dispose();
+    };
+  }, [bridge]);
 
   const openSession = async (mode: "create" | "open") => {
     setBusy(true);
@@ -114,7 +133,7 @@ function LibraryWorkspace({ bridge }: { bridge: ReferenceWorkspaceBridge }) {
       key={session.libraryId}
       bridge={bridge}
       session={session}
-      eventPulse={eventPulse}
+      invalidations={invalidations}
       openIntent={openIntent}
       needsRestart={needsRestart}
       shellError={shellError}
@@ -137,7 +156,7 @@ interface PendingTransition {
 function OpenWorkspace(props: {
   bridge: ReferenceWorkspaceBridge;
   session: SessionOpened;
-  eventPulse: number;
+  invalidations: WorkspaceInvalidations;
   openIntent: { intentId: string; displayName: string } | null;
   needsRestart: boolean;
   shellError: string | null;
@@ -156,9 +175,14 @@ function OpenWorkspace(props: {
   const [roots, setRoots] = useState<RootSummary[]>([]);
   const [pending, setPending] = useState<PendingTransition | null>(null);
   const [busy, setBusy] = useState(false);
-  const pager = useAssetPager(props.bridge, props.session.sessionId, query, props.eventPulse);
+  const pager = useAssetPager(
+    props.bridge,
+    props.session.sessionId,
+    query,
+    props.invalidations.assets,
+  );
   const refreshSummary = pager.refreshSummary;
-  const editor = useAssetEditor(props.bridge, props.session.sessionId, selected, props.eventPulse, useCallback((detail) => {
+  const editor = useAssetEditor(props.bridge, props.session.sessionId, selected, props.invalidations.detail, useCallback((detail) => {
     refreshSummary(detail);
     setSelected((current) => current?.assetId === detail.assetId ? {
       ...current,
@@ -276,7 +300,8 @@ function OpenWorkspace(props: {
         sessionId={props.session.sessionId}
         total={pager.total}
         selectedCollectionId={query.collectionId}
-        revisionPulse={props.eventPulse}
+        rootRevision={props.invalidations.roots}
+        collectionRevision={props.invalidations.collections}
         disabled={busy || props.needsRestart}
         onCollectionChange={(collectionId) => applyQuery({ ...query, collectionId })}
         onDeleteActiveCollection={(label, action) => requestTransition(label, async () => {
@@ -291,8 +316,8 @@ function OpenWorkspace(props: {
       />
       <section className="workspace-main" aria-label="Assets">
         {props.shellError && <div className="error-banner" role="alert"><span>{props.shellError}</span>{props.needsRestart && <button onClick={restartCore}>Restart Core</button>}</div>}
-        {pager.error ? <WorkspaceState title="Library query failed" detail={pager.error} action="Retry" onAction={pager.refresh} />
-          : pager.loading && pager.total === 0 ? <WorkspaceState title="Opening contact sheet" detail="Reading the first bounded Asset window…" />
+        {pager.error ? <WorkspaceState kind="error" title="Library query failed" detail={pager.error} action="Retry" onAction={pager.refresh} />
+          : pager.loading && pager.total === 0 ? <WorkspaceState kind="status" title="Opening contact sheet" detail="Reading the first bounded Asset window…" />
           : pager.total === 0 ? <WorkspaceState
               title={query.search || query.rootId || query.collectionId || query.reviewStates.length || query.availability.length ? "No Assets match this view" : "This Library has no Assets yet"}
               detail={query.search || query.rootId || query.collectionId || query.reviewStates.length || query.availability.length ? "Clear or change the current filters, or rescan an authorized Root." : "Add one Root containing supported images. Assets appear progressively."}
@@ -333,8 +358,8 @@ function SimpleIntentDialog(props: { displayName: string; onOpen(): void; onCanc
   return <div className="confirmation" role="alertdialog" aria-modal="true" aria-labelledby="intent-title" onKeyDown={(event) => handleDialogKey(event, props.onCancel)}><h2 id="intent-title">Open another Library?</h2><p>Open “{props.displayName}”?</p><div className="button-row"><button onClick={props.onOpen}>Open</button><button autoFocus className="button--secondary" onClick={props.onCancel}>Cancel</button></div></div>;
 }
 
-function WorkspaceState(props: { title: string; detail: string; action?: string; onAction?(): void }) {
-  return <div className="workspace-state"><h2>{props.title}</h2><p>{props.detail}</p>{props.action && <button onClick={props.onAction}>{props.action}</button>}</div>;
+function WorkspaceState(props: { title: string; detail: string; kind?: "status" | "error"; action?: string; onAction?(): void }) {
+  return <div className="workspace-state" role={props.kind === "error" ? "alert" : props.kind} aria-live={props.kind === "status" ? "polite" : undefined}><h2>{props.title}</h2><p>{props.detail}</p>{props.action && <button onClick={props.onAction}>{props.action}</button>}</div>;
 }
 
 function FatalState({ message }: { message: string }) {

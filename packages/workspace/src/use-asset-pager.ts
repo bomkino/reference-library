@@ -19,7 +19,7 @@ export function useAssetPager(
   bridge: ReferenceWorkspaceBridge,
   sessionId: string,
   query: AssetQuery,
-  eventPulse: number,
+  invalidationRevision: number,
 ): AssetPager {
   const [items, setItems] = useState<ReadonlyMap<number, AssetSummary>>(new Map());
   const [total, setTotal] = useState(0);
@@ -121,11 +121,15 @@ export function useAssetPager(
     setLoading(true);
     setError(null);
     void loadPage(0, true);
+    return () => {
+      generation.current += 1;
+      inFlight.current.clear();
+    };
   }, [loadPage]);
 
   useEffect(() => {
-    if (eventPulse > 0) refresh();
-  }, [eventPulse, refresh]);
+    if (invalidationRevision > 0) refresh();
+  }, [invalidationRevision, refresh]);
 
   return { total, items, loading, error, ensureWindow, refresh, refreshSummary };
 }

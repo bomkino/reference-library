@@ -97,6 +97,14 @@ describe("V1 keyboard daily-use seams", () => {
     expect(host.querySelector(".selection-announcer")?.textContent).toContain("B-frame.jpg");
     await press("Enter");
     expect(host.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(host.querySelector(".preview__stage")?.getAttribute("aria-busy")).toBe("true");
+    expect(host.querySelector(".preview__loading")?.textContent).toBe("Loading Preview…");
+    await act(async () => {
+      host.querySelector<HTMLImageElement>(".preview__image")?.dispatchEvent(new Event("load"));
+      await settle();
+    });
+    expect(host.querySelector(".preview__stage")?.getAttribute("aria-busy")).toBe("false");
+    expect(host.querySelector(".preview__loading")).toBeNull();
     expect(button("Fit").getAttribute("aria-pressed")).toBe("true");
     await focusAndPress(button("Zoom in"), " ");
     expect(text()).toContain("200%");
@@ -114,6 +122,118 @@ describe("V1 keyboard daily-use seams", () => {
     expect(text()).toContain("Stills/B-frame.jpg");
     await focusAndPress(button("Reveal Source"), " ");
     expect(harness.calls.revealLocation).toBe(1);
+  });
+
+  it("distinguishes pending Preview loading from an unavailable opaque resource", async () => {
+    await focusAndPress(button("New Library"), "Enter");
+    await waitFor(() => expect(host.querySelector('[data-asset-id="asset-1"]')).not.toBeNull());
+    await focusAndPress(host.querySelector<HTMLElement>('[data-asset-id="asset-1"]')!, "Enter");
+    expect(host.querySelector(".preview__stage")?.getAttribute("aria-busy")).toBe("true");
+    expect(host.querySelector(".preview__loading")?.getAttribute("role")).toBe("status");
+    await act(async () => {
+      host.querySelector<HTMLImageElement>(".preview__image")?.dispatchEvent(new Event("error"));
+      await settle();
+    });
+    expect(host.querySelector(".preview__loading")).toBeNull();
+    expect(host.querySelector(".preview__error")?.getAttribute("role")).toBe("alert");
+    expect(host.querySelector(".preview__error")?.textContent).toContain("Preview unavailable");
+  });
+
+  it("coalesces a 100,000-Asset scan storm into bounded public requests and DOM", async () => {
+    harness.assetTotal = 100_000;
+    await focusAndPress(button("New Library"), "Enter");
+    await waitFor(() => expect(host.querySelector('[data-asset-id="asset-1"]')).not.toBeNull());
+    await waitFor(() => expect(text()).toContain("Selects"));
+    await focusAndPress(host.querySelector<HTMLElement>('[data-asset-id="asset-1"]')!, " ");
+    await waitFor(() => expect(input("Title")).not.toBeNull());
+    const before = { ...harness.calls };
+    harness.roots = [{
+      rootId: "root-1",
+      displayName: "Stills",
+      rootKind: "linked",
+      state: "ready",
+      authorized: true,
+      activeJobId: null,
+      observedCount: 100_000,
+      unsupportedCount: 17,
+    }];
+
+    await act(async () => {
+      for (let batch = 0; batch < 3_125; batch += 1) {
+        const first = batch * 32;
+        harness.emit({
+          event: "assets_inserted",
+          value: {
+            rootId: "root-1",
+            assetIds: Array.from({ length: 32 }, (_, index) => `asset-${first + index + 1}`),
+            libraryRevision: batch + 2,
+          },
+        });
+        harness.emit({
+          event: "scan_progress_changed",
+          value: {
+            rootId: "root-1",
+            jobId: "job-storm",
+            observedCount: first + 32,
+            unsupportedCount: batch === 3_124 ? 17 : 0,
+            terminal: batch === 3_124,
+          },
+        });
+      }
+      await settle();
+    });
+
+    await waitFor(() => expect(host.querySelector('[role="grid"]')?.getAttribute("aria-label")).toContain("100000 assets"));
+    await waitFor(() => expect(text()).toContain("100,000 observed · 17 unsupported"));
+    expect(harness.calls.queryAssets - before.queryAssets).toBeLessThanOrEqual(2);
+    expect(harness.calls.listRoots - before.listRoots).toBeLessThanOrEqual(2);
+    expect(harness.calls.listCollections - before.listCollections).toBe(0);
+    expect(harness.calls.getAsset - before.getAsset).toBe(0);
+    expect(host.querySelectorAll(".asset-card").length).toBeLessThanOrEqual(100);
+    expect(host.querySelector(".selection-announcer")?.textContent).toContain("Selected A-frame.jpg");
+    expect(host.querySelector('[data-asset-id="asset-1"]')?.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("keeps one visible Contact Sheet tab stop when selection is offscreen or filtered out", async () => {
+    harness.assetTotal = 100_000;
+    await focusAndPress(button("New Library"), "Enter");
+    await waitFor(() => expect(host.querySelector('[data-asset-id="asset-1"]')).not.toBeNull());
+    await focusAndPress(host.querySelector<HTMLElement>('[data-asset-id="asset-1"]')!, " ");
+    const grid = host.querySelector<HTMLElement>('[role="grid"]')!;
+    await act(async () => {
+      grid.scrollTop = 50_000;
+      grid.dispatchEvent(new Event("scroll", { bubbles: true }));
+      await settle();
+    });
+    await waitFor(() => expect(host.querySelector('[data-asset-id="asset-1"]')).toBeNull());
+    expect(host.querySelectorAll('.asset-card[tabindex="0"]')).toHaveLength(1);
+    expect(document.activeElement?.getAttribute("tabindex")).toBe("0");
+    expect(host.querySelector(".selection-announcer")?.textContent).toContain("Selected A-frame.jpg");
+
+    const search = input("Search");
+    await replaceByKeyboard(search, "other");
+    await focusAndPress(search, "Enter");
+    await waitFor(() => expect(host.querySelector('[data-asset-id="asset-2"]')).not.toBeNull());
+    expect(host.querySelector('[data-asset-id="asset-2"]')?.getAttribute("tabindex")).toBe("0");
+    expect(host.querySelector(".selection-announcer")?.textContent).toContain("Selected A-frame.jpg");
+  });
+
+  it("announces bounded query loading and failure without conflating their urgency", async () => {
+    let releaseQuery!: () => void;
+    harness.queryGate = new Promise<void>((resolve) => { releaseQuery = resolve; });
+    await focusAndPress(button("New Library"), "Enter");
+    expect(host.querySelector('.workspace-state[role="status"]')?.textContent).toContain("Opening contact sheet");
+    expect(host.querySelector('.workspace-state[role="status"]')?.getAttribute("aria-live")).toBe("polite");
+    releaseQuery();
+    harness.queryGate = null;
+    await waitFor(() => expect(host.querySelector('[data-asset-id="asset-1"]')).not.toBeNull());
+
+    harness.queryError = new Error("bounded query unavailable");
+    const search = input("Search");
+    await replaceByKeyboard(search, "failure");
+    await focusAndPress(search, "Enter");
+    await waitFor(() => expect(host.querySelector('.workspace-state[role="alert"]')?.textContent).toContain("Library query failed"));
+    expect(host.querySelector('.workspace-state[role="alert"]')?.textContent).toContain("Library query failed.");
   });
 
   it("guards dirty selection, query, Collection deletion and external open intent with save/discard/cancel", async () => {
@@ -266,9 +386,12 @@ class BridgeHarness {
   collections: CollectionSummary[] = [{ collectionId: "collection-1", name: "Selects", assetCount: 1, revision: 1 }];
   details = new Map(ASSETS.map((summary) => [summary.assetId, detail(summary)]));
   assets = [...ASSETS];
+  assetTotal: number | null = null;
+  queryGate: Promise<void> | null = null;
+  queryError: Error | null = null;
   authoritySession = SESSION;
   lastQuery: AssetQuery | null = null;
-  calls = { openLibrary: 0, reauthorizeRoot: 0, scanRoot: 0, cancelJob: 0, updateAsset: 0, revealLocation: 0, renameCollection: 0, deleteCollection: 0, createCollection: 0, setCollectionMembership: 0, restartCore: 0, staleFollowUps: 0, updateSessions: [] as string[], writePreferences: [] as Array<Record<string, unknown>>, completeOpenIntent: [] as Array<[string, string]> };
+  calls = { openLibrary: 0, listRoots: 0, listCollections: 0, queryAssets: 0, getAsset: 0, reauthorizeRoot: 0, scanRoot: 0, cancelJob: 0, updateAsset: 0, revealLocation: 0, renameCollection: 0, deleteCollection: 0, createCollection: 0, setCollectionMembership: 0, restartCore: 0, staleFollowUps: 0, updateSessions: [] as string[], writePreferences: [] as Array<Record<string, unknown>>, completeOpenIntent: [] as Array<[string, string]> };
 
   bridge: ReferenceWorkspaceBridge = {
     version: BRIDGE_VERSION,
@@ -283,13 +406,32 @@ class BridgeHarness {
       this.authoritySession = { ...this.authoritySession, sessionId: "session-authority-1" };
       return { session: this.authoritySession, rootId: "root-added", jobId: "job-added" };
     },
-    listRoots: async (sessionId) => { this.recordFollowUp(sessionId); return this.roots; },
+    listRoots: async (sessionId) => { this.calls.listRoots += 1; this.recordFollowUp(sessionId); return this.roots; },
     reauthorizeRoot: async (sessionId) => { this.recordFollowUp(sessionId); this.calls.reauthorizeRoot += 1; this.authoritySession = { ...this.authoritySession, sessionId: "session-authority-2" }; this.roots = this.roots.map((root) => ({ ...root, authorized: true, state: "ready" })); return { session: this.authoritySession, root: this.roots[0]! }; },
     scanRoot: async (_sessionId, rootId) => { this.calls.scanRoot += 1; this.roots = this.roots.map((root) => ({ ...root, activeJobId: "job-1", state: "scanning" })); return { rootId, jobId: "job-1" }; },
     cancelJob: async () => { this.calls.cancelJob += 1; this.roots = this.roots.map((root) => ({ ...root, activeJobId: null, state: "ready" })); },
     queryJobs: async () => ({ offset: 0, limit: 100, total: 0, items: [], nextOffset: null }),
-    queryAssets: async (input): Promise<AssetPage> => { this.recordFollowUp(input.sessionId); this.lastQuery = input.query; const items = input.query.search === "no-match" ? [] : this.assets; return { offset: input.offset, limit: input.limit, total: items.length, items, nextOffset: null, libraryRevision: 1 }; },
-    getAsset: async (sessionId, assetId) => { this.recordFollowUp(sessionId); return this.details.get(assetId)!; },
+    queryAssets: async (input): Promise<AssetPage> => {
+      this.calls.queryAssets += 1;
+      this.recordFollowUp(input.sessionId);
+      this.lastQuery = input.query;
+      if (this.queryGate) await this.queryGate;
+      if (this.queryError) throw this.queryError;
+      if (input.query.search === "no-match") return { offset: input.offset, limit: input.limit, total: 0, items: [], nextOffset: null, libraryRevision: 1 };
+      if (input.query.search === "other") return { offset: input.offset, limit: input.limit, total: 1, items: [this.assets[1]!], nextOffset: null, libraryRevision: 1 };
+      if (this.assetTotal === null) return { offset: input.offset, limit: input.limit, total: this.assets.length, items: this.assets, nextOffset: null, libraryRevision: 1 };
+      const count = Math.max(0, Math.min(input.limit, this.assetTotal - input.offset));
+      const items = Array.from({ length: count }, (_, index) => {
+        const absolute = input.offset + index;
+        return asset(`asset-${absolute + 1}`, absolute === 0 ? "A-frame.jpg" : `Frame-${absolute + 1}.jpg`);
+      });
+      return { offset: input.offset, limit: input.limit, total: this.assetTotal, items, nextOffset: input.offset + count < this.assetTotal ? input.offset + count : null, libraryRevision: 1 };
+    },
+    getAsset: async (sessionId, assetId) => {
+      this.calls.getAsset += 1;
+      this.recordFollowUp(sessionId);
+      return this.details.get(assetId) ?? detail(asset(assetId, assetId === "asset-1" ? "A-frame.jpg" : `${assetId}.jpg`));
+    },
     updateAsset: async (input) => {
       this.calls.updateAsset += 1;
       this.calls.updateSessions.push(input.sessionId);
@@ -299,7 +441,7 @@ class BridgeHarness {
       this.details.set(input.assetId, updated);
       return { asset: updated, libraryRevision: 2 };
     },
-    listCollections: async (sessionId) => { this.recordFollowUp(sessionId); return this.collections; },
+    listCollections: async (sessionId) => { this.calls.listCollections += 1; this.recordFollowUp(sessionId); return this.collections; },
     createCollection: async (_sessionId, name) => { this.calls.createCollection += 1; const collection = { collectionId: `collection-${this.collections.length + 1}`, name, assetCount: 0, revision: 1 }; this.collections = [...this.collections, collection]; return collection; },
     renameCollection: async (_sessionId, id, _revision, name) => { this.calls.renameCollection += 1; this.collections = this.collections.map((item) => item.collectionId === id ? { ...item, name, revision: item.revision + 1 } : item); return this.collections[0]!; },
     deleteCollection: async (_sessionId, id) => { this.calls.deleteCollection += 1; this.collections = this.collections.filter((item) => item.collectionId !== id); },
@@ -307,7 +449,6 @@ class BridgeHarness {
     assetResourceUrl: ({ assetId }) => `pitchdog-asset://opaque/${assetId}`,
     revealLocation: async () => { this.calls.revealLocation += 1; },
     queryCapabilities: async () => [],
-    canonicalDump: async () => ({}),
     restartCore: async () => { this.calls.restartCore += 1; return null; },
     subscribe: (listener) => { this.listeners.add(listener); return () => this.listeners.delete(listener); },
   };

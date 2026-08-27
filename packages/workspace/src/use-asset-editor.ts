@@ -10,6 +10,7 @@ import {
   type TextPatch,
 } from "@pitchdog/reference-bridge";
 import { safeErrorMessage } from "./safe-errors";
+import type { WorkspaceInvalidations } from "./workspace-events";
 
 export interface AssetDraft {
   title: string;
@@ -21,7 +22,7 @@ export function useAssetEditor(
   bridge: ReferenceWorkspaceBridge,
   sessionId: string,
   selected: AssetSummary | null,
-  revisionPulse: number,
+  invalidation: WorkspaceInvalidations["detail"],
   onSaved: (detail: AssetDetail) => void,
 ) {
   const [detail, setDetail] = useState<AssetDetail | null>(null);
@@ -30,10 +31,11 @@ export function useAssetEditor(
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const request = useRef(0);
+  const handledInvalidation = useRef(0);
 
   const load = useCallback(async () => {
-    if (!selected) { setDetail(null); setDraft(null); setError(null); return; }
     const current = ++request.current;
+    if (!selected) { setDetail(null); setDraft(null); setError(null); setLoading(false); return; }
     setLoading(true);
     try {
       const next = await bridge.getAsset(sessionId, selected.assetId);
@@ -52,8 +54,22 @@ export function useAssetEditor(
     if (!isDirty(detail, draft)) void load();
   }, [load]);
   useEffect(() => {
-    if (revisionPulse > 0 && detail && !isDirty(detail, draft)) void load();
-  }, [revisionPulse]);
+    if (invalidation.revision <= handledInvalidation.current) return;
+    if (!selected || !detail) {
+      handledInvalidation.current = invalidation.revision;
+      return;
+    }
+    if (
+      invalidation.assetIds !== null &&
+      !invalidation.assetIds.includes(selected.assetId)
+    ) {
+      handledInvalidation.current = invalidation.revision;
+      return;
+    }
+    if (isDirty(detail, draft)) return;
+    handledInvalidation.current = invalidation.revision;
+    void load();
+  }, [detail, draft, invalidation, load, selected]);
 
   const dirty = useMemo(() => isDirty(detail, draft), [detail, draft]);
   const discard = useCallback(() => { if (detail) setDraft(toDraft(detail)); }, [detail]);

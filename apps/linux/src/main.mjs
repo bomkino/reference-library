@@ -334,10 +334,6 @@ function registerNamedOperations() {
     if (sessionId !== undefined) assertSession(recovery.activeSession, sessionId);
     return expectResult(await core.request({ method: "get_capabilities", params: { sessionId: sessionId ?? null } }), "capabilities").detail;
   }));
-  ipcMain.handle(IPC.canonicalDump, trusted(async (_event, sessionId) => {
-    assertSession(recovery.activeSession, sessionId);
-    return expectResult(await core.request({ method: "canonical_dump", params: { sessionId } }), "canonical_dump").dump;
-  }));
   ipcMain.handle(IPC.restartCore, trusted(async () => {
     return performRecovery();
   }));

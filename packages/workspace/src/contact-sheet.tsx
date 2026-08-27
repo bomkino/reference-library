@@ -32,6 +32,7 @@ interface ContactSheetProps {
 export function ContactSheet(props: ContactSheetProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const pendingFocusIndex = useRef<number | null>(null);
+  const restoreGridFocus = useRef(false);
   const [geometry, setGeometry] = useState({ width: 900, height: 600, scrollTop: 0 });
   const gap = 12;
   const cardHeight = Math.round(props.thumbnailSize * 0.72 + 58);
@@ -52,6 +53,15 @@ export function ContactSheet(props: ContactSheetProps) {
     [cardHeight, columns, geometry, props.total],
   );
   const ensureWindow = props.ensureWindow;
+
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const maximumScrollTop = Math.max(0, virtual.totalHeight - geometry.height);
+    if (geometry.scrollTop <= maximumScrollTop) return;
+    viewport.scrollTop = maximumScrollTop;
+    setGeometry((current) => ({ ...current, scrollTop: maximumScrollTop }));
+  }, [geometry.height, geometry.scrollTop, virtual.totalHeight]);
 
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
@@ -94,6 +104,21 @@ export function ContactSheet(props: ContactSheetProps) {
       ),
     [virtual],
   );
+  const selectedVisibleIndex = indices.find((index) =>
+    props.items.get(index)?.assetId === props.selectedAssetId);
+  const firstVisibleLoadedIndex = indices.find((index) => props.items.has(index));
+  const rovingIndex = selectedVisibleIndex ?? firstVisibleLoadedIndex ?? null;
+
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport || !restoreGridFocus.current) return;
+    const active = document.activeElement;
+    if (active !== viewport && active instanceof Node && viewport.contains(active)) return;
+    const target = rovingIndex === null
+      ? null
+      : viewport.querySelector<HTMLButtonElement>(`[data-index="${rovingIndex}"]`);
+    (target ?? viewport).focus({ preventScroll: true });
+  }, [props.items, rovingIndex]);
 
   const handleKey = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     if (!isNavigationKey(event.key)) return;
@@ -129,6 +154,7 @@ export function ContactSheet(props: ContactSheetProps) {
       className="contact-sheet"
       ref={viewportRef}
       role="grid"
+      tabIndex={-1}
       aria-label={`Editorial Contact Sheet, ${props.total} assets`}
       aria-rowcount={Math.ceil(props.total / columns)}
       aria-colcount={columns}
@@ -138,6 +164,12 @@ export function ContactSheet(props: ContactSheetProps) {
           scrollTop: event.currentTarget.scrollTop,
         }))
       }
+      onBlurCapture={(event) => {
+        const next = event.relatedTarget;
+        if (next instanceof Node && !event.currentTarget.contains(next)) {
+          restoreGridFocus.current = false;
+        }
+      }}
     >
       <div className="contact-sheet__canvas" style={{ height: virtual.totalHeight }}>
         <div
@@ -166,7 +198,8 @@ export function ContactSheet(props: ContactSheetProps) {
                 aria-colindex={(index % columns) + 1}
                 aria-selected={selected}
                 aria-label={`${asset.displayName}, ${asset.mediaFamily}, ${asset.reviewState}, ${asset.availability}`}
-                tabIndex={selected || (!props.selectedAssetId && index === 0) ? 0 : -1}
+                tabIndex={index === rovingIndex ? 0 : -1}
+                onFocus={() => { restoreGridFocus.current = true; }}
                 onClick={() => props.onSelect(asset)}
                 onDoubleClick={() => props.onPreview(asset)}
                 onKeyDown={(event) => {

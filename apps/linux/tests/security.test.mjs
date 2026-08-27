@@ -75,7 +75,6 @@ test("workspace resources and senders stay inside named origin", () => {
 test("preload exposes only fixed named IPC channels", () => {
   assert.deepEqual(Object.keys(IPC).sort(), [
     "cancelJob",
-    "canonicalDump",
     "capabilities",
     "chooseRoot",
     "closeLibrary",
@@ -102,6 +101,17 @@ test("preload exposes only fixed named IPC channels", () => {
   ]);
   for (const channel of Object.values(IPC)) {
     assert.match(channel, /^reference-library:[a-z-]+$/);
+  }
+});
+
+test("renderer bridge omits the unbounded canonical dump diagnostic", async () => {
+  const [sharedContract, preload, main] = await Promise.all([
+    readFile(new URL("../../../packages/bridge-contract/src/index.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/preload.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../src/main.mjs", import.meta.url), "utf8"),
+  ]);
+  for (const rendererBoundary of [sharedContract, preload, main]) {
+    assert.doesNotMatch(rendererBoundary, /canonicalDump|canonical-dump|canonical_dump/);
   }
 });
 

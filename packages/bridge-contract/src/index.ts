@@ -174,7 +174,6 @@ export interface ReferenceWorkspaceBridge {
   assetResourceUrl(input: { sessionId: string; assetId: string; profile: ResourceProfile }): string;
   revealLocation(sessionId: string, locationId: string): Promise<void>;
   queryCapabilities(sessionId?: string): Promise<BridgeCapability[]>;
-  canonicalDump(sessionId: string): Promise<unknown>;
   restartCore(): Promise<SessionOpened | null>;
   subscribe(listener: (event: WorkspaceEvent) => void): () => void;
 }

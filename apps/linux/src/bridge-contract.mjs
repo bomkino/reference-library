@@ -22,7 +22,6 @@ export const IPC = Object.freeze({
   readPreferences: "reference-library:read-preferences",
   writePreferences: "reference-library:write-preferences",
   capabilities: "reference-library:capabilities",
-  canonicalDump: "reference-library:canonical-dump",
   restartCore: "reference-library:restart-core",
   event: "reference-library:event",
 });

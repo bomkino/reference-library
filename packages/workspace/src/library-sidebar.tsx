@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   MAX_COLLECTION_NAME_SCALARS,
   type CollectionSummary,
@@ -15,7 +15,8 @@ export function LibrarySidebar(props: {
   sessionId: string;
   total: number;
   selectedCollectionId: string | null;
-  revisionPulse: number;
+  rootRevision: number;
+  collectionRevision: number;
   disabled?: boolean;
   onCollectionChange(collectionId: string | null): void;
   onDeleteActiveCollection(label: string, action: () => Promise<void>): void;
@@ -35,27 +36,45 @@ export function LibrarySidebar(props: {
   const deleteConfirm = useRef<HTMLButtonElement>(null);
   const returnFocus = useRef<HTMLButtonElement>(null);
   const allAssets = useRef<HTMLButtonElement>(null);
+  const rootRequest = useRef(0);
+  const collectionRequest = useRef(0);
   const restoreFocus = () => requestAnimationFrame(() => {
     if (returnFocus.current?.isConnected) returnFocus.current.focus();
     else allAssets.current?.focus();
   });
 
-  const load = async (sessionId = props.sessionId) => {
+  const loadRoots = useCallback(async (sessionId = props.sessionId) => {
+    const current = ++rootRequest.current;
     try {
-      const [nextRoots, nextCollections] = await Promise.all([
-        props.bridge.listRoots(sessionId),
-        props.bridge.listCollections(sessionId),
-      ]);
+      const nextRoots = await props.bridge.listRoots(sessionId);
+      if (current !== rootRequest.current) return;
       setRoots(nextRoots);
       props.onRootInventory(nextRoots);
+    } catch (reason) {
+      if (current === rootRequest.current) props.onError(messageFrom(reason));
+    }
+  }, [props.bridge, props.onError, props.onRootInventory, props.sessionId]);
+
+  const loadCollections = useCallback(async (sessionId = props.sessionId) => {
+    const current = ++collectionRequest.current;
+    try {
+      const nextCollections = await props.bridge.listCollections(sessionId);
+      if (current !== collectionRequest.current) return;
       setCollections(nextCollections);
       props.onCollectionInventory(nextCollections);
     } catch (reason) {
-      props.onError(messageFrom(reason));
+      if (current === collectionRequest.current) props.onError(messageFrom(reason));
     }
-  };
+  }, [props.bridge, props.onCollectionInventory, props.onError, props.sessionId]);
 
-  useEffect(() => { void load(); }, [props.revisionPulse, props.sessionId]);
+  useEffect(() => {
+    void loadRoots();
+    return () => { rootRequest.current += 1; };
+  }, [loadRoots, props.rootRevision]);
+  useEffect(() => {
+    void loadCollections();
+    return () => { collectionRequest.current += 1; };
+  }, [loadCollections, props.collectionRevision]);
   useEffect(() => { if (editing) renameInput.current?.focus(); }, [editing]);
   useLayoutEffect(() => {
     if (!deleting) return;
@@ -77,7 +96,7 @@ export function LibrarySidebar(props: {
     try {
       await props.bridge.createCollection(props.sessionId, name);
       setNewName("");
-      await load();
+      await loadCollections();
     } catch (reason) { props.onError(messageFrom(reason)); }
   };
 
@@ -87,7 +106,7 @@ export function LibrarySidebar(props: {
     try {
       await props.bridge.renameCollection(props.sessionId, editing.collectionId, editing.revision, name);
       setEditing(null);
-      await load();
+      await loadCollections();
       restoreFocus();
     } catch (reason) { props.onError(messageFrom(reason)); }
   };
@@ -107,7 +126,7 @@ export function LibrarySidebar(props: {
     try {
       await props.bridge.deleteCollection(props.sessionId, target.collectionId);
       setDeleting(null);
-      await load();
+      await loadCollections();
       restoreFocus();
     } catch (reason) { props.onError(messageFrom(reason)); }
   };
@@ -138,7 +157,6 @@ export function LibrarySidebar(props: {
               const result = await props.bridge.chooseRoot(props.sessionId);
               if (!result) return;
               props.onSession(result.session);
-              await load(result.session.sessionId);
             } catch (reason) { props.onError(messageFrom(reason)); }
             finally { setAuthorityBusy(false); }
           }}>Add</button>
@@ -155,14 +173,13 @@ export function LibrarySidebar(props: {
                       const result = await props.bridge.reauthorizeRoot(props.sessionId, root.rootId);
                       if (!result) return;
                       props.onSession(result.session);
-                      await load(result.session.sessionId);
                     } catch (reason) { props.onError(messageFrom(reason)); }
                     finally { setAuthorityBusy(false); }
                   }}>Reauthorize</button>}
                   {root.activeJobId ? (
-                    <button disabled={props.disabled || authorityBusy} onClick={async () => { try { await props.bridge.cancelJob(props.sessionId, root.activeJobId!); await load(); } catch (reason) { props.onError(messageFrom(reason)); } }}>Cancel</button>
+                    <button disabled={props.disabled || authorityBusy} onClick={async () => { try { await props.bridge.cancelJob(props.sessionId, root.activeJobId!); await loadRoots(); } catch (reason) { props.onError(messageFrom(reason)); } }}>Cancel</button>
                   ) : (
-                    <button className="button--quiet" disabled={props.disabled || authorityBusy || !root.authorized} onClick={async () => { try { await props.bridge.scanRoot(props.sessionId, root.rootId); await load(); } catch (reason) { props.onError(messageFrom(reason)); } }}>Rescan</button>
+                    <button className="button--quiet" disabled={props.disabled || authorityBusy || !root.authorized} onClick={async () => { try { await props.bridge.scanRoot(props.sessionId, root.rootId); await loadRoots(); } catch (reason) { props.onError(messageFrom(reason)); } }}>Rescan</button>
                   )}
                 </div>
               </li>

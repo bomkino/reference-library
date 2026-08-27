@@ -38,7 +38,6 @@ const bridge = Object.freeze({
   readPreferences: () => ipcRenderer.invoke(IPC.readPreferences),
   writePreferences: (patch) => ipcRenderer.invoke(IPC.writePreferences, patch),
   queryCapabilities: (sessionId) => ipcRenderer.invoke(IPC.capabilities, sessionId),
-  canonicalDump: (sessionId) => ipcRenderer.invoke(IPC.canonicalDump, sessionId),
   restartCore: () => ipcRenderer.invoke(IPC.restartCore),
   subscribe: (listener) => {
     if (typeof listener !== "function") throw new TypeError("listener must be a function");
