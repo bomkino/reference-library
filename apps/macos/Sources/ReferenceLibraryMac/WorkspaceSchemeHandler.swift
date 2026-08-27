@@ -57,11 +57,14 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
                         "X-Content-Type-Options": "nosniff"
                     ]
                 )!
-                urlSchemeTask.didReceive(response)
                 let stream = Task.detached(priority: .userInitiated) {
                     try await ResourceFileStreamer.stream(
                         path: descriptor.nativePath,
-                        expectedSize: descriptor.contentLength
+                        expectedSize: descriptor.contentLength,
+                        afterValidation: {
+                            try Task.checkCancellation()
+                            await MainActor.run { taskBox.task.didReceive(response) }
+                        }
                     ) { chunk in
                         try Task.checkCancellation()
                         await MainActor.run { taskBox.task.didReceive(chunk) }

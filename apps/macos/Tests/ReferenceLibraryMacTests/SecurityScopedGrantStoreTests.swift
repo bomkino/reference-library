@@ -25,7 +25,9 @@ final class SecurityScopedGrantStoreTests: XCTestCase {
         )
         XCTAssertEqual(fixture.driver.scopes, [.libraryReadWrite, .rootReadOnly])
         XCTAssertEqual(fixture.store.persistedProvisionalRootCountForTesting, 1)
+        XCTAssertEqual(fixture.driver.startedURLs, [libraryURL, rootURL])
         XCTAssertTrue(fixture.store.commitRootGrant(root, rootID: rootID))
+        XCTAssertEqual(fixture.driver.startedURLs, [libraryURL, rootURL])
         XCTAssertEqual(fixture.store.persistedProvisionalRootCountForTesting, 0)
         XCTAssertTrue(fixture.store.hasPersistedRootForTesting(
             libraryID: libraryID,
@@ -37,7 +39,7 @@ final class SecurityScopedGrantStoreTests: XCTestCase {
         )
     }
 
-    func testRootActivationFailurePreservesProvisionalStateForCallerRollback() throws {
+    func testRootActivationFailureRollsBackBeforeCanonicalAdoption() throws {
         let fixture = GrantStoreFixture()
         defer { fixture.remove() }
         let library = try XCTUnwrap(fixture.store.prepareLibraryGrant(
@@ -45,20 +47,37 @@ final class SecurityScopedGrantStoreTests: XCTestCase {
             libraryID: libraryID
         ))
         XCTAssertTrue(fixture.store.commitLibraryGrant(library))
-        let root = try XCTUnwrap(fixture.store.prepareRootGrant(
+        fixture.driver.startSucceeds = false
+
+        XCTAssertNil(fixture.store.prepareRootGrant(
             url: URL(fileURLWithPath: "/References"),
             libraryID: libraryID
         ))
-        fixture.driver.startSucceeds = false
-
-        XCTAssertFalse(fixture.store.commitRootGrant(root, rootID: rootID))
-        XCTAssertEqual(fixture.store.persistedProvisionalRootCountForTesting, 1)
+        XCTAssertEqual(fixture.store.persistedProvisionalRootCountForTesting, 0)
+        XCTAssertEqual(fixture.store.activeProvisionalRootCountForTesting, 0)
         XCTAssertFalse(fixture.store.hasPersistedRootForTesting(
             libraryID: libraryID,
             rootID: rootID
         ))
-        fixture.store.discardRootGrant(root)
-        XCTAssertEqual(fixture.store.persistedProvisionalRootCountForTesting, 0)
+    }
+
+    func testRootActivationCleanupPersistenceFailureQuarantinesStore() throws {
+        let fixture = GrantStoreFixture()
+        defer { fixture.remove() }
+        let library = try XCTUnwrap(fixture.store.prepareLibraryGrant(
+            url: URL(fileURLWithPath: "/Library.pitchlibrary"),
+            libraryID: libraryID
+        ))
+        XCTAssertTrue(fixture.store.commitLibraryGrant(library))
+        fixture.driver.startSucceeds = false
+        fixture.persistence.failingWriteNumbers = [3]
+
+        XCTAssertNil(fixture.store.prepareRootGrant(
+            url: URL(fileURLWithPath: "/References"),
+            libraryID: libraryID
+        ))
+        XCTAssertTrue(fixture.store.persistenceQuarantinedForTesting)
+        XCTAssertNil(fixture.store.activeLibraryID)
     }
 
     func testLibraryActivationFailureDoesNotReplaceTheCurrentGrant() throws {
@@ -118,20 +137,106 @@ final class SecurityScopedGrantStoreTests: XCTestCase {
         )
         XCTAssertEqual(restored.persistedProvisionalRootCountForTesting, 0)
     }
+
+    func testUnknownPersistenceSchemaIsQuarantinedWithoutByteChanges() throws {
+        let fixture = GrantStoreFixture()
+        defer { fixture.remove() }
+        let unknownState: [String: Any] = [
+            "schemaVersion": 999,
+            "libraries": [String: Data](),
+            "roots": [String: [String: Data]](),
+            "provisionalRoots": [String: Data]()
+        ]
+        let unknown = try PropertyListSerialization.data(
+            fromPropertyList: unknownState,
+            format: .binary,
+            options: 0
+        )
+        try FileManager.default.createDirectory(
+            at: fixture.storageURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try unknown.write(to: fixture.storageURL, options: .atomic)
+
+        let restored = SecurityScopedGrantStore(
+            storageURL: fixture.storageURL,
+            operations: fixture.driver.operations
+        )
+        XCTAssertTrue(restored.persistenceQuarantinedForTesting)
+        XCTAssertNil(restored.prepareRootGrant(
+            url: URL(fileURLWithPath: "/References"),
+            libraryID: libraryID
+        ))
+        XCTAssertEqual(try Data(contentsOf: fixture.storageURL), unknown)
+    }
+
+    func testLibraryRollbackPersistenceFailureQuarantinesAndDeactivates() throws {
+        let fixture = GrantStoreFixture()
+        defer { fixture.remove() }
+        let first = try XCTUnwrap(fixture.store.prepareLibraryGrant(
+            url: URL(fileURLWithPath: "/First.pitchlibrary"),
+            libraryID: libraryID
+        ))
+        XCTAssertTrue(fixture.store.commitLibraryGrant(first))
+        let replacement = try XCTUnwrap(fixture.store.prepareLibraryGrant(
+            url: URL(fileURLWithPath: "/Replacement.pitchlibrary"),
+            libraryID: libraryID
+        ))
+        XCTAssertTrue(fixture.store.commitLibraryGrant(replacement))
+        fixture.persistence.succeeds = false
+
+        XCTAssertFalse(fixture.store.rollbackLibraryGrant(replacement))
+        XCTAssertTrue(fixture.store.persistenceQuarantinedForTesting)
+        XCTAssertNil(fixture.store.activeLibraryID)
+        XCTAssertFalse(fixture.store.activatePersistedLibrary(libraryID: libraryID))
+    }
+
+    func testDeactivateAllBalancesLibraryAndRootScopes() throws {
+        let fixture = GrantStoreFixture()
+        defer { fixture.remove() }
+        let libraryURL = URL(fileURLWithPath: "/Library.pitchlibrary")
+        let rootURL = URL(fileURLWithPath: "/References")
+        let library = try XCTUnwrap(fixture.store.prepareLibraryGrant(
+            url: libraryURL,
+            libraryID: libraryID
+        ))
+        XCTAssertTrue(fixture.store.commitLibraryGrant(library))
+        let root = try XCTUnwrap(fixture.store.prepareRootGrant(
+            url: rootURL,
+            libraryID: libraryID
+        ))
+        XCTAssertTrue(fixture.store.commitRootGrant(root, rootID: rootID))
+
+        fixture.store.deactivateAll()
+
+        XCTAssertNil(fixture.store.activeLibraryID)
+        XCTAssertEqual(Set(fixture.driver.stoppedURLs), Set([libraryURL, rootURL]))
+    }
 }
 
 @MainActor
 private final class GrantStoreFixture {
     let directory: URL
     let storageURL: URL
-    let driver = FakeGrantOperations()
+    let driver: FakeGrantOperations
+    let persistence: FakeGrantPersistence
     let store: SecurityScopedGrantStore
 
     init() {
-        directory = FileManager.default.temporaryDirectory
+        let driver = FakeGrantOperations()
+        let persistence = FakeGrantPersistence()
+        self.driver = driver
+        self.persistence = persistence
+        let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        storageURL = directory.appendingPathComponent("grants.plist")
-        store = SecurityScopedGrantStore(storageURL: storageURL, operations: driver.operations)
+        let storageURL = directory.appendingPathComponent("grants.plist")
+        self.directory = directory
+        self.storageURL = storageURL
+        self.store = SecurityScopedGrantStore(
+            storageURL: storageURL,
+            operations: driver.operations,
+            writeState: { [unowned persistence] data, url in persistence.write(data, to: url) }
+        )
     }
 
     func remove() {
@@ -144,6 +249,8 @@ private final class GrantStoreFixture {
 private final class FakeGrantOperations {
     var scopes: [SecurityScopedGrantOperations.BookmarkScope] = []
     var startSucceeds = true
+    var startedURLs: [URL] = []
+    var stoppedURLs: [URL] = []
     private var nextBookmark = 0
     private var urls: [Data: URL] = [:]
 
@@ -160,8 +267,33 @@ private final class FakeGrantOperations {
                 guard let url = urls[data] else { throw CocoaError(.fileReadCorruptFile) }
                 return .init(url: url, isStale: false)
             },
-            startAccess: { [unowned self] _ in startSucceeds },
-            stopAccess: { _ in }
+            startAccess: { [unowned self] url in
+                startedURLs.append(url)
+                return startSucceeds
+            },
+            stopAccess: { [unowned self] url in stoppedURLs.append(url) }
         )
+    }
+}
+
+@MainActor
+private final class FakeGrantPersistence {
+    var succeeds = true
+    var failingWriteNumbers: Set<Int> = []
+    private var writeCount = 0
+
+    func write(_ data: Data, to url: URL) -> Bool {
+        writeCount += 1
+        guard succeeds, !failingWriteNumbers.contains(writeCount) else { return false }
+        do {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try data.write(to: url, options: .atomic)
+            return true
+        } catch {
+            return false
+        }
     }
 }

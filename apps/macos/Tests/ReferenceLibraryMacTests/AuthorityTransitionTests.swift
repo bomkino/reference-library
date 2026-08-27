@@ -15,7 +15,10 @@ final class AuthorityTransitionTests: XCTestCase {
                     throw ExpectedFailure.failed
                 },
                 adopt: { trace.append("adopt") },
-                rollback: { trace.append("rollback") }
+                rollback: {
+                    trace.append("rollback")
+                    return true
+                }
             )
             XCTFail("expected persistence failure")
         } catch ExpectedFailure.failed {
@@ -34,7 +37,10 @@ final class AuthorityTransitionTests: XCTestCase {
                     trace.append("adopt")
                     throw ExpectedFailure.failed
                 },
-                rollback: { trace.append("rollback") }
+                rollback: {
+                    trace.append("rollback")
+                    return true
+                }
             )
             XCTFail("expected adoption failure")
         } catch ExpectedFailure.failed {
@@ -52,13 +58,15 @@ final class AuthorityTransitionTests: XCTestCase {
                     trace.append("prepare")
                     throw ExpectedFailure.failed
                 },
-                add: {
+                adoptInCore: {
                     trace.append("add")
                     return "added"
                 },
-                commit: { _, _ in trace.append("commit") },
-                rollbackAdded: { _ in trace.append("rollback") },
-                discard: { _ in trace.append("discard") }
+                finalizeHostAuthority: { _, _ in trace.append("finalize") },
+                discardBeforeAdoption: { _ in
+                    trace.append("discard")
+                    return true
+                }
             )
             XCTFail("expected preparation failure")
         } catch ExpectedFailure.failed {
@@ -68,7 +76,7 @@ final class AuthorityTransitionTests: XCTestCase {
         }
     }
 
-    func testRootCommitFailureRollsBackAddedRootThenDiscardsProvisionalGrant() async {
+    func testRootAdoptionFailureDiscardsOnlyProvisionalHostAuthority() async {
         var trace: [String] = []
         do {
             _ = try await RootAuthorityTransition.perform(
@@ -76,20 +84,64 @@ final class AuthorityTransitionTests: XCTestCase {
                     trace.append("prepare")
                     return "provisional"
                 },
-                add: {
+                adoptInCore: { () -> String in
+                    trace.append("add")
+                    throw ExpectedFailure.failed
+                },
+                finalizeHostAuthority: { _, _ in trace.append("finalize") },
+                discardBeforeAdoption: { _ in
+                    trace.append("discard")
+                    return true
+                }
+            )
+            XCTFail("expected adoption failure")
+        } catch ExpectedFailure.failed {
+            XCTAssertEqual(trace, ["prepare", "add", "discard"])
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+    }
+
+    func testRootFinalizeFailureDoesNotInventCanonicalDeletion() async {
+        var trace: [String] = []
+        do {
+            _ = try await RootAuthorityTransition.perform(
+                prepare: {
+                    trace.append("prepare")
+                    return "provisional"
+                },
+                adoptInCore: {
                     trace.append("add")
                     return "root"
                 },
-                commit: { _, _ in
-                    trace.append("commit")
+                finalizeHostAuthority: { _, _ in
+                    trace.append("finalize")
                     throw ExpectedFailure.failed
                 },
-                rollbackAdded: { _ in trace.append("rollback") },
-                discard: { _ in trace.append("discard") }
+                discardBeforeAdoption: { _ in
+                    trace.append("discard")
+                    return true
+                }
             )
-            XCTFail("expected commit failure")
+            XCTFail("expected finalize failure")
         } catch ExpectedFailure.failed {
-            XCTAssertEqual(trace, ["prepare", "add", "commit", "rollback", "discard"])
+            XCTAssertEqual(trace, ["prepare", "add", "finalize"])
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+    }
+
+    func testRootPreAdoptionCleanupPersistenceFailureIsExplicit() async {
+        do {
+            _ = try await RootAuthorityTransition.perform(
+                prepare: { "provisional" },
+                adoptInCore: { () -> String in throw ExpectedFailure.failed },
+                finalizeHostAuthority: { _, _ in },
+                discardBeforeAdoption: { _ in false }
+            )
+            XCTFail("expected cleanup persistence failure")
+        } catch AuthorityTransitionFailure.rollbackPersistenceFailed {
+            // Expected fail-closed result.
         } catch {
             XCTFail("unexpected error: \(error)")
         }
@@ -102,16 +154,18 @@ final class AuthorityTransitionTests: XCTestCase {
                 trace.append("prepare")
                 return "provisional"
             },
-            add: {
+            adoptInCore: {
                 trace.append("add")
                 return "root"
             },
-            commit: { _, _ in trace.append("commit") },
-            rollbackAdded: { _ in trace.append("rollback") },
-            discard: { _ in trace.append("discard") }
+            finalizeHostAuthority: { _, _ in trace.append("finalize") },
+            discardBeforeAdoption: { _ in
+                trace.append("discard")
+                return true
+            }
         )
         XCTAssertEqual(result, "root")
-        XCTAssertEqual(trace, ["prepare", "add", "commit"])
+        XCTAssertEqual(trace, ["prepare", "add", "finalize"])
     }
 
     func testFailedProvisionalCloseRestartsHelperToReleaseUnknownLock() async {
@@ -156,28 +210,22 @@ final class AuthorityTransitionTests: XCTestCase {
         XCTAssertEqual(trace, ["close", "restart"])
     }
 
-    func testRootRollbackCancelsBeforeUnbindingCanonicalRoot() async {
+    func testRollbackPersistenceFailureOverridesOriginalTransitionError() async {
         var trace: [String] = []
-        let succeeded = await RootCanonicalRollback.perform(
-            cancelJob: { trace.append("cancel") },
-            unbindRoot: { trace.append("unbind") }
-        )
-
-        XCTAssertTrue(succeeded)
-        XCTAssertEqual(trace, ["cancel", "unbind"])
-    }
-
-    func testRootRollbackReportsUnbindFailureAfterCancellation() async {
-        var trace: [String] = []
-        let succeeded = await RootCanonicalRollback.perform(
-            cancelJob: { trace.append("cancel") },
-            unbindRoot: {
-                trace.append("unbind")
-                throw ExpectedFailure.failed
-            }
-        )
-
-        XCTAssertFalse(succeeded)
-        XCTAssertEqual(trace, ["cancel", "unbind"])
+        do {
+            try await LibraryAuthorityTransition.perform(
+                persistAndActivate: { throw ExpectedFailure.failed },
+                adopt: { trace.append("adopt") },
+                rollback: {
+                    trace.append("rollback")
+                    return false
+                }
+            )
+            XCTFail("expected rollback persistence failure")
+        } catch AuthorityTransitionFailure.rollbackPersistenceFailed {
+            XCTAssertEqual(trace, ["rollback"])
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
     }
 }

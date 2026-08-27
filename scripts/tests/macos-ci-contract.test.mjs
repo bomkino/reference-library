@@ -17,9 +17,11 @@ test("Apple-Silicon package CI validates the extracted app and clean-source arti
     "verify-artifact-checksums.mjs",
     "--require-current-target --require-clean-source",
     "SHA256SUMS",
+    "V1_BUILD_RECEIPT.json",
     "MACOS_ARTIFACT_VALIDATION.json",
     "generate-product-icon.mjs --check",
   ]) assert.match(macos, new RegExp(escapeRegExp(required)), `missing macOS CI seam: ${required}`);
+  assert.doesNotMatch(macos, /T01_BUILD_RECEIPT/);
   assert.match(macos, /actions\/upload-artifact@[0-9a-f]{40}/);
   assert.doesNotMatch(macos, /notari[sz]|stapler|xcrun notarytool/i);
   const buildScript = await readFile(

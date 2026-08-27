@@ -22,7 +22,9 @@ test("Ubuntu package CI extracts every format and rehearses hardened X11 and Way
     "verify-artifact-checksums.mjs",
     "--require-clean-source",
     "SHA256SUMS",
+    "V1_BUILD_RECEIPT.json",
   ]) assert.match(linux, new RegExp(escapeRegExp(required)), `missing Linux CI seam: ${required}`);
+  assert.doesNotMatch(linux, /T01_BUILD_RECEIPT/);
   assert.doesNotMatch(linux, /--no-sandbox|--disable-setuid-sandbox/);
   assert.match(linux, /actions\/upload-artifact@[0-9a-f]{40}/);
 });

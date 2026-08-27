@@ -1,17 +1,27 @@
 import Foundation
 
+enum AuthorityTransitionFailure: LocalizedError {
+    case rollbackPersistenceFailed
+
+    var errorDescription: String? {
+        "Authorization recovery could not be persisted. Restart before continuing."
+    }
+}
+
 @MainActor
 enum LibraryAuthorityTransition {
     static func perform(
         persistAndActivate: () throws -> Void,
         adopt: () async throws -> Void,
-        rollback: () async -> Void
+        rollback: () async -> Bool
     ) async throws {
         do {
             try persistAndActivate()
             try await adopt()
         } catch {
-            await rollback()
+            guard await rollback() else {
+                throw AuthorityTransitionFailure.rollbackPersistenceFailed
+            }
             throw error
         }
     }
@@ -21,25 +31,22 @@ enum LibraryAuthorityTransition {
 enum RootAuthorityTransition {
     static func perform<Provisional, Added>(
         prepare: () throws -> Provisional,
-        add: () async throws -> Added,
-        commit: (Provisional, Added) throws -> Void,
-        rollbackAdded: (Added) async -> Void,
-        discard: (Provisional) -> Void
+        adoptInCore: () async throws -> Added,
+        finalizeHostAuthority: (Provisional, Added) throws -> Void,
+        discardBeforeAdoption: (Provisional) -> Bool
     ) async throws -> Added {
         let provisional = try prepare()
-        var committed = false
-        defer {
-            if !committed { discard(provisional) }
-        }
-        let added = try await add()
+        let added: Added
         do {
-            try commit(provisional, added)
-            committed = true
-            return added
+            added = try await adoptInCore()
         } catch {
-            await rollbackAdded(added)
+            guard discardBeforeAdoption(provisional) else {
+                throw AuthorityTransitionFailure.rollbackPersistenceFailed
+            }
             throw error
         }
+        try finalizeHostAuthority(provisional, added)
+        return added
     }
 }
 
@@ -65,22 +72,6 @@ enum ProvisionalSessionCleanup {
             } catch {
                 return .helperUnavailable
             }
-        }
-    }
-}
-
-@MainActor
-enum RootCanonicalRollback {
-    static func perform(
-        cancelJob: () async -> Void,
-        unbindRoot: () async throws -> Void
-    ) async -> Bool {
-        await cancelJob()
-        do {
-            try await unbindRoot()
-            return true
-        } catch {
-            return false
         }
     }
 }

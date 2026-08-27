@@ -2,6 +2,18 @@ import Foundation
 
 private let grantPersistenceSchemaVersion = 1
 
+@MainActor
+private func writeGrantStateAtomically(_ data: Data, to url: URL) -> Bool {
+    do {
+        let parent = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        try data.write(to: url, options: [.atomic])
+        return true
+    } catch {
+        return false
+    }
+}
+
 struct ProvisionalLibraryGrant: Equatable {
     let token: String
     let libraryID: String
@@ -21,12 +33,12 @@ protocol SecurityScopedGrantManaging: AnyObject {
 
     func prepareLibraryGrant(url: URL, libraryID: String) -> ProvisionalLibraryGrant?
     func commitLibraryGrant(_ provisional: ProvisionalLibraryGrant) -> Bool
-    func rollbackLibraryGrant(_ provisional: ProvisionalLibraryGrant)
+    func rollbackLibraryGrant(_ provisional: ProvisionalLibraryGrant) -> Bool
     func activatePersistedLibrary(libraryID: String) -> Bool
 
     func prepareRootGrant(url: URL, libraryID: String) -> ProvisionalRootGrant?
     func commitRootGrant(_ provisional: ProvisionalRootGrant, rootID: String) -> Bool
-    func discardRootGrant(_ provisional: ProvisionalRootGrant)
+    func discardRootGrant(_ provisional: ProvisionalRootGrant) -> Bool
     func activatePersistedRoots(libraryID: String) -> [String: URL]
     func activeRootURL(libraryID: String, rootID: String) -> URL?
     func removeRootGrant(libraryID: String, rootID: String) -> Bool
@@ -97,30 +109,41 @@ final class SecurityScopedGrantStore: SecurityScopedGrantManaging {
 
     private let storageURL: URL
     private let operations: SecurityScopedGrantOperations
+    private let writeState: @MainActor (Data, URL) -> Bool
     private var state: PersistedState
+    private var persistenceQuarantined: Bool
     private var activeLibraryURL: URL?
     private var activeRootURLs: [String: URL] = [:]
+    private var activeProvisionalRootURLs: [String: URL] = [:]
 
     private(set) var activeLibraryID: String?
 
     init(
         storageURL: URL? = nil,
-        operations: SecurityScopedGrantOperations = .live
+        operations: SecurityScopedGrantOperations = .live,
+        writeState: (@MainActor (Data, URL) -> Bool)? = nil
     ) {
         self.storageURL = storageURL ?? Self.defaultStorageURL()
         self.operations = operations
-        state = Self.readState(from: self.storageURL) ?? PersistedState()
-        if state.schemaVersion != grantPersistenceSchemaVersion {
+        self.writeState = writeState ?? writeGrantStateAtomically
+        let fileExists = FileManager.default.fileExists(atPath: self.storageURL.path)
+        if let restored = Self.readState(from: self.storageURL),
+           restored.schemaVersion == grantPersistenceSchemaVersion {
+            state = restored
+            persistenceQuarantined = false
+        } else {
             state = PersistedState()
+            persistenceQuarantined = fileExists
         }
-        if !state.provisionalRoots.isEmpty {
+        if !persistenceQuarantined, !state.provisionalRoots.isEmpty {
             state.provisionalRoots.removeAll()
-            _ = persist()
+            if !persist() { quarantinePersistence() }
         }
     }
 
     func prepareLibraryGrant(url: URL, libraryID: String) -> ProvisionalLibraryGrant? {
-        guard BridgeValidation.isOpaqueID(libraryID),
+        guard !persistenceQuarantined,
+              BridgeValidation.isOpaqueID(libraryID),
               let data = try? operations.createBookmark(url, .libraryReadWrite) else {
             return nil
         }
@@ -145,7 +168,7 @@ final class SecurityScopedGrantStore: SecurityScopedGrantManaging {
                 }
               ) else {
             state = previousState
-            _ = persist()
+            if !persist() { quarantinePersistence() }
             return false
         }
         deactivateAll()
@@ -154,18 +177,21 @@ final class SecurityScopedGrantStore: SecurityScopedGrantManaging {
         return true
     }
 
-    func rollbackLibraryGrant(_ provisional: ProvisionalLibraryGrant) {
+    func rollbackLibraryGrant(_ provisional: ProvisionalLibraryGrant) -> Bool {
         if let previous = provisional.previousBookmarkData {
             state.libraries[provisional.libraryID] = previous
         } else {
             state.libraries.removeValue(forKey: provisional.libraryID)
         }
-        _ = persist()
+        let persisted = persist()
+        if !persisted { quarantinePersistence() }
         if activeLibraryID == provisional.libraryID { deactivateAll() }
+        return persisted
     }
 
     func activatePersistedLibrary(libraryID: String) -> Bool {
-        guard BridgeValidation.isOpaqueID(libraryID),
+        guard !persistenceQuarantined,
+              BridgeValidation.isOpaqueID(libraryID),
               let data = state.libraries[libraryID],
               let activated = activate(
                 bookmarkData: data,
@@ -181,24 +207,42 @@ final class SecurityScopedGrantStore: SecurityScopedGrantManaging {
     }
 
     func prepareRootGrant(url: URL, libraryID: String) -> ProvisionalRootGrant? {
-        guard BridgeValidation.isOpaqueID(libraryID),
+        guard !persistenceQuarantined,
+              BridgeValidation.isOpaqueID(libraryID),
               let data = try? operations.createBookmark(url, .rootReadOnly) else {
             return nil
         }
-        let provisional = ProvisionalRootGrant(
-            token: UUID().uuidString.lowercased(),
-            libraryID: libraryID,
-            bookmarkData: data
-        )
-        state.provisionalRoots[provisional.token] = ProvisionalRootRecord(
+        let token = UUID().uuidString.lowercased()
+        var bookmarkData = data
+        state.provisionalRoots[token] = ProvisionalRootRecord(
             libraryID: libraryID,
             bookmarkData: data
         )
         guard persist() else {
-            state.provisionalRoots.removeValue(forKey: provisional.token)
+            state.provisionalRoots.removeValue(forKey: token)
             return nil
         }
-        return provisional
+        guard let activated = activate(
+            bookmarkData: data,
+            scope: .rootReadOnly,
+            refresh: { refreshed in
+                bookmarkData = refreshed
+                self.state.provisionalRoots[token] = ProvisionalRootRecord(
+                    libraryID: libraryID,
+                    bookmarkData: refreshed
+                )
+            }
+        ) else {
+            state.provisionalRoots.removeValue(forKey: token)
+            if !persist() { quarantinePersistence() }
+            return nil
+        }
+        activeProvisionalRootURLs[token] = activated
+        return ProvisionalRootGrant(
+            token: token,
+            libraryID: libraryID,
+            bookmarkData: bookmarkData
+        )
     }
 
     func commitRootGrant(_ provisional: ProvisionalRootGrant, rootID: String) -> Bool {
@@ -213,16 +257,9 @@ final class SecurityScopedGrantStore: SecurityScopedGrantManaging {
         let previousState = state
         state.provisionalRoots.removeValue(forKey: provisional.token)
         state.roots[provisional.libraryID, default: [:]][rootID] = provisional.bookmarkData
-        guard persist(),
-              let activated = activate(
-                bookmarkData: provisional.bookmarkData,
-                scope: .rootReadOnly,
-                refresh: { refreshed in
-                    self.state.roots[provisional.libraryID, default: [:]][rootID] = refreshed
-                }
-              ) else {
+        guard persist(), let activated = activeProvisionalRootURLs.removeValue(forKey: provisional.token) else {
             state = previousState
-            _ = persist()
+            if !persist() { quarantinePersistence() }
             return false
         }
         if let previous = activeRootURLs.removeValue(forKey: rootID) {
@@ -232,9 +269,17 @@ final class SecurityScopedGrantStore: SecurityScopedGrantManaging {
         return true
     }
 
-    func discardRootGrant(_ provisional: ProvisionalRootGrant) {
-        guard state.provisionalRoots.removeValue(forKey: provisional.token) != nil else { return }
-        _ = persist()
+    func discardRootGrant(_ provisional: ProvisionalRootGrant) -> Bool {
+        if let active = activeProvisionalRootURLs.removeValue(forKey: provisional.token) {
+            operations.stopAccess(active)
+        }
+        if state.provisionalRoots.removeValue(forKey: provisional.token) != nil {
+            guard persist() else {
+                quarantinePersistence()
+                return false
+            }
+        }
+        return true
     }
 
     func activatePersistedRoots(libraryID: String) -> [String: URL] {
@@ -269,6 +314,7 @@ final class SecurityScopedGrantStore: SecurityScopedGrantManaging {
         state.roots[libraryID]?.removeValue(forKey: rootID)
         guard persist() else {
             state = previousState
+            quarantinePersistence()
             return false
         }
         if activeLibraryID == libraryID, let url = activeRootURLs.removeValue(forKey: rootID) {
@@ -278,6 +324,8 @@ final class SecurityScopedGrantStore: SecurityScopedGrantManaging {
     }
 
     func deactivateAll() {
+        for url in activeProvisionalRootURLs.values { operations.stopAccess(url) }
+        activeProvisionalRootURLs.removeAll()
         for url in activeRootURLs.values { operations.stopAccess(url) }
         activeRootURLs.removeAll()
         if let activeLibraryURL { operations.stopAccess(activeLibraryURL) }
@@ -286,6 +334,8 @@ final class SecurityScopedGrantStore: SecurityScopedGrantManaging {
     }
 
     var persistedProvisionalRootCountForTesting: Int { state.provisionalRoots.count }
+    var activeProvisionalRootCountForTesting: Int { activeProvisionalRootURLs.count }
+    var persistenceQuarantinedForTesting: Bool { persistenceQuarantined }
 
     func hasPersistedRootForTesting(libraryID: String, rootID: String) -> Bool {
         state.roots[libraryID]?[rootID] != nil
@@ -302,22 +352,24 @@ final class SecurityScopedGrantStore: SecurityScopedGrantManaging {
                 return nil
             }
             refresh(refreshed)
-            guard persist() else { return nil }
+            guard persist() else {
+                quarantinePersistence()
+                return nil
+            }
         }
         guard operations.startAccess(resolved.url) else { return nil }
         return resolved.url
     }
 
     private func persist() -> Bool {
-        do {
-            let parent = storageURL.deletingLastPathComponent()
-            try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
-            let data = try PropertyListEncoder().encode(state)
-            try data.write(to: storageURL, options: [.atomic])
-            return true
-        } catch {
-            return false
-        }
+        guard !persistenceQuarantined,
+              let data = try? PropertyListEncoder().encode(state) else { return false }
+        return writeState(data, storageURL)
+    }
+
+    private func quarantinePersistence() {
+        persistenceQuarantined = true
+        deactivateAll()
     }
 
     private static func readState(from url: URL) -> PersistedState? {
