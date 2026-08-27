@@ -78,3 +78,10 @@ Do not rewrite or delete entries. Corrections append a superseding entry.
 **Change:** replaced whole-file opaque resource responses with cancellable 64 KiB streams in both privileged shells; added exact-file SHA-256 receipts with explicit install/integration/release exclusions; made CI assemble and retain the full pacman/AppImage/tar and Apple-Silicon `.app.zip` bundles for 30 days.
 **Fresh measurement:** local Rust and Node source gates passed, including 2 receipt tests, 5 workspace tests and 8 Linux tests; compatible Linux packaging rebuilt all three archives and verified their contents. GitHub Actions run `33036147773` passed all five jobs at source `d252121d1cca9022f679212d0f8c198fa04d20d3`; Swift tests compiled the cancellable WebKit handler, both package receipts verified on their matching CI architectures, and artifacts `9632141919` (Linux) and `9632095326` (macOS) uploaded with SHA-256 container digests.
 **Decision:** keep the hardening and source-bound artifacts. Resource backpressure is now implemented and source-tested, but C1 remains open until cancellation, memory behavior, WAL recovery, signing and bundling pass on the real targets. M1, L1 and X1 remain open.
+
+## 2026-08-27 — T02 branch and reconciliation seam
+
+**Hypothesis:** source-only product work can continue without weakening or falsely satisfying the target-machine gates by isolating the next exact slice from the verified T01 head.
+**Change:** created `codex/reference-library-t02-rename-reconciliation` from remote T01 head `858202c2bbf5f3427703ccf42414a1629d0f8a59`; designed external rename reconciliation twice around the existing Root scan and migration-1 platform-evidence fields.
+**Fresh measurement:** clean checkout resolved to tree `c9c65b278a1bbbe54c9741ab8f6a85607531f752`, identical to the verified remote T01 tree; `main` remains outside this branch.
+**Decision:** keep M1, L1, X1 and C1 open and explicitly rescheduled. Dispatch only T02 rename/Missing reconciliation; add no source mutation or post-T02 feature.

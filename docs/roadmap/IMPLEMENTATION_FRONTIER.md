@@ -6,13 +6,13 @@ Create/open one Library, authorize one Root, progressively discover common still
 
 Source head `d252121d1cca9022f679212d0f8c198fa04d20d3` passes the repository, core, workspace, full Linux package and Apple-Silicon package jobs. Exact source-bound CI artifacts are retained through 26 September 2026. Target integration still requires M1, L1 and X1. ADR-004 remains proposed until C1.
 
-## Next exact work
+## Target work explicitly rescheduled
 
-Run M1 and L1 on representative targets, then X1 across those installed builds and close C1 from the resulting packaging/recovery evidence. No T02 implementation is dispatched from this branch.
+Run M1 and L1 on representative targets, then X1 across those installed builds and close C1 from the resulting packaging/recovery evidence. These gates remain open; source or compatible CI cannot substitute for them.
 
-## Next product slice after the gates
+## Active source-only product slice: T02
 
-T02 should reconcile an externally renamed still while preserving Source, Location and Asset identity, then expose Missing honestly when evidence is insufficient. It must not grow into broad source mutation or similarity work.
+On `codex/reference-library-t02-rename-reconciliation`, reconcile an externally renamed still while preserving Source, Location and Asset identity, then expose Missing honestly when evidence is insufficient. The binding slice is `docs/specs/TRACER_T02.md`. It must not grow into broad source mutation or similarity work.
 
 ## Explicitly deferred
 
