@@ -23,4 +23,8 @@ await cp(
   path.join(distribution, "workspace"),
   { recursive: true },
 );
+await mkdir(path.join(distribution, "legal"), { recursive: true });
+for (const source of ["DEPENDENCY-LICENSES.json", "THIRD_PARTY-NOTICES.txt", "LICENSE", "NOTICE"]) {
+  await cp(path.join(repositoryRoot, source), path.join(distribution, "legal", source));
+}
 console.log("built hardened Electron shell and shared workspace bundle");

@@ -14,6 +14,7 @@ REQUIRED = (
     "NOTICE",
     "THIRD_PARTY.md",
     "DEPENDENCY-LICENSES.json",
+    "THIRD_PARTY-NOTICES.txt",
     "docs/product/PRODUCT_CONSTITUTION.md",
     "docs/specs/TRACER_T01.md",
     "docs/security/SECURITY_MODEL.md",
@@ -26,7 +27,7 @@ def main() -> int:
     missing = [path for path in REQUIRED if not (ROOT / path).is_file()]
     forbidden = [path for path in FORBIDDEN_DIRS if (ROOT / path).exists()]
     dependency_licences = json.loads((ROOT / "DEPENDENCY-LICENSES.json").read_text())
-    if dependency_licences.get("schemaVersion") != 1:
+    if dependency_licences.get("schemaVersion") != 2:
         print("DEPENDENCY-LICENSES.json has unsupported schemaVersion", file=sys.stderr)
         return 1
     if missing or forbidden:

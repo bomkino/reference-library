@@ -20,13 +20,17 @@ if [[ -d "$release_root" ]]; then
   archived="$release_root.previous.$(date -u +%Y%m%dT%H%M%SZ)"
   mv "$release_root" "$archived"
 fi
-mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/bin" "$app/Contents/Resources/Workspace"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/bin" \
+  "$app/Contents/Resources/Workspace" "$app/Contents/Resources/Legal"
 
 install -m 755 "$swift_bin/ReferenceLibraryMac" "$app/Contents/MacOS/ReferenceLibraryMac"
 install -m 755 "$repo_root/target/aarch64-apple-darwin/release/reference-core" \
   "$app/Contents/Resources/bin/reference-core"
 install -m 644 "$repo_root/apps/macos/Info.plist" "$app/Contents/Info.plist"
 cp -R "$repo_root/packages/workspace/dist/." "$app/Contents/Resources/Workspace/"
+for legal_file in DEPENDENCY-LICENSES.json THIRD_PARTY-NOTICES.txt LICENSE NOTICE; do
+  install -m 644 "$repo_root/$legal_file" "$app/Contents/Resources/Legal/$legal_file"
+done
 
 codesign --force --options runtime --timestamp=none --sign - \
   "$app/Contents/Resources/bin/reference-core"

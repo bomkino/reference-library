@@ -1,3318 +1,627 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "generated": true,
   "generator": "scripts/generate_dependency_licenses.py",
+  "scope": {
+    "cargo": {
+      "edgePolicy": "workspace production and build edges; dev edges excluded",
+      "targets": {
+        "linux-x86_64": "x86_64-unknown-linux-gnu",
+        "macos-arm64": "aarch64-apple-darwin"
+      },
+      "packageCounts": {
+        "linux-x86_64": 40,
+        "macos-arm64": 40
+      }
+    },
+    "npm": {
+      "edgePolicy": "application production closure plus pinned Electron runtime closure",
+      "packageCounts": {
+        "npm-production": 3,
+        "electron-runtime": 13
+      }
+    }
+  },
   "packages": [
     {
       "ecosystem": "cargo",
       "name": "bitflags",
       "version": "2.13.1",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "block-buffer",
       "version": "0.10.4",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
-    },
-    {
-      "ecosystem": "cargo",
-      "name": "bumpalo",
-      "version": "3.20.3",
-      "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "cc",
       "version": "1.4.4",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "cfg-if",
       "version": "1.0.4",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "cpufeatures",
       "version": "0.2.17",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "crypto-common",
       "version": "0.1.7",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "digest",
       "version": "0.10.7",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "fallible-iterator",
       "version": "0.3.0",
       "license": "MIT/Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "fallible-streaming-iterator",
       "version": "0.1.9",
       "license": "MIT/Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "find-msvc-tools",
       "version": "0.1.11",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "foldhash",
       "version": "0.2.0",
       "license": "Zlib",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
-    },
-    {
-      "ecosystem": "cargo",
-      "name": "futures-core",
-      "version": "0.3.34",
-      "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
-    },
-    {
-      "ecosystem": "cargo",
-      "name": "futures-task",
-      "version": "0.3.34",
-      "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
-    },
-    {
-      "ecosystem": "cargo",
-      "name": "futures-util",
-      "version": "0.3.34",
-      "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "generic-array",
       "version": "0.14.7",
       "license": "MIT",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "getrandom",
       "version": "0.4.3",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
-    },
-    {
-      "ecosystem": "cargo",
-      "name": "hashbrown",
-      "version": "0.16.1",
-      "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "hashbrown",
       "version": "0.17.1",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "hashlink",
       "version": "0.12.1",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "imagesize",
       "version": "0.15.0",
       "license": "MIT",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "itoa",
       "version": "1.0.18",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
-    },
-    {
-      "ecosystem": "cargo",
-      "name": "js-sys",
-      "version": "0.3.104",
-      "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "libc",
       "version": "0.2.189",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "libsqlite3-sys",
       "version": "0.38.2",
       "license": "MIT",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "memchr",
       "version": "2.8.3",
       "license": "Unlicense OR MIT",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
-    },
-    {
-      "ecosystem": "cargo",
-      "name": "once_cell",
-      "version": "1.21.4",
-      "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
-    },
-    {
-      "ecosystem": "cargo",
-      "name": "pin-project-lite",
-      "version": "0.2.17",
-      "license": "Apache-2.0 OR MIT",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "pkg-config",
       "version": "0.3.34",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "proc-macro2",
       "version": "1.0.107",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "quote",
       "version": "1.0.47",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
-    },
-    {
-      "ecosystem": "cargo",
-      "name": "r-efi",
-      "version": "6.0.0",
-      "license": "MIT OR Apache-2.0 OR LGPL-2.1-or-later",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
-    },
-    {
-      "ecosystem": "cargo",
-      "name": "rsqlite-vfs",
-      "version": "0.1.1",
-      "license": "MIT",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "rusqlite",
       "version": "0.40.2",
       "license": "MIT",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
-    },
-    {
-      "ecosystem": "cargo",
-      "name": "rustversion",
-      "version": "1.0.23",
-      "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "serde",
       "version": "1.0.229",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "serde_core",
       "version": "1.0.229",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "serde_derive",
       "version": "1.0.229",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "serde_json",
       "version": "1.0.151",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "sha2",
       "version": "0.10.9",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "shlex",
       "version": "2.0.1",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
-    },
-    {
-      "ecosystem": "cargo",
-      "name": "slab",
-      "version": "0.4.12",
-      "license": "MIT",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "smallvec",
       "version": "1.15.2",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
-    },
-    {
-      "ecosystem": "cargo",
-      "name": "sqlite-wasm-rs",
-      "version": "0.5.5",
-      "license": "MIT",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
-    },
-    {
-      "ecosystem": "cargo",
-      "name": "syn",
-      "version": "2.0.119",
-      "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "syn",
       "version": "3.0.4",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "thiserror",
       "version": "2.0.20",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "thiserror-impl",
       "version": "2.0.20",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "typenum",
       "version": "1.20.1",
       "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "unicode-ident",
       "version": "1.0.24",
       "license": "(MIT OR Apache-2.0) AND Unicode-3.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "uuid",
       "version": "1.25.0",
       "license": "Apache-2.0 OR MIT",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "vcpkg",
       "version": "0.2.15",
       "license": "MIT/Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "version_check",
       "version": "0.9.5",
       "license": "MIT/Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
-    },
-    {
-      "ecosystem": "cargo",
-      "name": "wasm-bindgen",
-      "version": "0.2.127",
-      "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
-    },
-    {
-      "ecosystem": "cargo",
-      "name": "wasm-bindgen-macro",
-      "version": "0.2.127",
-      "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
-    },
-    {
-      "ecosystem": "cargo",
-      "name": "wasm-bindgen-macro-support",
-      "version": "0.2.127",
-      "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
-    },
-    {
-      "ecosystem": "cargo",
-      "name": "wasm-bindgen-shared",
-      "version": "0.2.127",
-      "license": "MIT OR Apache-2.0",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "cargo",
       "name": "zmij",
       "version": "1.0.23",
       "license": "MIT",
-      "source": "registry+https://github.com/rust-lang/crates.io-index"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@asamuzakjp/css-color",
-      "version": "6.0.7",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@asamuzakjp/css-color/-/css-color-6.0.7.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@asamuzakjp/dom-selector",
-      "version": "8.3.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@asamuzakjp/dom-selector/-/dom-selector-8.3.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@bramus/specificity",
-      "version": "2.4.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@bramus/specificity/-/specificity-2.4.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@csstools/color-helpers",
-      "version": "6.1.1",
-      "license": "MIT-0",
-      "source": "https://registry.npmjs.org/@csstools/color-helpers/-/color-helpers-6.1.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@csstools/css-calc",
-      "version": "3.3.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@csstools/css-calc/-/css-calc-3.3.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@csstools/css-color-parser",
-      "version": "4.2.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@csstools/css-color-parser/-/css-color-parser-4.2.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@csstools/css-parser-algorithms",
-      "version": "4.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@csstools/css-parser-algorithms/-/css-parser-algorithms-4.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@csstools/css-syntax-patches-for-csstree",
-      "version": "1.1.9",
-      "license": "MIT-0",
-      "source": "https://registry.npmjs.org/@csstools/css-syntax-patches-for-csstree/-/css-syntax-patches-for-csstree-1.1.9.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@csstools/css-tokenizer",
-      "version": "4.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@csstools/css-tokenizer/-/css-tokenizer-4.0.0.tgz"
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "shippedIn": [
+        "linux-x86_64",
+        "macos-arm64"
+      ]
     },
     {
       "ecosystem": "npm",
       "name": "@electron-internal/extract-zip",
       "version": "1.0.5",
       "license": "BSD-2-Clause",
-      "source": "https://registry.npmjs.org/@electron-internal/extract-zip/-/extract-zip-1.0.5.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@electron/asar",
-      "version": "3.4.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@electron/asar/-/asar-3.4.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@electron/fuses",
-      "version": "1.8.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@electron/fuses/-/fuses-1.8.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@electron/get",
-      "version": "3.1.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@electron/get/-/get-3.1.0.tgz"
+      "source": "https://registry.npmjs.org/@electron-internal/extract-zip/-/extract-zip-1.0.5.tgz",
+      "shippedIn": [
+        "electron-runtime"
+      ]
     },
     {
       "ecosystem": "npm",
       "name": "@electron/get",
       "version": "5.1.0",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/@electron/get/-/get-5.1.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@electron/notarize",
-      "version": "2.5.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@electron/notarize/-/notarize-2.5.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@electron/osx-sign",
-      "version": "1.3.3",
-      "license": "BSD-2-Clause",
-      "source": "https://registry.npmjs.org/@electron/osx-sign/-/osx-sign-1.3.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@electron/rebuild",
-      "version": "4.2.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@electron/rebuild/-/rebuild-4.2.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@electron/universal",
-      "version": "2.0.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@electron/universal/-/universal-2.0.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@electron/windows-sign",
-      "version": "1.2.2",
-      "license": "BSD-2-Clause",
-      "source": "https://registry.npmjs.org/@electron/windows-sign/-/windows-sign-1.2.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@exodus/bytes",
-      "version": "1.15.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@exodus/bytes/-/bytes-1.15.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@isaacs/fs-minipass",
-      "version": "4.0.1",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/@isaacs/fs-minipass/-/fs-minipass-4.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@jridgewell/sourcemap-codec",
-      "version": "1.5.5",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@jridgewell/sourcemap-codec/-/sourcemap-codec-1.5.5.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@malept/cross-spawn-promise",
-      "version": "2.0.0",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/@malept/cross-spawn-promise/-/cross-spawn-promise-2.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@malept/flatpak-bundler",
-      "version": "0.4.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@malept/flatpak-bundler/-/flatpak-bundler-0.4.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@noble/hashes",
-      "version": "1.4.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@noble/hashes/-/hashes-1.4.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@noble/hashes",
-      "version": "2.3.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@noble/hashes/-/hashes-2.3.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@oxc-project/types",
-      "version": "0.147.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@oxc-project/types/-/types-0.147.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@peculiar/asn1-schema",
-      "version": "2.9.4",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@peculiar/asn1-schema/-/asn1-schema-2.9.4.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@peculiar/json-schema",
-      "version": "1.1.12",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@peculiar/json-schema/-/json-schema-1.1.12.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@peculiar/utils",
-      "version": "2.0.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@peculiar/utils/-/utils-2.0.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@peculiar/webcrypto",
-      "version": "1.7.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@peculiar/webcrypto/-/webcrypto-1.7.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@rolldown/binding-android-arm-eabi",
-      "version": "1.2.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@rolldown/binding-android-arm-eabi/-/binding-android-arm-eabi-1.2.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@rolldown/binding-android-arm64",
-      "version": "1.2.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@rolldown/binding-android-arm64/-/binding-android-arm64-1.2.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@rolldown/binding-darwin-arm64",
-      "version": "1.2.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@rolldown/binding-darwin-arm64/-/binding-darwin-arm64-1.2.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@rolldown/binding-darwin-x64",
-      "version": "1.2.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@rolldown/binding-darwin-x64/-/binding-darwin-x64-1.2.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@rolldown/binding-freebsd-x64",
-      "version": "1.2.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@rolldown/binding-freebsd-x64/-/binding-freebsd-x64-1.2.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@rolldown/binding-linux-arm-gnueabihf",
-      "version": "1.2.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@rolldown/binding-linux-arm-gnueabihf/-/binding-linux-arm-gnueabihf-1.2.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@rolldown/binding-linux-arm64-gnu",
-      "version": "1.2.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@rolldown/binding-linux-arm64-gnu/-/binding-linux-arm64-gnu-1.2.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@rolldown/binding-linux-arm64-musl",
-      "version": "1.2.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@rolldown/binding-linux-arm64-musl/-/binding-linux-arm64-musl-1.2.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@rolldown/binding-linux-ppc64-gnu",
-      "version": "1.2.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@rolldown/binding-linux-ppc64-gnu/-/binding-linux-ppc64-gnu-1.2.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@rolldown/binding-linux-s390x-gnu",
-      "version": "1.2.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@rolldown/binding-linux-s390x-gnu/-/binding-linux-s390x-gnu-1.2.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@rolldown/binding-linux-x64-gnu",
-      "version": "1.2.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@rolldown/binding-linux-x64-gnu/-/binding-linux-x64-gnu-1.2.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@rolldown/binding-linux-x64-musl",
-      "version": "1.2.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@rolldown/binding-linux-x64-musl/-/binding-linux-x64-musl-1.2.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@rolldown/binding-openharmony-arm64",
-      "version": "1.2.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@rolldown/binding-openharmony-arm64/-/binding-openharmony-arm64-1.2.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@rolldown/binding-win32-arm64-msvc",
-      "version": "1.2.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@rolldown/binding-win32-arm64-msvc/-/binding-win32-arm64-msvc-1.2.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@rolldown/binding-win32-x64-msvc",
-      "version": "1.2.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@rolldown/binding-win32-x64-msvc/-/binding-win32-x64-msvc-1.2.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@rolldown/pluginutils",
-      "version": "1.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@rolldown/pluginutils/-/pluginutils-1.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@sindresorhus/is",
-      "version": "4.6.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@sindresorhus/is/-/is-4.6.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@standard-schema/spec",
-      "version": "1.1.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@standard-schema/spec/-/spec-1.1.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@szmarczak/http-timer",
-      "version": "4.0.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@szmarczak/http-timer/-/http-timer-4.0.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@types/cacheable-request",
-      "version": "6.0.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@types/cacheable-request/-/cacheable-request-6.0.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@types/chai",
-      "version": "5.2.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@types/chai/-/chai-5.2.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@types/debug",
-      "version": "4.1.13",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@types/debug/-/debug-4.1.13.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@types/deep-eql",
-      "version": "4.0.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@types/deep-eql/-/deep-eql-4.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@types/estree",
-      "version": "1.0.9",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@types/estree/-/estree-1.0.9.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@types/fs-extra",
-      "version": "9.0.13",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@types/fs-extra/-/fs-extra-9.0.13.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@types/http-cache-semantics",
-      "version": "4.2.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@types/http-cache-semantics/-/http-cache-semantics-4.2.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@types/keyv",
-      "version": "3.1.4",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@types/keyv/-/keyv-3.1.4.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@types/ms",
-      "version": "2.1.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@types/ms/-/ms-2.1.0.tgz"
+      "source": "https://registry.npmjs.org/@electron/get/-/get-5.1.0.tgz",
+      "shippedIn": [
+        "electron-runtime"
+      ]
     },
     {
       "ecosystem": "npm",
       "name": "@types/node",
       "version": "24.13.3",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/@types/node/-/node-24.13.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@types/react",
-      "version": "19.2.18",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@types/react/-/react-19.2.18.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@types/react-dom",
-      "version": "19.2.5",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@types/react-dom/-/react-dom-19.2.5.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@types/responselike",
-      "version": "1.0.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@types/responselike/-/responselike-1.0.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@typescript/typescript-aix-ppc64",
-      "version": "7.0.2",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/@typescript/typescript-aix-ppc64/-/typescript-aix-ppc64-7.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@typescript/typescript-darwin-arm64",
-      "version": "7.0.2",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/@typescript/typescript-darwin-arm64/-/typescript-darwin-arm64-7.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@typescript/typescript-darwin-x64",
-      "version": "7.0.2",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/@typescript/typescript-darwin-x64/-/typescript-darwin-x64-7.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@typescript/typescript-freebsd-arm64",
-      "version": "7.0.2",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/@typescript/typescript-freebsd-arm64/-/typescript-freebsd-arm64-7.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@typescript/typescript-freebsd-x64",
-      "version": "7.0.2",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/@typescript/typescript-freebsd-x64/-/typescript-freebsd-x64-7.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@typescript/typescript-linux-arm",
-      "version": "7.0.2",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/@typescript/typescript-linux-arm/-/typescript-linux-arm-7.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@typescript/typescript-linux-arm64",
-      "version": "7.0.2",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/@typescript/typescript-linux-arm64/-/typescript-linux-arm64-7.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@typescript/typescript-linux-loong64",
-      "version": "7.0.2",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/@typescript/typescript-linux-loong64/-/typescript-linux-loong64-7.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@typescript/typescript-linux-mips64el",
-      "version": "7.0.2",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/@typescript/typescript-linux-mips64el/-/typescript-linux-mips64el-7.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@typescript/typescript-linux-ppc64",
-      "version": "7.0.2",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/@typescript/typescript-linux-ppc64/-/typescript-linux-ppc64-7.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@typescript/typescript-linux-riscv64",
-      "version": "7.0.2",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/@typescript/typescript-linux-riscv64/-/typescript-linux-riscv64-7.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@typescript/typescript-linux-s390x",
-      "version": "7.0.2",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/@typescript/typescript-linux-s390x/-/typescript-linux-s390x-7.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@typescript/typescript-linux-x64",
-      "version": "7.0.2",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/@typescript/typescript-linux-x64/-/typescript-linux-x64-7.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@typescript/typescript-netbsd-arm64",
-      "version": "7.0.2",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/@typescript/typescript-netbsd-arm64/-/typescript-netbsd-arm64-7.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@typescript/typescript-netbsd-x64",
-      "version": "7.0.2",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/@typescript/typescript-netbsd-x64/-/typescript-netbsd-x64-7.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@typescript/typescript-openbsd-arm64",
-      "version": "7.0.2",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/@typescript/typescript-openbsd-arm64/-/typescript-openbsd-arm64-7.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@typescript/typescript-openbsd-x64",
-      "version": "7.0.2",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/@typescript/typescript-openbsd-x64/-/typescript-openbsd-x64-7.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@typescript/typescript-sunos-x64",
-      "version": "7.0.2",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/@typescript/typescript-sunos-x64/-/typescript-sunos-x64-7.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@typescript/typescript-win32-arm64",
-      "version": "7.0.2",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/@typescript/typescript-win32-arm64/-/typescript-win32-arm64-7.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@typescript/typescript-win32-x64",
-      "version": "7.0.2",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/@typescript/typescript-win32-x64/-/typescript-win32-x64-7.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@vitejs/plugin-react",
-      "version": "6.1.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@vitejs/plugin-react/-/plugin-react-6.1.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@vitest/expect",
-      "version": "4.1.11",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@vitest/expect/-/expect-4.1.11.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@vitest/mocker",
-      "version": "4.1.11",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@vitest/mocker/-/mocker-4.1.11.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@vitest/pretty-format",
-      "version": "4.1.11",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@vitest/pretty-format/-/pretty-format-4.1.11.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@vitest/runner",
-      "version": "4.1.11",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@vitest/runner/-/runner-4.1.11.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@vitest/snapshot",
-      "version": "4.1.11",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@vitest/snapshot/-/snapshot-4.1.11.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@vitest/spy",
-      "version": "4.1.11",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@vitest/spy/-/spy-4.1.11.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@vitest/utils",
-      "version": "4.1.11",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@vitest/utils/-/utils-4.1.11.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@xmldom/xmldom",
-      "version": "0.8.15",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/@xmldom/xmldom/-/xmldom-0.8.15.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "abbrev",
-      "version": "4.0.0",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/abbrev/-/abbrev-4.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "agent-base",
-      "version": "7.1.4",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/agent-base/-/agent-base-7.1.4.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "ajv",
-      "version": "8.20.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/ajv/-/ajv-8.20.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "ansi-regex",
-      "version": "5.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/ansi-regex/-/ansi-regex-5.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "ansi-styles",
-      "version": "4.3.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/ansi-styles/-/ansi-styles-4.3.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "app-builder-lib",
-      "version": "26.15.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/app-builder-lib/-/app-builder-lib-26.15.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "argparse",
-      "version": "2.0.1",
-      "license": "Python-2.0",
-      "source": "https://registry.npmjs.org/argparse/-/argparse-2.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "asn1js",
-      "version": "3.0.10",
-      "license": "BSD-3-Clause",
-      "source": "https://registry.npmjs.org/asn1js/-/asn1js-3.0.10.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "assertion-error",
-      "version": "2.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/assertion-error/-/assertion-error-2.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "async",
-      "version": "3.2.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/async/-/async-3.2.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "async-exit-hook",
-      "version": "2.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/async-exit-hook/-/async-exit-hook-2.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "asynckit",
-      "version": "0.4.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/asynckit/-/asynckit-0.4.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "at-least-node",
-      "version": "1.0.0",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/at-least-node/-/at-least-node-1.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "aws4",
-      "version": "1.13.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/aws4/-/aws4-1.13.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "balanced-match",
-      "version": "1.0.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/balanced-match/-/balanced-match-1.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "balanced-match",
-      "version": "1.0.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/balanced-match/-/balanced-match-1.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "balanced-match",
-      "version": "1.0.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/balanced-match/-/balanced-match-1.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "balanced-match",
-      "version": "1.0.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/balanced-match/-/balanced-match-1.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "balanced-match",
-      "version": "1.0.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/balanced-match/-/balanced-match-1.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "balanced-match",
-      "version": "4.0.4",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/balanced-match/-/balanced-match-4.0.4.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "base64-js",
-      "version": "1.5.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/base64-js/-/base64-js-1.5.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "bidi-js",
-      "version": "1.0.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/bidi-js/-/bidi-js-1.0.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "bluebird",
-      "version": "3.7.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/bluebird/-/bluebird-3.7.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "boolean",
-      "version": "3.2.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/boolean/-/boolean-3.2.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "brace-expansion",
-      "version": "1.1.18",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-1.1.18.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "brace-expansion",
-      "version": "1.1.18",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-1.1.18.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "brace-expansion",
-      "version": "1.1.18",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-1.1.18.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "brace-expansion",
-      "version": "2.1.4",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-2.1.4.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "brace-expansion",
-      "version": "2.1.4",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-2.1.4.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "brace-expansion",
-      "version": "5.0.9",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.9.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "buffer-from",
-      "version": "1.1.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/buffer-from/-/buffer-from-1.1.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "builder-util",
-      "version": "26.15.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/builder-util/-/builder-util-26.15.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "builder-util-runtime",
-      "version": "9.7.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/builder-util-runtime/-/builder-util-runtime-9.7.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "bytestreamjs",
-      "version": "2.0.1",
-      "license": "BSD-3-Clause",
-      "source": "https://registry.npmjs.org/bytestreamjs/-/bytestreamjs-2.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "cacheable-lookup",
-      "version": "5.0.4",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/cacheable-lookup/-/cacheable-lookup-5.0.4.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "cacheable-request",
-      "version": "7.0.4",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/cacheable-request/-/cacheable-request-7.0.4.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "call-bind-apply-helpers",
-      "version": "1.0.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/call-bind-apply-helpers/-/call-bind-apply-helpers-1.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "chai",
-      "version": "6.2.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/chai/-/chai-6.2.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "chalk",
-      "version": "4.1.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/chalk/-/chalk-4.1.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "chownr",
-      "version": "3.0.0",
-      "license": "BlueOak-1.0.0",
-      "source": "https://registry.npmjs.org/chownr/-/chownr-3.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "chromium-pickle-js",
-      "version": "0.2.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/chromium-pickle-js/-/chromium-pickle-js-0.2.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "ci-info",
-      "version": "4.3.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/ci-info/-/ci-info-4.3.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "ci-info",
-      "version": "4.4.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/ci-info/-/ci-info-4.4.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "cliui",
-      "version": "8.0.1",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/cliui/-/cliui-8.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "clone-response",
-      "version": "1.0.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/clone-response/-/clone-response-1.0.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "color-convert",
-      "version": "2.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/color-convert/-/color-convert-2.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "color-name",
-      "version": "1.1.4",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/color-name/-/color-name-1.1.4.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "combined-stream",
-      "version": "1.0.8",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/combined-stream/-/combined-stream-1.0.8.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "commander",
-      "version": "5.1.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/commander/-/commander-5.1.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "commander",
-      "version": "9.5.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/commander/-/commander-9.5.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "compare-version",
-      "version": "0.1.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/compare-version/-/compare-version-0.1.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "concat-map",
-      "version": "0.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/concat-map/-/concat-map-0.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "convert-source-map",
-      "version": "2.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/convert-source-map/-/convert-source-map-2.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "core-util-is",
-      "version": "1.0.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/core-util-is/-/core-util-is-1.0.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "cross-dirname",
-      "version": "0.1.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/cross-dirname/-/cross-dirname-0.1.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "cross-spawn",
-      "version": "7.0.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/cross-spawn/-/cross-spawn-7.0.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "css-tree",
-      "version": "3.2.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/css-tree/-/css-tree-3.2.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "csstype",
-      "version": "3.2.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/csstype/-/csstype-3.2.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "data-urls",
-      "version": "7.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/data-urls/-/data-urls-7.0.0.tgz"
+      "source": "https://registry.npmjs.org/@types/node/-/node-24.13.3.tgz",
+      "shippedIn": [
+        "electron-runtime"
+      ]
     },
     {
       "ecosystem": "npm",
       "name": "debug",
       "version": "4.4.3",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/debug/-/debug-4.4.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "decimal.js",
-      "version": "10.6.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/decimal.js/-/decimal.js-10.6.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "decompress-response",
-      "version": "6.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/decompress-response/-/decompress-response-6.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "defer-to-connect",
-      "version": "2.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/defer-to-connect/-/defer-to-connect-2.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "define-data-property",
-      "version": "1.1.4",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/define-data-property/-/define-data-property-1.1.4.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "define-properties",
-      "version": "1.2.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/define-properties/-/define-properties-1.2.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "delayed-stream",
-      "version": "1.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/delayed-stream/-/delayed-stream-1.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "detect-libc",
-      "version": "2.1.2",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/detect-libc/-/detect-libc-2.1.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "detect-node",
-      "version": "2.1.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/detect-node/-/detect-node-2.1.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "dir-compare",
-      "version": "4.2.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/dir-compare/-/dir-compare-4.2.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "dmg-builder",
-      "version": "26.15.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/dmg-builder/-/dmg-builder-26.15.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "dotenv",
-      "version": "16.6.1",
-      "license": "BSD-2-Clause",
-      "source": "https://registry.npmjs.org/dotenv/-/dotenv-16.6.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "dotenv-expand",
-      "version": "11.0.7",
-      "license": "BSD-2-Clause",
-      "source": "https://registry.npmjs.org/dotenv-expand/-/dotenv-expand-11.0.7.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "dunder-proto",
-      "version": "1.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/dunder-proto/-/dunder-proto-1.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "duplexer2",
-      "version": "0.1.4",
-      "license": "BSD-3-Clause",
-      "source": "https://registry.npmjs.org/duplexer2/-/duplexer2-0.1.4.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "ejs",
-      "version": "3.1.10",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/ejs/-/ejs-3.1.10.tgz"
+      "source": "https://registry.npmjs.org/debug/-/debug-4.4.3.tgz",
+      "shippedIn": [
+        "electron-runtime"
+      ]
     },
     {
       "ecosystem": "npm",
       "name": "electron",
       "version": "44.0.0",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/electron/-/electron-44.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "electron-builder",
-      "version": "26.15.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/electron-builder/-/electron-builder-26.15.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "electron-builder-squirrel-windows",
-      "version": "26.15.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/electron-builder-squirrel-windows/-/electron-builder-squirrel-windows-26.15.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "electron-publish",
-      "version": "26.15.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/electron-publish/-/electron-publish-26.15.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "electron-winstaller",
-      "version": "5.4.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/electron-winstaller/-/electron-winstaller-5.4.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "emoji-regex",
-      "version": "8.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/emoji-regex/-/emoji-regex-8.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "end-of-stream",
-      "version": "1.4.5",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/end-of-stream/-/end-of-stream-1.4.5.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "entities",
-      "version": "8.0.0",
-      "license": "BSD-2-Clause",
-      "source": "https://registry.npmjs.org/entities/-/entities-8.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "env-paths",
-      "version": "2.2.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/env-paths/-/env-paths-2.2.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "env-paths",
-      "version": "2.2.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/env-paths/-/env-paths-2.2.1.tgz"
+      "source": "https://registry.npmjs.org/electron/-/electron-44.0.0.tgz",
+      "shippedIn": [
+        "electron-runtime"
+      ]
     },
     {
       "ecosystem": "npm",
       "name": "env-paths",
       "version": "3.0.0",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/env-paths/-/env-paths-3.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "err-code",
-      "version": "2.0.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/err-code/-/err-code-2.0.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "es-define-property",
-      "version": "1.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/es-define-property/-/es-define-property-1.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "es-errors",
-      "version": "1.3.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/es-errors/-/es-errors-1.3.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "es-module-lexer",
-      "version": "2.3.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/es-module-lexer/-/es-module-lexer-2.3.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "es-object-atoms",
-      "version": "1.1.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/es-object-atoms/-/es-object-atoms-1.1.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "es-set-tostringtag",
-      "version": "2.1.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/es-set-tostringtag/-/es-set-tostringtag-2.1.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "es6-error",
-      "version": "4.1.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/es6-error/-/es6-error-4.1.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "escalade",
-      "version": "3.2.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/escalade/-/escalade-3.2.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "escape-string-regexp",
-      "version": "4.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/escape-string-regexp/-/escape-string-regexp-4.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "estree-walker",
-      "version": "3.0.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/estree-walker/-/estree-walker-3.0.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "expect-type",
-      "version": "1.4.0",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/expect-type/-/expect-type-1.4.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "exponential-backoff",
-      "version": "3.1.3",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/exponential-backoff/-/exponential-backoff-3.1.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "fast-deep-equal",
-      "version": "3.1.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/fast-deep-equal/-/fast-deep-equal-3.1.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "fast-uri",
-      "version": "3.1.6",
-      "license": "BSD-3-Clause",
-      "source": "https://registry.npmjs.org/fast-uri/-/fast-uri-3.1.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "fdir",
-      "version": "6.5.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/fdir/-/fdir-6.5.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "filelist",
-      "version": "1.0.6",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/filelist/-/filelist-1.0.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "form-data",
-      "version": "4.0.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/form-data/-/form-data-4.0.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "fs-extra",
-      "version": "10.1.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/fs-extra/-/fs-extra-10.1.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "fs-extra",
-      "version": "11.3.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/fs-extra/-/fs-extra-11.3.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "fs-extra",
-      "version": "11.4.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/fs-extra/-/fs-extra-11.4.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "fs-extra",
-      "version": "11.4.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/fs-extra/-/fs-extra-11.4.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "fs-extra",
-      "version": "7.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/fs-extra/-/fs-extra-7.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "fs-extra",
-      "version": "8.1.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/fs-extra/-/fs-extra-8.1.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "fs-extra",
-      "version": "9.1.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/fs-extra/-/fs-extra-9.1.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "fs-extra",
-      "version": "9.1.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/fs-extra/-/fs-extra-9.1.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "fs-extra",
-      "version": "9.1.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/fs-extra/-/fs-extra-9.1.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "fs.realpath",
-      "version": "1.0.0",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/fs.realpath/-/fs.realpath-1.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "fsevents",
-      "version": "2.3.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/fsevents/-/fsevents-2.3.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "function-bind",
-      "version": "1.1.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/function-bind/-/function-bind-1.1.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "get-caller-file",
-      "version": "2.0.5",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/get-caller-file/-/get-caller-file-2.0.5.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "get-intrinsic",
-      "version": "1.3.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/get-intrinsic/-/get-intrinsic-1.3.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "get-proto",
-      "version": "1.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/get-proto/-/get-proto-1.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "get-stream",
-      "version": "5.2.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/get-stream/-/get-stream-5.2.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "glob",
-      "version": "7.2.3",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/glob/-/glob-7.2.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "global-agent",
-      "version": "3.0.0",
-      "license": "BSD-3-Clause",
-      "source": "https://registry.npmjs.org/global-agent/-/global-agent-3.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "globalthis",
-      "version": "1.0.4",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/globalthis/-/globalthis-1.0.4.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "gopd",
-      "version": "1.2.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/gopd/-/gopd-1.2.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "got",
-      "version": "11.8.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/got/-/got-11.8.6.tgz"
+      "source": "https://registry.npmjs.org/env-paths/-/env-paths-3.0.0.tgz",
+      "shippedIn": [
+        "electron-runtime"
+      ]
     },
     {
       "ecosystem": "npm",
       "name": "graceful-fs",
       "version": "4.2.11",
       "license": "ISC",
-      "source": "https://registry.npmjs.org/graceful-fs/-/graceful-fs-4.2.11.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "has-flag",
-      "version": "4.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/has-flag/-/has-flag-4.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "has-property-descriptors",
-      "version": "1.0.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/has-property-descriptors/-/has-property-descriptors-1.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "has-symbols",
-      "version": "1.1.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/has-symbols/-/has-symbols-1.1.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "has-tostringtag",
-      "version": "1.0.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/has-tostringtag/-/has-tostringtag-1.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "hasown",
-      "version": "2.0.4",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/hasown/-/hasown-2.0.4.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "hosted-git-info",
-      "version": "4.1.0",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/hosted-git-info/-/hosted-git-info-4.1.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "html-encoding-sniffer",
-      "version": "6.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/html-encoding-sniffer/-/html-encoding-sniffer-6.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "http-cache-semantics",
-      "version": "4.2.0",
-      "license": "BSD-2-Clause",
-      "source": "https://registry.npmjs.org/http-cache-semantics/-/http-cache-semantics-4.2.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "http-proxy-agent",
-      "version": "7.0.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/http-proxy-agent/-/http-proxy-agent-7.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "http2-wrapper",
-      "version": "1.0.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/http2-wrapper/-/http2-wrapper-1.0.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "https-proxy-agent",
-      "version": "7.0.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/https-proxy-agent/-/https-proxy-agent-7.0.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "inflight",
-      "version": "1.0.6",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/inflight/-/inflight-1.0.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "inherits",
-      "version": "2.0.4",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/inherits/-/inherits-2.0.4.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "is-fullwidth-code-point",
-      "version": "3.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/is-fullwidth-code-point/-/is-fullwidth-code-point-3.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "is-potential-custom-element-name",
-      "version": "1.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/is-potential-custom-element-name/-/is-potential-custom-element-name-1.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "isarray",
-      "version": "1.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/isarray/-/isarray-1.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "isbinaryfile",
-      "version": "4.0.10",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/isbinaryfile/-/isbinaryfile-4.0.10.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "isbinaryfile",
-      "version": "5.0.7",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/isbinaryfile/-/isbinaryfile-5.0.7.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "isexe",
-      "version": "2.0.0",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/isexe/-/isexe-2.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "isexe",
-      "version": "3.1.5",
-      "license": "BlueOak-1.0.0",
-      "source": "https://registry.npmjs.org/isexe/-/isexe-3.1.5.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "isexe",
-      "version": "4.0.0",
-      "license": "BlueOak-1.0.0",
-      "source": "https://registry.npmjs.org/isexe/-/isexe-4.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "jake",
-      "version": "10.9.4",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/jake/-/jake-10.9.4.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "jiti",
-      "version": "2.7.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/jiti/-/jiti-2.7.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "js-yaml",
-      "version": "4.3.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/js-yaml/-/js-yaml-4.3.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "jsdom",
-      "version": "30.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/jsdom/-/jsdom-30.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "json-buffer",
-      "version": "3.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/json-buffer/-/json-buffer-3.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "json-schema-traverse",
-      "version": "1.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/json-schema-traverse/-/json-schema-traverse-1.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "json-stringify-safe",
-      "version": "5.0.1",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/json-stringify-safe/-/json-stringify-safe-5.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "json5",
-      "version": "2.2.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/json5/-/json5-2.2.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "jsonfile",
-      "version": "4.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/jsonfile/-/jsonfile-4.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "jsonfile",
-      "version": "4.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/jsonfile/-/jsonfile-4.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "jsonfile",
-      "version": "6.2.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/jsonfile/-/jsonfile-6.2.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "keyv",
-      "version": "4.5.4",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/keyv/-/keyv-4.5.4.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "lazy-val",
-      "version": "1.0.5",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/lazy-val/-/lazy-val-1.0.5.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "lightningcss",
-      "version": "1.33.0",
-      "license": "MPL-2.0",
-      "source": "https://registry.npmjs.org/lightningcss/-/lightningcss-1.33.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "lightningcss-android-arm64",
-      "version": "1.33.0",
-      "license": "MPL-2.0",
-      "source": "https://registry.npmjs.org/lightningcss-android-arm64/-/lightningcss-android-arm64-1.33.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "lightningcss-darwin-arm64",
-      "version": "1.33.0",
-      "license": "MPL-2.0",
-      "source": "https://registry.npmjs.org/lightningcss-darwin-arm64/-/lightningcss-darwin-arm64-1.33.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "lightningcss-darwin-x64",
-      "version": "1.33.0",
-      "license": "MPL-2.0",
-      "source": "https://registry.npmjs.org/lightningcss-darwin-x64/-/lightningcss-darwin-x64-1.33.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "lightningcss-freebsd-x64",
-      "version": "1.33.0",
-      "license": "MPL-2.0",
-      "source": "https://registry.npmjs.org/lightningcss-freebsd-x64/-/lightningcss-freebsd-x64-1.33.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "lightningcss-linux-arm-gnueabihf",
-      "version": "1.33.0",
-      "license": "MPL-2.0",
-      "source": "https://registry.npmjs.org/lightningcss-linux-arm-gnueabihf/-/lightningcss-linux-arm-gnueabihf-1.33.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "lightningcss-linux-arm64-gnu",
-      "version": "1.33.0",
-      "license": "MPL-2.0",
-      "source": "https://registry.npmjs.org/lightningcss-linux-arm64-gnu/-/lightningcss-linux-arm64-gnu-1.33.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "lightningcss-linux-arm64-musl",
-      "version": "1.33.0",
-      "license": "MPL-2.0",
-      "source": "https://registry.npmjs.org/lightningcss-linux-arm64-musl/-/lightningcss-linux-arm64-musl-1.33.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "lightningcss-linux-x64-gnu",
-      "version": "1.33.0",
-      "license": "MPL-2.0",
-      "source": "https://registry.npmjs.org/lightningcss-linux-x64-gnu/-/lightningcss-linux-x64-gnu-1.33.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "lightningcss-linux-x64-musl",
-      "version": "1.33.0",
-      "license": "MPL-2.0",
-      "source": "https://registry.npmjs.org/lightningcss-linux-x64-musl/-/lightningcss-linux-x64-musl-1.33.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "lightningcss-win32-arm64-msvc",
-      "version": "1.33.0",
-      "license": "MPL-2.0",
-      "source": "https://registry.npmjs.org/lightningcss-win32-arm64-msvc/-/lightningcss-win32-arm64-msvc-1.33.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "lightningcss-win32-x64-msvc",
-      "version": "1.33.0",
-      "license": "MPL-2.0",
-      "source": "https://registry.npmjs.org/lightningcss-win32-x64-msvc/-/lightningcss-win32-x64-msvc-1.33.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "lodash",
-      "version": "4.18.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/lodash/-/lodash-4.18.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "lowercase-keys",
-      "version": "2.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/lowercase-keys/-/lowercase-keys-2.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "lru-cache",
-      "version": "11.5.2",
-      "license": "BlueOak-1.0.0",
-      "source": "https://registry.npmjs.org/lru-cache/-/lru-cache-11.5.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "lru-cache",
-      "version": "11.5.2",
-      "license": "BlueOak-1.0.0",
-      "source": "https://registry.npmjs.org/lru-cache/-/lru-cache-11.5.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "lru-cache",
-      "version": "11.5.2",
-      "license": "BlueOak-1.0.0",
-      "source": "https://registry.npmjs.org/lru-cache/-/lru-cache-11.5.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "lru-cache",
-      "version": "6.0.0",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/lru-cache/-/lru-cache-6.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "magic-string",
-      "version": "0.30.21",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/magic-string/-/magic-string-0.30.21.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "matcher",
-      "version": "3.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/matcher/-/matcher-3.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "math-intrinsics",
-      "version": "1.1.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/math-intrinsics/-/math-intrinsics-1.1.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "mdn-data",
-      "version": "2.27.1",
-      "license": "CC0-1.0",
-      "source": "https://registry.npmjs.org/mdn-data/-/mdn-data-2.27.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "mime",
-      "version": "2.6.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/mime/-/mime-2.6.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "mime-db",
-      "version": "1.52.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/mime-db/-/mime-db-1.52.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "mime-types",
-      "version": "2.1.35",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/mime-types/-/mime-types-2.1.35.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "mimic-response",
-      "version": "1.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/mimic-response/-/mimic-response-1.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "mimic-response",
-      "version": "3.1.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/mimic-response/-/mimic-response-3.1.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "minimatch",
-      "version": "10.2.6",
-      "license": "BlueOak-1.0.0",
-      "source": "https://registry.npmjs.org/minimatch/-/minimatch-10.2.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "minimatch",
-      "version": "3.1.5",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/minimatch/-/minimatch-3.1.5.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "minimatch",
-      "version": "3.1.5",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/minimatch/-/minimatch-3.1.5.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "minimatch",
-      "version": "3.1.5",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/minimatch/-/minimatch-3.1.5.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "minimatch",
-      "version": "5.1.9",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/minimatch/-/minimatch-5.1.9.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "minimatch",
-      "version": "9.0.9",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/minimatch/-/minimatch-9.0.9.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "minimist",
-      "version": "1.2.8",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/minimist/-/minimist-1.2.8.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "minipass",
-      "version": "7.1.3",
-      "license": "BlueOak-1.0.0",
-      "source": "https://registry.npmjs.org/minipass/-/minipass-7.1.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "minizlib",
-      "version": "3.1.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/minizlib/-/minizlib-3.1.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "mkdirp",
-      "version": "0.5.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/mkdirp/-/mkdirp-0.5.6.tgz"
+      "source": "https://registry.npmjs.org/graceful-fs/-/graceful-fs-4.2.11.tgz",
+      "shippedIn": [
+        "electron-runtime"
+      ]
     },
     {
       "ecosystem": "npm",
       "name": "ms",
       "version": "2.1.3",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "nanoid",
-      "version": "3.3.18",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/nanoid/-/nanoid-3.3.18.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "node-abi",
-      "version": "4.34.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/node-abi/-/node-abi-4.34.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "node-api-version",
-      "version": "0.2.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/node-api-version/-/node-api-version-0.2.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "node-gyp",
-      "version": "12.4.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/node-gyp/-/node-gyp-12.4.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "node-int64",
-      "version": "0.4.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/node-int64/-/node-int64-0.4.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "nopt",
-      "version": "9.0.0",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/nopt/-/nopt-9.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "normalize-url",
-      "version": "6.1.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/normalize-url/-/normalize-url-6.1.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "object-keys",
-      "version": "1.1.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/object-keys/-/object-keys-1.1.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "obug",
-      "version": "2.1.4",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/obug/-/obug-2.1.4.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "once",
-      "version": "1.4.0",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/once/-/once-1.4.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "p-cancelable",
-      "version": "2.1.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/p-cancelable/-/p-cancelable-2.1.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "p-limit",
-      "version": "3.1.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/p-limit/-/p-limit-3.1.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "parse5",
-      "version": "8.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/parse5/-/parse5-8.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "path-is-absolute",
-      "version": "1.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/path-is-absolute/-/path-is-absolute-1.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "path-key",
-      "version": "3.1.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/path-key/-/path-key-3.1.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "pathe",
-      "version": "2.0.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/pathe/-/pathe-2.0.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "pe-library",
-      "version": "0.4.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/pe-library/-/pe-library-0.4.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "picocolors",
-      "version": "1.1.1",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "picomatch",
-      "version": "4.0.7",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/picomatch/-/picomatch-4.0.7.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "pkijs",
-      "version": "3.4.0",
-      "license": "BSD-3-Clause",
-      "source": "https://registry.npmjs.org/pkijs/-/pkijs-3.4.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "plist",
-      "version": "3.1.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/plist/-/plist-3.1.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "postcss",
-      "version": "8.5.26",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/postcss/-/postcss-8.5.26.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "postject",
-      "version": "1.0.0-alpha.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/postject/-/postject-1.0.0-alpha.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "proc-log",
-      "version": "6.1.0",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/proc-log/-/proc-log-6.1.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "process-nextick-args",
-      "version": "2.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/process-nextick-args/-/process-nextick-args-2.0.1.tgz"
+      "source": "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz",
+      "shippedIn": [
+        "electron-runtime"
+      ]
     },
     {
       "ecosystem": "npm",
       "name": "progress",
       "version": "2.0.3",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/progress/-/progress-2.0.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "promise-retry",
-      "version": "2.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/promise-retry/-/promise-retry-2.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "proper-lockfile",
-      "version": "4.1.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/proper-lockfile/-/proper-lockfile-4.1.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "pump",
-      "version": "3.0.4",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/pump/-/pump-3.0.4.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "punycode",
-      "version": "2.3.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/punycode/-/punycode-2.3.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "pvtsutils",
-      "version": "1.3.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/pvtsutils/-/pvtsutils-1.3.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "pvutils",
-      "version": "1.2.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/pvutils/-/pvutils-1.2.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "quick-lru",
-      "version": "5.1.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/quick-lru/-/quick-lru-5.1.1.tgz"
+      "source": "https://registry.npmjs.org/progress/-/progress-2.0.3.tgz",
+      "shippedIn": [
+        "electron-runtime"
+      ]
     },
     {
       "ecosystem": "npm",
       "name": "react",
       "version": "19.2.8",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/react/-/react-19.2.8.tgz"
+      "source": "https://registry.npmjs.org/react/-/react-19.2.8.tgz",
+      "shippedIn": [
+        "npm-production"
+      ]
     },
     {
       "ecosystem": "npm",
       "name": "react-dom",
       "version": "19.2.8",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/react-dom/-/react-dom-19.2.8.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "read-binary-file-arch",
-      "version": "1.0.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/read-binary-file-arch/-/read-binary-file-arch-1.0.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "readable-stream",
-      "version": "2.3.8",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/readable-stream/-/readable-stream-2.3.8.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "require-directory",
-      "version": "2.1.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/require-directory/-/require-directory-2.1.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "require-from-string",
-      "version": "2.0.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/require-from-string/-/require-from-string-2.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "resedit",
-      "version": "1.7.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/resedit/-/resedit-1.7.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "resolve-alpn",
-      "version": "1.2.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/resolve-alpn/-/resolve-alpn-1.2.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "responselike",
-      "version": "2.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/responselike/-/responselike-2.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "retry",
-      "version": "0.12.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/retry/-/retry-0.12.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "rimraf",
-      "version": "2.6.3",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/rimraf/-/rimraf-2.6.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "roarr",
-      "version": "2.15.4",
-      "license": "BSD-3-Clause",
-      "source": "https://registry.npmjs.org/roarr/-/roarr-2.15.4.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "rolldown",
-      "version": "1.2.6",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/rolldown/-/rolldown-1.2.6.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "safe-buffer",
-      "version": "5.1.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/safe-buffer/-/safe-buffer-5.1.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "sanitize-filename",
-      "version": "1.6.4",
-      "license": "WTFPL OR ISC",
-      "source": "https://registry.npmjs.org/sanitize-filename/-/sanitize-filename-1.6.4.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "sax",
-      "version": "1.6.1",
-      "license": "BlueOak-1.0.0",
-      "source": "https://registry.npmjs.org/sax/-/sax-1.6.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "saxes",
-      "version": "6.0.0",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/saxes/-/saxes-6.0.0.tgz"
+      "source": "https://registry.npmjs.org/react-dom/-/react-dom-19.2.8.tgz",
+      "shippedIn": [
+        "npm-production"
+      ]
     },
     {
       "ecosystem": "npm",
       "name": "scheduler",
       "version": "0.27.0",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/scheduler/-/scheduler-0.27.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "semver",
-      "version": "5.7.2",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/semver/-/semver-5.7.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "semver",
-      "version": "6.3.1",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/semver/-/semver-6.3.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "semver",
-      "version": "7.7.4",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/semver/-/semver-7.7.4.tgz"
+      "source": "https://registry.npmjs.org/scheduler/-/scheduler-0.27.0.tgz",
+      "shippedIn": [
+        "npm-production"
+      ]
     },
     {
       "ecosystem": "npm",
       "name": "semver",
       "version": "7.8.5",
       "license": "ISC",
-      "source": "https://registry.npmjs.org/semver/-/semver-7.8.5.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "semver-compare",
-      "version": "1.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/semver-compare/-/semver-compare-1.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "serialize-error",
-      "version": "7.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/serialize-error/-/serialize-error-7.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "shebang-command",
-      "version": "2.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/shebang-command/-/shebang-command-2.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "shebang-regex",
-      "version": "3.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/shebang-regex/-/shebang-regex-3.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "siginfo",
-      "version": "2.0.0",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/siginfo/-/siginfo-2.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "signal-exit",
-      "version": "3.0.7",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/signal-exit/-/signal-exit-3.0.7.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "simple-update-notifier",
-      "version": "2.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/simple-update-notifier/-/simple-update-notifier-2.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "source-map",
-      "version": "0.6.1",
-      "license": "BSD-3-Clause",
-      "source": "https://registry.npmjs.org/source-map/-/source-map-0.6.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "source-map-js",
-      "version": "1.2.1",
-      "license": "BSD-3-Clause",
-      "source": "https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "source-map-support",
-      "version": "0.5.21",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/source-map-support/-/source-map-support-0.5.21.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "sprintf-js",
-      "version": "1.1.3",
-      "license": "BSD-3-Clause",
-      "source": "https://registry.npmjs.org/sprintf-js/-/sprintf-js-1.1.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "stackback",
-      "version": "0.0.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/stackback/-/stackback-0.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "stat-mode",
-      "version": "1.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/stat-mode/-/stat-mode-1.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "std-env",
-      "version": "4.2.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/std-env/-/std-env-4.2.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "string-width",
-      "version": "4.2.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/string-width/-/string-width-4.2.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "string_decoder",
-      "version": "1.1.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/string_decoder/-/string_decoder-1.1.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "strip-ansi",
-      "version": "6.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/strip-ansi/-/strip-ansi-6.0.1.tgz"
+      "source": "https://registry.npmjs.org/semver/-/semver-7.8.5.tgz",
+      "shippedIn": [
+        "electron-runtime"
+      ]
     },
     {
       "ecosystem": "npm",
       "name": "sumchecker",
       "version": "3.0.1",
       "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/sumchecker/-/sumchecker-3.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "supports-color",
-      "version": "7.2.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/supports-color/-/supports-color-7.2.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "symbol-tree",
-      "version": "3.2.4",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/symbol-tree/-/symbol-tree-3.2.4.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "tar",
-      "version": "7.5.22",
-      "license": "BlueOak-1.0.0",
-      "source": "https://registry.npmjs.org/tar/-/tar-7.5.22.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "temp",
-      "version": "0.9.4",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/temp/-/temp-0.9.4.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "temp-file",
-      "version": "3.4.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/temp-file/-/temp-file-3.4.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "tiny-async-pool",
-      "version": "1.3.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/tiny-async-pool/-/tiny-async-pool-1.3.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "tinybench",
-      "version": "2.9.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/tinybench/-/tinybench-2.9.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "tinyexec",
-      "version": "1.3.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/tinyexec/-/tinyexec-1.3.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "tinyglobby",
-      "version": "0.2.17",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/tinyglobby/-/tinyglobby-0.2.17.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "tinyrainbow",
-      "version": "3.1.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/tinyrainbow/-/tinyrainbow-3.1.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "tldts",
-      "version": "7.4.11",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/tldts/-/tldts-7.4.11.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "tldts-core",
-      "version": "7.4.11",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/tldts-core/-/tldts-core-7.4.11.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "tmp",
-      "version": "0.2.7",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/tmp/-/tmp-0.2.7.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "tmp-promise",
-      "version": "3.0.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/tmp-promise/-/tmp-promise-3.0.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "tough-cookie",
-      "version": "6.0.2",
-      "license": "BSD-3-Clause",
-      "source": "https://registry.npmjs.org/tough-cookie/-/tough-cookie-6.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "tr46",
-      "version": "6.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/tr46/-/tr46-6.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "truncate-utf8-bytes",
-      "version": "1.0.2",
-      "license": "WTFPL",
-      "source": "https://registry.npmjs.org/truncate-utf8-bytes/-/truncate-utf8-bytes-1.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "tslib",
-      "version": "2.8.1",
-      "license": "0BSD",
-      "source": "https://registry.npmjs.org/tslib/-/tslib-2.8.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "type-fest",
-      "version": "0.13.1",
-      "license": "(MIT OR CC0-1.0)",
-      "source": "https://registry.npmjs.org/type-fest/-/type-fest-0.13.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "typescript",
-      "version": "7.0.2",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/typescript/-/typescript-7.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "undici",
-      "version": "6.28.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/undici/-/undici-6.28.0.tgz"
+      "source": "https://registry.npmjs.org/sumchecker/-/sumchecker-3.0.1.tgz",
+      "shippedIn": [
+        "electron-runtime"
+      ]
     },
     {
       "ecosystem": "npm",
       "name": "undici",
       "version": "7.29.0",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/undici/-/undici-7.29.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "undici",
-      "version": "8.10.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/undici/-/undici-8.10.0.tgz"
+      "source": "https://registry.npmjs.org/undici/-/undici-7.29.0.tgz",
+      "shippedIn": [
+        "electron-runtime"
+      ]
     },
     {
       "ecosystem": "npm",
       "name": "undici-types",
       "version": "7.18.2",
       "license": "MIT",
-      "source": "https://registry.npmjs.org/undici-types/-/undici-types-7.18.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "universalify",
-      "version": "0.1.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/universalify/-/universalify-0.1.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "universalify",
-      "version": "0.1.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/universalify/-/universalify-0.1.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "universalify",
-      "version": "2.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/universalify/-/universalify-2.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "unzipper",
-      "version": "0.12.5",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/unzipper/-/unzipper-0.12.5.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "utf8-byte-length",
-      "version": "1.0.5",
-      "license": "(WTFPL OR MIT)",
-      "source": "https://registry.npmjs.org/utf8-byte-length/-/utf8-byte-length-1.0.5.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "util-deprecate",
-      "version": "1.0.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/util-deprecate/-/util-deprecate-1.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "vite",
-      "version": "8.2.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/vite/-/vite-8.2.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "vitest",
-      "version": "4.1.11",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/vitest/-/vitest-4.1.11.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "w3c-xmlserializer",
-      "version": "5.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/w3c-xmlserializer/-/w3c-xmlserializer-5.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "webcrypto-core",
-      "version": "1.9.2",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/webcrypto-core/-/webcrypto-core-1.9.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "webidl-conversions",
-      "version": "8.0.1",
-      "license": "BSD-2-Clause",
-      "source": "https://registry.npmjs.org/webidl-conversions/-/webidl-conversions-8.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "whatwg-mimetype",
-      "version": "5.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/whatwg-mimetype/-/whatwg-mimetype-5.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "whatwg-url",
-      "version": "16.0.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/whatwg-url/-/whatwg-url-16.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "whatwg-url",
-      "version": "17.1.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/whatwg-url/-/whatwg-url-17.1.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "which",
-      "version": "2.0.2",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/which/-/which-2.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "which",
-      "version": "5.0.0",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/which/-/which-5.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "which",
-      "version": "6.0.1",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/which/-/which-6.0.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "why-is-node-running",
-      "version": "2.3.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/why-is-node-running/-/why-is-node-running-2.3.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "wrap-ansi",
-      "version": "7.0.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/wrap-ansi/-/wrap-ansi-7.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "wrappy",
-      "version": "1.0.2",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/wrappy/-/wrappy-1.0.2.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "xml-name-validator",
-      "version": "5.0.0",
-      "license": "Apache-2.0",
-      "source": "https://registry.npmjs.org/xml-name-validator/-/xml-name-validator-5.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "xmlbuilder",
-      "version": "15.1.1",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/xmlbuilder/-/xmlbuilder-15.1.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "xmlchars",
-      "version": "2.2.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/xmlchars/-/xmlchars-2.2.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "y18n",
-      "version": "5.0.8",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/y18n/-/y18n-5.0.8.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "yallist",
-      "version": "4.0.0",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/yallist/-/yallist-4.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "yallist",
-      "version": "5.0.0",
-      "license": "BlueOak-1.0.0",
-      "source": "https://registry.npmjs.org/yallist/-/yallist-5.0.0.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "yargs",
-      "version": "17.7.3",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/yargs/-/yargs-17.7.3.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "yargs-parser",
-      "version": "21.1.1",
-      "license": "ISC",
-      "source": "https://registry.npmjs.org/yargs-parser/-/yargs-parser-21.1.1.tgz"
-    },
-    {
-      "ecosystem": "npm",
-      "name": "yocto-queue",
-      "version": "0.1.0",
-      "license": "MIT",
-      "source": "https://registry.npmjs.org/yocto-queue/-/yocto-queue-0.1.0.tgz"
+      "source": "https://registry.npmjs.org/undici-types/-/undici-types-7.18.2.tgz",
+      "shippedIn": [
+        "electron-runtime"
+      ]
     }
   ]
 }

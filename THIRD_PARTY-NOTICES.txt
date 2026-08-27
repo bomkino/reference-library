@@ -1,0 +1,292 @@
+Reference Library — Shipped Third-Party Dependency Notices
+==========================================================
+
+Generated from Cargo.lock and package-lock.json. Development-only
+dependencies are excluded except Electron's pinned runtime/bootstrap
+closure, whose binary and Chromium notices are also retained by the
+Linux package contract.
+
+cargo:bitflags@2.13.1
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:block-buffer@0.10.4
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:cc@1.4.4
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:cfg-if@1.0.4
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:cpufeatures@0.2.17
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:crypto-common@0.1.7
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:digest@0.10.7
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:fallible-iterator@0.3.0
+License: MIT/Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:fallible-streaming-iterator@0.1.9
+License: MIT/Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:find-msvc-tools@0.1.11
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:foldhash@0.2.0
+License: Zlib
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:generic-array@0.14.7
+License: MIT
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:getrandom@0.4.3
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:hashbrown@0.17.1
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:hashlink@0.12.1
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:imagesize@0.15.0
+License: MIT
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:itoa@1.0.18
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:libc@0.2.189
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:libsqlite3-sys@0.38.2
+License: MIT
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:memchr@2.8.3
+License: Unlicense OR MIT
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:pkg-config@0.3.34
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:proc-macro2@1.0.107
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:quote@1.0.47
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:rusqlite@0.40.2
+License: MIT
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:serde@1.0.229
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:serde_core@1.0.229
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:serde_derive@1.0.229
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:serde_json@1.0.151
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:sha2@0.10.9
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:shlex@2.0.1
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:smallvec@1.15.2
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:syn@3.0.4
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:thiserror@2.0.20
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:thiserror-impl@2.0.20
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:typenum@1.20.1
+License: MIT OR Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:unicode-ident@1.0.24
+License: (MIT OR Apache-2.0) AND Unicode-3.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:uuid@1.25.0
+License: Apache-2.0 OR MIT
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:vcpkg@0.2.15
+License: MIT/Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:version_check@0.9.5
+License: MIT/Apache-2.0
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+cargo:zmij@1.0.23
+License: MIT
+Shipped in: linux-x86_64, macos-arm64
+Source: registry+https://github.com/rust-lang/crates.io-index
+
+npm:@electron-internal/extract-zip@1.0.5
+License: BSD-2-Clause
+Shipped in: electron-runtime
+Source: https://registry.npmjs.org/@electron-internal/extract-zip/-/extract-zip-1.0.5.tgz
+
+npm:@electron/get@5.1.0
+License: MIT
+Shipped in: electron-runtime
+Source: https://registry.npmjs.org/@electron/get/-/get-5.1.0.tgz
+
+npm:@types/node@24.13.3
+License: MIT
+Shipped in: electron-runtime
+Source: https://registry.npmjs.org/@types/node/-/node-24.13.3.tgz
+
+npm:debug@4.4.3
+License: MIT
+Shipped in: electron-runtime
+Source: https://registry.npmjs.org/debug/-/debug-4.4.3.tgz
+
+npm:electron@44.0.0
+License: MIT
+Shipped in: electron-runtime
+Source: https://registry.npmjs.org/electron/-/electron-44.0.0.tgz
+
+npm:env-paths@3.0.0
+License: MIT
+Shipped in: electron-runtime
+Source: https://registry.npmjs.org/env-paths/-/env-paths-3.0.0.tgz
+
+npm:graceful-fs@4.2.11
+License: ISC
+Shipped in: electron-runtime
+Source: https://registry.npmjs.org/graceful-fs/-/graceful-fs-4.2.11.tgz
+
+npm:ms@2.1.3
+License: MIT
+Shipped in: electron-runtime
+Source: https://registry.npmjs.org/ms/-/ms-2.1.3.tgz
+
+npm:progress@2.0.3
+License: MIT
+Shipped in: electron-runtime
+Source: https://registry.npmjs.org/progress/-/progress-2.0.3.tgz
+
+npm:react@19.2.8
+License: MIT
+Shipped in: npm-production
+Source: https://registry.npmjs.org/react/-/react-19.2.8.tgz
+
+npm:react-dom@19.2.8
+License: MIT
+Shipped in: npm-production
+Source: https://registry.npmjs.org/react-dom/-/react-dom-19.2.8.tgz
+
+npm:scheduler@0.27.0
+License: MIT
+Shipped in: npm-production
+Source: https://registry.npmjs.org/scheduler/-/scheduler-0.27.0.tgz
+
+npm:semver@7.8.5
+License: ISC
+Shipped in: electron-runtime
+Source: https://registry.npmjs.org/semver/-/semver-7.8.5.tgz
+
+npm:sumchecker@3.0.1
+License: Apache-2.0
+Shipped in: electron-runtime
+Source: https://registry.npmjs.org/sumchecker/-/sumchecker-3.0.1.tgz
+
+npm:undici@7.29.0
+License: MIT
+Shipped in: electron-runtime
+Source: https://registry.npmjs.org/undici/-/undici-7.29.0.tgz
+
+npm:undici-types@7.18.2
+License: MIT
+Shipped in: electron-runtime
+Source: https://registry.npmjs.org/undici-types/-/undici-types-7.18.2.tgz
+
+Electron packages must additionally contain LICENSE.electron.txt and
+LICENSES.chromium.html from the exact packaged Electron distribution.
+The Reference Library application license and notices are in LICENSE
+and NOTICE beside this inventory in the packaged Legal directory.
