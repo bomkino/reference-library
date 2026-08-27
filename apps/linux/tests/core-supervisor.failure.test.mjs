@@ -243,6 +243,25 @@ test("Core writes are serialized through callback backpressure", async () => {
   await core.stop();
 });
 
+test("pending resource authorizations are bounded and abort releases every caller", async () => {
+  const harness = fakeCore(({ envelope }) => envelope.command.method === "authorize_resource");
+  const core = new CoreSupervisor({ spawnProcess: harness.spawn });
+  await core.start();
+  const controllers = Array.from(
+    { length: supervisorLimits.maximumResourceAuthorizations },
+    () => new AbortController(),
+  );
+  const pending = controllers.map((controller) =>
+    core.authorizeResource(resourceParams(), { signal: controller.signal }).catch((error) => error));
+  await assert.rejects(
+    core.authorizeResource(resourceParams()),
+    (error) => error.code === "ResourceAuthorizationCapacityExceeded",
+  );
+  controllers.forEach((controller) => controller.abort());
+  assert.ok((await Promise.all(pending)).every((error) => error.name === "AbortError"));
+  await core.stop();
+});
+
 function fakeCore(customHandler) {
   const kills = [];
   const children = [];

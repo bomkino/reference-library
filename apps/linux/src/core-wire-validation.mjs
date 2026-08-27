@@ -28,37 +28,40 @@ export function validateCoreResult(method, result) {
   const value = result.value;
   switch (expected) {
     case "hello":
-      record(value); integer(value.protocolVersion, 1, 1); text(value.coreVersion, 120);
+      record(value); exact(value, ["protocolVersion", "coreVersion", "maxPageSize", "features"]);
+      integer(value.protocolVersion, 1, 1); text(value.coreVersion, 120);
       integer(value.maxPageSize, 1, 250); stringArray(value.features, 64, 120); break;
     case "session_opened": session(value); break;
-    case "library_closed": record(value); uuid(value.sessionId); break;
+    case "library_closed": record(value); exact(value, ["sessionId"]); uuid(value.sessionId); break;
     case "root_added": case "root_scan_started":
-      record(value); uuid(value.rootId); uuid(value.jobId); break;
+      record(value); exact(value, ["rootId", "jobId"]); uuid(value.rootId); uuid(value.jobId); break;
     case "roots":
-      record(value); array(value.items, 10_000).forEach(rootSummary); break;
-    case "root_bound": record(value); rootSummary(value.root); break;
+      record(value); exact(value, ["items"]); array(value.items, 10_000).forEach(rootSummary); break;
+    case "root_bound": record(value); exact(value, ["root"]); rootSummary(value.root); break;
     case "asset_page": assetPage(value, method === "query_asset_index"); break;
     case "asset": assetDetail(value); break;
     case "asset_updated":
-      record(value); assetDetail(value.asset); count(value.libraryRevision); break;
+      record(value); exact(value, ["asset", "libraryRevision"]); assetDetail(value.asset); count(value.libraryRevision); break;
     case "job_page": jobPage(value); break;
     case "collections":
-      record(value); array(value.items, 10_000).forEach(collectionSummary); break;
+      record(value); exact(value, ["items"]); array(value.items, 10_000).forEach(collectionSummary); break;
     case "collection_updated":
-      record(value); collectionSummary(value.collection); count(value.libraryRevision); break;
+      record(value); exact(value, ["collection", "libraryRevision"]); collectionSummary(value.collection); count(value.libraryRevision); break;
     case "collection_deleted":
-      record(value); uuid(value.collectionId); count(value.libraryRevision); break;
+      record(value); exact(value, ["collectionId", "libraryRevision"]); uuid(value.collectionId); count(value.libraryRevision); break;
     case "collection_membership_updated":
-      record(value); uuid(value.collectionId); count(value.affected); count(value.libraryRevision); break;
+      record(value); exact(value, ["collectionId", "affected", "libraryRevision"]);
+      uuid(value.collectionId); count(value.affected); count(value.libraryRevision); break;
     case "resource_authorized": resourceDescriptor(value); break;
     case "location_resolved":
-      record(value); uuid(value.locationId); nativePath(value.nativePathForShell); break;
-    case "canonical_dump": record(value); if (!("dump" in value)) fail("missing canonical dump"); break;
+      record(value); exact(value, ["locationId", "nativePathForShell"]);
+      uuid(value.locationId); nativePath(value.nativePathForShell); break;
+    case "canonical_dump": record(value); exact(value, ["dump"]); break;
     case "canonical_digest": canonicalDigest(value); break;
     case "canonical_page": canonicalPage(value); break;
     case "capabilities": capabilities(value); break;
     case "job_cancellation":
-      record(value); uuid(value.jobId); member(value.state, CANCELLATION_STATES); break;
+      record(value); exact(value, ["jobId", "state"]); uuid(value.jobId); member(value.state, CANCELLATION_STATES); break;
     case "shutdown": if (value !== undefined) fail("invalid shutdown result"); break;
     default: fail("unsupported command result");
   }
@@ -108,64 +111,91 @@ export function validateProtocolError(value) {
 }
 
 function session(value) {
-  record(value); uuid(value.sessionId); uuid(value.libraryId); integer(value.schemaVersion, 1, 1_000);
+  record(value); exact(value, ["sessionId", "libraryId", "schemaVersion", "name"]);
+  uuid(value.sessionId); uuid(value.libraryId); integer(value.schemaVersion, 1, 1_000);
   text(value.name, 500);
 }
 function rootSummary(value) {
-  record(value); uuid(value.rootId); text(value.displayName, 500); text(value.rootKind, 80);
+  record(value); exact(value, [
+    "rootId", "displayName", "rootKind", "state", "authorized", "activeJobId", "observedCount", "unsupportedCount",
+  ]);
+  uuid(value.rootId); text(value.displayName, 500); text(value.rootKind, 80);
   text(value.state, 80); boolean(value.authorized); optionalUuid(value.activeJobId);
   count(value.observedCount); count(value.unsupportedCount);
 }
 function assetPage(value, detailed) {
-  record(value); count(value.offset); integer(value.limit, 1, 250); count(value.total);
+  record(value); exact(value, ["offset", "limit", "total", "items", "nextOffset", "libraryRevision"]);
+  count(value.offset); integer(value.limit, 1, 250); count(value.total);
   const items = array(value.items, value.limit);
   items.forEach((item) => assetSummary(item, detailed));
   optionalCount(value.nextOffset); count(value.libraryRevision);
 }
 function assetSummary(value, detailed) {
-  record(value); uuid(value.assetId); uuid(value.locationId); text(value.displayName, 1_000);
+  record(value); exact(value, detailed
+    ? ["assetId", "locationId", "displayName", "relativeDisplayPath", "mediaFamily", "availability", "reviewState", "customTitle", "revision"]
+    : ["assetId", "locationId", "displayName", "mediaFamily", "availability", "reviewState"]);
+  uuid(value.assetId); uuid(value.locationId); text(value.displayName, 1_000);
   text(value.mediaFamily, 80); member(value.availability, AVAILABILITY); member(value.reviewState, REVIEW_STATES);
   if (detailed) {
     text(value.relativeDisplayPath, 4_096); optionalText(value.customTitle, 500); count(value.revision);
   }
 }
 function assetDetail(value) {
-  record(value); uuid(value.assetId); uuid(value.locationId); text(value.originalDisplayName, 1_000);
+  record(value); exact(value, [
+    "assetId", "locationId", "originalDisplayName", "relativeDisplayPath", "mediaFamily", "availability",
+    "reviewState", "customTitle", "note", "revision", "collectionIds",
+  ]);
+  uuid(value.assetId); uuid(value.locationId); text(value.originalDisplayName, 1_000);
   text(value.relativeDisplayPath, 4_096); text(value.mediaFamily, 80);
   member(value.availability, AVAILABILITY); member(value.reviewState, REVIEW_STATES);
   optionalText(value.customTitle, 500); optionalText(value.note, 5_000); count(value.revision);
   array(value.collectionIds, 10_000).forEach(uuid);
 }
 function jobPage(value) {
-  record(value); count(value.offset); integer(value.limit, 1, 100); count(value.total);
+  record(value); exact(value, ["offset", "limit", "total", "items", "nextOffset"]);
+  count(value.offset); integer(value.limit, 1, 100); count(value.total);
   array(value.items, value.limit).forEach((item) => {
-    record(item); uuid(item.jobId); optionalUuid(item.rootId); text(item.jobKind, 80); member(item.state, JOB_STATES);
+    record(item); exact(item, [
+      "jobId", "rootId", "jobKind", "state", "observedCount", "unsupportedCount", "errorCode",
+      "createdAtMs", "updatedAtMs", "finishedAtMs",
+    ]);
+    uuid(item.jobId); optionalUuid(item.rootId); text(item.jobKind, 80); member(item.state, JOB_STATES);
     count(item.observedCount); count(item.unsupportedCount); optionalText(item.errorCode, 100);
     count(item.createdAtMs); count(item.updatedAtMs); optionalCount(item.finishedAtMs);
   });
   optionalCount(value.nextOffset);
 }
 function collectionSummary(value) {
-  record(value); uuid(value.collectionId); text(value.name, 200); count(value.assetCount); count(value.revision);
+  record(value); exact(value, ["collectionId", "name", "assetCount", "revision"]);
+  uuid(value.collectionId); text(value.name, 200); count(value.assetCount); count(value.revision);
 }
 function resourceDescriptor(value) {
-  record(value); uuid(value.resourceToken); uuid(value.sessionId); uuid(value.assetId); uuid(value.locationId);
+  record(value); exact(value, [
+    "resourceToken", "sessionId", "assetId", "locationId", "profile", "mimeType", "contentLength", "nativePathForHandler",
+  ]);
+  uuid(value.resourceToken); uuid(value.sessionId); uuid(value.assetId); uuid(value.locationId);
   member(value.profile, PROFILES); member(value.mimeType, MIME_TYPES);
   integer(value.contentLength, 0, 512 * 1024 * 1024); nativePath(value.nativePathForHandler);
 }
 function canonicalDigest(value) {
-  record(value); text(value.format, 100); text(value.algorithm, 40); text(value.digest, 256);
-  array(value.counts, 16).forEach((item) => { record(item); text(item.entity, 80); count(item.count); });
+  record(value); exact(value, ["format", "algorithm", "digest", "counts"]);
+  text(value.format, 100); text(value.algorithm, 40); text(value.digest, 256);
+  array(value.counts, 16).forEach((item) => {
+    record(item); exact(item, ["entity", "count"]); text(item.entity, 80); count(item.count);
+  });
 }
 function canonicalPage(value) {
-  record(value); text(value.format, 100); text(value.snapshotDigest, 256); text(value.entity, 80);
+  record(value); exact(value, ["format", "snapshotDigest", "entity", "cursor", "limit", "total", "records", "nextCursor"]);
+  text(value.format, 100); text(value.snapshotDigest, 256); text(value.entity, 80);
   optionalText(value.cursor, 1_000); integer(value.limit, 1, 250); count(value.total);
   array(value.records, value.limit); optionalText(value.nextCursor, 1_000);
 }
 function capabilities(value) {
-  record(value); boolean(value.chooseRoot); boolean(value.revealLocation); boolean(value.opaqueAssetResources);
+  record(value); exact(value, ["chooseRoot", "revealLocation", "opaqueAssetResources", "sourceMutation", "detail"]);
+  boolean(value.chooseRoot); boolean(value.revealLocation); boolean(value.opaqueAssetResources);
   boolean(value.sourceMutation); array(value.detail, 100).forEach((item) => {
-    record(item); text(item.name, 120); text(item.state, 120); optionalText(item.reason, 500);
+    record(item); exact(item, ["name", "state", "reason"]);
+    text(item.name, 120); text(item.state, 120); optionalText(item.reason, 500);
   });
 }
 function nativePath(value) {
