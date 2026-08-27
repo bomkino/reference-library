@@ -58,8 +58,11 @@ final class NativeContractTests: XCTestCase {
             package
         )
         XCTAssertEqual(
-            AppModel.canonicalCreationURL(aliasParent.appendingPathComponent("New.pitchlibrary")),
+            AppModel.canonicalCreationURL(
+                aliasParent.appendingPathComponent("New.pitchlibrary")
+            ).standardizedFileURL.pathComponents,
             realParent.appendingPathComponent("New.pitchlibrary")
+                .standardizedFileURL.pathComponents
         )
         let linked = directory.appendingPathComponent("Linked.pitchlibrary")
         try FileManager.default.createSymbolicLink(at: linked, withDestinationURL: package)
