@@ -60,7 +60,8 @@ enum CoreResultValidator {
 
     static func rootBound(_ value: Any, expectedRootID: String) throws -> [String: Any] {
         let source = try object(value, keys: ["root"])
-        let result = try root(source["root"])
+        guard let rootValue = source["root"] else { throw Failure.invalid }
+        let result = try root(rootValue)
         guard result["rootId"] as? String == expectedRootID else { throw Failure.invalid }
         return result
     }
@@ -116,8 +117,9 @@ enum CoreResultValidator {
 
     static func assetUpdated(_ value: Any) throws -> [String: Any] {
         let source = try object(value, keys: ["asset", "libraryRevision"])
+        guard let assetValue = source["asset"] else { throw Failure.invalid }
         return [
-            "asset": try assetDetail(source["asset"]),
+            "asset": try assetDetail(assetValue),
             "libraryRevision": try integer(source["libraryRevision"])
         ]
     }
@@ -154,8 +156,9 @@ enum CoreResultValidator {
 
     static func collectionUpdated(_ value: Any) throws -> [String: Any] {
         let source = try object(value, keys: ["collection", "libraryRevision"])
+        guard let collectionValue = source["collection"] else { throw Failure.invalid }
         return [
-            "collection": try collection(source["collection"]),
+            "collection": try collection(collectionValue),
             "libraryRevision": try integer(source["libraryRevision"])
         ]
     }

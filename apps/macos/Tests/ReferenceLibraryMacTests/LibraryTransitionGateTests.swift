@@ -13,10 +13,10 @@ final class LibraryTransitionGateTests: XCTestCase {
             }
         }
         let second = Task {
-            try await gate.run { await state.isActive() }
+            await gate.run { await state.isActive() }
         }
         let firstValue = try await first.value
-        let secondValue = try await second.value
+        let secondValue = await second.value
         XCTAssertTrue(firstValue)
         XCTAssertTrue(secondValue)
     }
