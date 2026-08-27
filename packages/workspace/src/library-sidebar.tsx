@@ -29,7 +29,12 @@ export function LibrarySidebar(props: {
   const [rename, setRename] = useState("");
   const [deleting, setDeleting] = useState<CollectionSummary | null>(null);
   const renameInput = useRef<HTMLInputElement>(null);
-  const deleteTrigger = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef<HTMLButtonElement>(null);
+  const allAssets = useRef<HTMLButtonElement>(null);
+  const restoreFocus = () => requestAnimationFrame(() => {
+    if (returnFocus.current?.isConnected) returnFocus.current.focus();
+    else allAssets.current?.focus();
+  });
 
   const load = async () => {
     try {
@@ -69,6 +74,7 @@ export function LibrarySidebar(props: {
       await props.bridge.renameCollection(props.sessionId, editing.collectionId, editing.revision, name);
       setEditing(null);
       await load();
+      restoreFocus();
     } catch (reason) { props.onError(messageFrom(reason)); }
   };
 
@@ -88,7 +94,7 @@ export function LibrarySidebar(props: {
       await props.bridge.deleteCollection(props.sessionId, target.collectionId);
       setDeleting(null);
       await load();
-      requestAnimationFrame(() => deleteTrigger.current?.focus());
+      restoreFocus();
     } catch (reason) { props.onError(messageFrom(reason)); }
   };
 
@@ -127,22 +133,22 @@ export function LibrarySidebar(props: {
 
       <section aria-labelledby="collections-heading">
         <h2 id="collections-heading">Collections</h2>
-        <button className={props.selectedCollectionId === null ? "nav-choice nav-choice--active" : "nav-choice"} disabled={props.disabled} onClick={() => props.onCollectionChange(null)}>All Assets</button>
+        <button ref={allAssets} className={props.selectedCollectionId === null ? "nav-choice nav-choice--active" : "nav-choice"} disabled={props.disabled} onClick={() => props.onCollectionChange(null)}>All Assets</button>
         <ul className="plain-list">
           {collections.map((collection) => (
             <li className="collection-row" key={collection.collectionId}>
               {editing?.collectionId === collection.collectionId ? (
                 <form onSubmit={(event) => { event.preventDefault(); void saveRename(); }}>
-                  <input ref={renameInput} aria-label={`Rename ${collection.name}`} aria-invalid={Boolean(renameError)} aria-describedby={renameError ? "rename-limit-error" : undefined} value={rename} onChange={(event) => setRename(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setEditing(null); deleteTrigger.current?.focus(); } }} />
+                  <input ref={renameInput} aria-label={`Rename ${collection.name}`} aria-invalid={Boolean(renameError)} aria-describedby={renameError ? "rename-limit-error" : undefined} value={rename} onChange={(event) => setRename(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { setEditing(null); restoreFocus(); } }} />
                   <button disabled={!rename.trim() || Boolean(renameError)} type="submit">Save</button>
-                  <button className="button--quiet" type="button" onClick={() => setEditing(null)}>Cancel</button>
+                  <button className="button--quiet" type="button" onClick={() => { setEditing(null); restoreFocus(); }}>Cancel</button>
                   {renameError && <span className="field-error" id="rename-limit-error" role="alert">{renameError}</span>}
                 </form>
               ) : (
                 <>
                   <button className={props.selectedCollectionId === collection.collectionId ? "nav-choice nav-choice--active" : "nav-choice"} disabled={props.disabled} onClick={() => props.onCollectionChange(collection.collectionId)}>{collection.name}<span>{collection.assetCount}</span></button>
-                  <button className="icon-button" aria-label={`Rename ${collection.name}`} disabled={props.disabled} onClick={() => { setEditing(collection); setRename(collection.name); }}>Rename</button>
-                  <button ref={deleteTrigger} className="icon-button" aria-label={`Delete ${collection.name}`} disabled={props.disabled} onClick={() => setDeleting(collection)}>Delete</button>
+                  <button className="icon-button" aria-label={`Rename ${collection.name}`} disabled={props.disabled} onClick={(event) => { returnFocus.current = event.currentTarget; setEditing(collection); setRename(collection.name); }}>Rename</button>
+                  <button className="icon-button" aria-label={`Delete ${collection.name}`} disabled={props.disabled} onClick={(event) => { returnFocus.current = event.currentTarget; setDeleting(collection); }}>Delete</button>
                 </>
               )}
             </li>
@@ -156,10 +162,10 @@ export function LibrarySidebar(props: {
       </section>
 
       {deleting && (
-        <div className="confirmation" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" onKeyDown={(event) => handleDialogKey(event, () => { setDeleting(null); requestAnimationFrame(() => deleteTrigger.current?.focus()); })}>
+        <div className="confirmation" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" onKeyDown={(event) => handleDialogKey(event, () => { setDeleting(null); restoreFocus(); })}>
           <h3 id="delete-title">Delete “{deleting.name}”?</h3>
           <p>Assets and original files remain unchanged.</p>
-          <div className="button-row"><button autoFocus onClick={() => void confirmDelete()}>Delete Collection</button><button className="button--secondary" onClick={() => { setDeleting(null); requestAnimationFrame(() => deleteTrigger.current?.focus()); }}>Cancel</button></div>
+          <div className="button-row"><button autoFocus onClick={() => void confirmDelete()}>Delete Collection</button><button className="button--secondary" onClick={() => { setDeleting(null); restoreFocus(); }}>Cancel</button></div>
         </div>
       )}
     </aside>
