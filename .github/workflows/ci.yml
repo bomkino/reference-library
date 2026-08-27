@@ -31,6 +31,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
       - run: node scripts/t01-semantic-roundtrip.mjs --core target/debug/reference-core
+      - run: node scripts/v1-semantic-roundtrip.mjs --core target/debug/reference-core
 
   workspace-and-linux-source:
     runs-on: ubuntu-24.04

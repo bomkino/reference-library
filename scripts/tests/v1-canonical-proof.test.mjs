@@ -1,9 +1,19 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
 
 import { collectCanonicalProof } from "../lib/v1-canonical-proof.mjs";
 
 const DIGEST = `sha256:${"a".repeat(64)}`;
+const repository = path.resolve(import.meta.dirname, "../..");
+
+test("exact-head CI executes the daily-use semantic round trip", async () => {
+  const workflow = await readFile(path.join(repository, ".github/workflows/ci.yml"), "utf8");
+  const rustJob = workflow.match(/  rust-core:[\s\S]*?\n  workspace-and-linux-source:/)?.[0];
+  assert.ok(rustJob, "Rust CI job is missing");
+  assert.match(rustJob, /v1-semantic-roundtrip\.mjs --core target\/debug\/reference-core/);
+});
 
 test("bounded canonical proof binds every diagnostic page to the requested digest", async () => {
   const calls = [];

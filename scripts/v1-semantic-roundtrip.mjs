@@ -198,7 +198,7 @@ async function updateAsset(core, sessionId, assetId, patch) {
   const current = expectResult(
     await core.request({ method: "get_asset", params: { sessionId, assetId } }),
     "asset",
-  ).asset;
+  );
   return expectResult(
     await core.request({
       method: "update_asset",
@@ -235,7 +235,7 @@ async function assertEditorialState(core, sessionId, expected) {
     const asset = expectResult(
       await core.request({ method: "get_asset", params: { sessionId, assetId } }),
       "asset",
-    ).asset;
+    );
     assert.ok(asset.collectionIds.includes(expected.collectionId));
   }
   for (const curated of expected.curated) {
@@ -245,7 +245,7 @@ async function assertEditorialState(core, sessionId, expected) {
         params: { sessionId, assetId: curated.assetId },
       }),
       "asset",
-    ).asset;
+    );
     assert.equal(asset.customTitle, curated.customTitle);
     assert.equal(asset.reviewState, curated.reviewState);
     assert.equal(asset.note, curated.note);
