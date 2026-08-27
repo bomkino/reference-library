@@ -48,7 +48,9 @@ export function useAssetEditor(
     }
   }, [bridge, selected?.assetId, sessionId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!isDirty(detail, draft)) void load();
+  }, [load]);
   useEffect(() => {
     if (revisionPulse > 0 && detail && !isDirty(detail, draft)) void load();
   }, [revisionPulse]);

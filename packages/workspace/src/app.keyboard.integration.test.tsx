@@ -166,6 +166,26 @@ describe("V1 keyboard daily-use seams", () => {
     expect(host.querySelector(".selection-announcer")?.textContent).toContain("A-frame.jpg");
   });
 
+  it("atomically adopts Root authority replacement sessions without orphaning selection or drafts", async () => {
+    await focusAndPress(button("New Library"), "Enter");
+    await waitFor(() => expect(host.querySelector('[data-asset-id="asset-1"]')).not.toBeNull());
+    await focusAndPress(host.querySelector<HTMLElement>('[data-asset-id="asset-1"]')!, " ");
+    await waitFor(() => expect(input("Title")).not.toBeNull());
+    await typeByKeyboard(input("Title"), " preserved draft");
+
+    await focusAndPress(button("Add"), "Enter");
+    await waitFor(() => expect(harness.authoritySession.sessionId).toBe("session-authority-1"));
+    expect(input("Title").value).toContain("preserved draft");
+    expect(host.querySelector(".selection-announcer")?.textContent).toContain("A-frame.jpg");
+
+    await focusAndPress(button("Reauthorize"), "Enter");
+    await waitFor(() => expect(harness.authoritySession.sessionId).toBe("session-authority-2"));
+    expect(input("Title").value).toContain("preserved draft");
+    expect(harness.calls.staleFollowUps).toBe(0);
+    await focusAndPress(button("Save", host.querySelector(".inspector")!), "Enter");
+    expect(harness.calls.updateSessions.at(-1)).toBe("session-authority-2");
+  });
+
   it("renders distinct no-Library, empty-Library and filtered no-results states", async () => {
     expect(text()).toContain("Your project’s visual memory.");
     harness.assets = [];
@@ -215,7 +235,7 @@ describe("V1 keyboard daily-use seams", () => {
     await focusAndPress(host.querySelector<HTMLElement>('[data-asset-id="asset-1"]')!, " ");
     await waitFor(() => expect(input("Title")).not.toBeNull());
     await typeByKeyboard(input("Title"), " dirty");
-    await act(async () => harness.emit({ event: "library_opened", value: { ...SESSION, sessionId: "session-external", name: "Externally Opened" } }));
+    await act(async () => harness.emit({ event: "library_opened", value: { ...SESSION, sessionId: "session-external", libraryId: "library-external", name: "Externally Opened" } }));
     expect(text()).toContain("Externally Opened");
     expect(host.querySelector(".draft-mark")).toBeNull();
   });
@@ -246,33 +266,40 @@ class BridgeHarness {
   collections: CollectionSummary[] = [{ collectionId: "collection-1", name: "Selects", assetCount: 1, revision: 1 }];
   details = new Map(ASSETS.map((summary) => [summary.assetId, detail(summary)]));
   assets = [...ASSETS];
+  authoritySession = SESSION;
   lastQuery: AssetQuery | null = null;
-  calls = { openLibrary: 0, reauthorizeRoot: 0, scanRoot: 0, cancelJob: 0, updateAsset: 0, revealLocation: 0, renameCollection: 0, deleteCollection: 0, createCollection: 0, setCollectionMembership: 0, restartCore: 0, writePreferences: [] as Array<Record<string, unknown>>, completeOpenIntent: [] as Array<[string, string]> };
+  calls = { openLibrary: 0, reauthorizeRoot: 0, scanRoot: 0, cancelJob: 0, updateAsset: 0, revealLocation: 0, renameCollection: 0, deleteCollection: 0, createCollection: 0, setCollectionMembership: 0, restartCore: 0, staleFollowUps: 0, updateSessions: [] as string[], writePreferences: [] as Array<Record<string, unknown>>, completeOpenIntent: [] as Array<[string, string]> };
 
   bridge: ReferenceWorkspaceBridge = {
     version: BRIDGE_VERSION,
-    createLibrary: async () => SESSION,
-    openLibrary: async () => { this.calls.openLibrary += 1; return SESSION; },
-    completeOpenIntent: async (intentId, decision) => { this.calls.completeOpenIntent.push([intentId, decision]); return { ...SESSION, sessionId: "session-2", name: "Other Library" }; },
+    createLibrary: async () => { this.authoritySession = SESSION; return SESSION; },
+    openLibrary: async () => { this.calls.openLibrary += 1; this.authoritySession = SESSION; return SESSION; },
+    completeOpenIntent: async (intentId, decision) => { this.calls.completeOpenIntent.push([intentId, decision]); this.authoritySession = { ...SESSION, sessionId: "session-2", name: "Other Library" }; return this.authoritySession; },
     readPreferences: async () => ({ interfaceScale: 1, thumbnailDensity: 220, previewZoom: 1 }),
     writePreferences: async (patch) => { this.calls.writePreferences.push(patch); return { interfaceScale: 1, thumbnailDensity: 220, previewZoom: 1, ...patch }; },
     closeLibrary: async () => undefined,
-    chooseRoot: async () => null,
-    listRoots: async () => this.roots,
-    reauthorizeRoot: async () => { this.calls.reauthorizeRoot += 1; this.roots = this.roots.map((root) => ({ ...root, authorized: true, state: "ready" })); return this.roots[0]!; },
+    chooseRoot: async (sessionId) => {
+      this.recordFollowUp(sessionId);
+      this.authoritySession = { ...this.authoritySession, sessionId: "session-authority-1" };
+      return { session: this.authoritySession, rootId: "root-added", jobId: "job-added" };
+    },
+    listRoots: async (sessionId) => { this.recordFollowUp(sessionId); return this.roots; },
+    reauthorizeRoot: async (sessionId) => { this.recordFollowUp(sessionId); this.calls.reauthorizeRoot += 1; this.authoritySession = { ...this.authoritySession, sessionId: "session-authority-2" }; this.roots = this.roots.map((root) => ({ ...root, authorized: true, state: "ready" })); return { session: this.authoritySession, root: this.roots[0]! }; },
     scanRoot: async (_sessionId, rootId) => { this.calls.scanRoot += 1; this.roots = this.roots.map((root) => ({ ...root, activeJobId: "job-1", state: "scanning" })); return { rootId, jobId: "job-1" }; },
     cancelJob: async () => { this.calls.cancelJob += 1; this.roots = this.roots.map((root) => ({ ...root, activeJobId: null, state: "ready" })); },
     queryJobs: async () => ({ offset: 0, limit: 100, total: 0, items: [], nextOffset: null }),
-    queryAssets: async (input): Promise<AssetPage> => { this.lastQuery = input.query; const items = input.query.search === "no-match" ? [] : this.assets; return { offset: input.offset, limit: input.limit, total: items.length, items, nextOffset: null, libraryRevision: 1 }; },
-    getAsset: async (_sessionId, assetId) => this.details.get(assetId)!,
+    queryAssets: async (input): Promise<AssetPage> => { this.recordFollowUp(input.sessionId); this.lastQuery = input.query; const items = input.query.search === "no-match" ? [] : this.assets; return { offset: input.offset, limit: input.limit, total: items.length, items, nextOffset: null, libraryRevision: 1 }; },
+    getAsset: async (sessionId, assetId) => { this.recordFollowUp(sessionId); return this.details.get(assetId)!; },
     updateAsset: async (input) => {
       this.calls.updateAsset += 1;
+      this.calls.updateSessions.push(input.sessionId);
+      this.recordFollowUp(input.sessionId);
       const current = this.details.get(input.assetId)!;
       const updated: AssetDetail = { ...current, customTitle: applyText(current.customTitle, input.patch.customTitle), note: applyText(current.note, input.patch.note), reviewState: input.patch.reviewState ?? current.reviewState, revision: current.revision + 1 };
       this.details.set(input.assetId, updated);
       return { asset: updated, libraryRevision: 2 };
     },
-    listCollections: async () => this.collections,
+    listCollections: async (sessionId) => { this.recordFollowUp(sessionId); return this.collections; },
     createCollection: async (_sessionId, name) => { this.calls.createCollection += 1; const collection = { collectionId: `collection-${this.collections.length + 1}`, name, assetCount: 0, revision: 1 }; this.collections = [...this.collections, collection]; return collection; },
     renameCollection: async (_sessionId, id, _revision, name) => { this.calls.renameCollection += 1; this.collections = this.collections.map((item) => item.collectionId === id ? { ...item, name, revision: item.revision + 1 } : item); return this.collections[0]!; },
     deleteCollection: async (_sessionId, id) => { this.calls.deleteCollection += 1; this.collections = this.collections.filter((item) => item.collectionId !== id); },
@@ -286,6 +313,7 @@ class BridgeHarness {
   };
 
   emit(event: WorkspaceEvent) { for (const listener of this.listeners) listener(event); }
+  recordFollowUp(sessionId: string) { if (sessionId !== this.authoritySession.sessionId) this.calls.staleFollowUps += 1; }
 }
 
 function asset(assetId: string, displayName: string, availability: AssetSummary["availability"] = "present"): AssetSummary {

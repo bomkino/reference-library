@@ -157,9 +157,9 @@ export interface ReferenceWorkspaceBridge {
   readPreferences(): Promise<WorkspacePreferences>;
   writePreferences(patch: Partial<WorkspacePreferences>): Promise<WorkspacePreferences>;
   closeLibrary(sessionId: string): Promise<void>;
-  chooseRoot(sessionId: string): Promise<{ rootId: string; jobId: string } | null>;
+  chooseRoot(sessionId: string): Promise<{ session: SessionOpened; rootId: string; jobId: string } | null>;
   listRoots(sessionId: string): Promise<RootSummary[]>;
-  reauthorizeRoot(sessionId: string, rootId: string): Promise<RootSummary | null>;
+  reauthorizeRoot(sessionId: string, rootId: string): Promise<{ session: SessionOpened; root: RootSummary } | null>;
   scanRoot(sessionId: string, rootId: string): Promise<{ rootId: string; jobId: string }>;
   cancelJob(sessionId: string, jobId: string): Promise<void>;
   queryJobs(input: { sessionId: string; offset: number; limit: number; query: { rootId?: string; states: JobState[] } }): Promise<JobPage>;

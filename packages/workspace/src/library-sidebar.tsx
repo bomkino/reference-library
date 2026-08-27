@@ -4,6 +4,7 @@ import {
   type CollectionSummary,
   type ReferenceWorkspaceBridge,
   type RootSummary,
+  type SessionOpened,
 } from "@pitchdog/reference-bridge";
 import { textLimitError } from "./text-boundaries";
 import { handleDialogKey } from "./dialog-keys";
@@ -21,6 +22,7 @@ export function LibrarySidebar(props: {
   onError(message: string): void;
   onCollectionInventory(collections: CollectionSummary[]): void;
   onRootInventory(roots: RootSummary[]): void;
+  onSession(session: SessionOpened): void;
 }) {
   const [roots, setRoots] = useState<RootSummary[]>([]);
   const [collections, setCollections] = useState<CollectionSummary[]>([]);
@@ -28,6 +30,7 @@ export function LibrarySidebar(props: {
   const [editing, setEditing] = useState<CollectionSummary | null>(null);
   const [rename, setRename] = useState("");
   const [deleting, setDeleting] = useState<CollectionSummary | null>(null);
+  const [authorityBusy, setAuthorityBusy] = useState(false);
   const renameInput = useRef<HTMLInputElement>(null);
   const deleteConfirm = useRef<HTMLButtonElement>(null);
   const returnFocus = useRef<HTMLButtonElement>(null);
@@ -37,11 +40,11 @@ export function LibrarySidebar(props: {
     else allAssets.current?.focus();
   });
 
-  const load = async () => {
+  const load = async (sessionId = props.sessionId) => {
     try {
       const [nextRoots, nextCollections] = await Promise.all([
-        props.bridge.listRoots(props.sessionId),
-        props.bridge.listCollections(props.sessionId),
+        props.bridge.listRoots(sessionId),
+        props.bridge.listCollections(sessionId),
       ]);
       setRoots(nextRoots);
       props.onRootInventory(nextRoots);
@@ -129,8 +132,15 @@ export function LibrarySidebar(props: {
       <section aria-labelledby="roots-heading">
         <div className="section-heading">
           <h2 id="roots-heading">Roots</h2>
-          <button className="button--quiet" disabled={props.disabled} onClick={async () => {
-            try { await props.bridge.chooseRoot(props.sessionId); await load(); } catch (reason) { props.onError(messageFrom(reason)); }
+          <button className="button--quiet" disabled={props.disabled || authorityBusy} onClick={async () => {
+            setAuthorityBusy(true);
+            try {
+              const result = await props.bridge.chooseRoot(props.sessionId);
+              if (!result) return;
+              props.onSession(result.session);
+              await load(result.session.sessionId);
+            } catch (reason) { props.onError(messageFrom(reason)); }
+            finally { setAuthorityBusy(false); }
           }}>Add</button>
         </div>
         {roots.length === 0 ? <p className="muted">No Root authorized.</p> : (
@@ -139,11 +149,20 @@ export function LibrarySidebar(props: {
               <li className="root-row" key={root.rootId}>
                 <div><strong>{root.displayName}</strong><span role="status">{root.state} · {root.observedCount.toLocaleString()} observed{root.unsupportedCount ? ` · ${root.unsupportedCount.toLocaleString()} unsupported` : ""}</span>{root.activeJobId && <progress aria-label={`Scanning ${root.displayName}`} />}</div>
                 <div className="compact-actions">
-                  {!root.authorized && <button disabled={props.disabled} onClick={async () => { try { await props.bridge.reauthorizeRoot(props.sessionId, root.rootId); await load(); } catch (reason) { props.onError(messageFrom(reason)); } }}>Reauthorize</button>}
+                  {!root.authorized && <button disabled={props.disabled || authorityBusy} onClick={async () => {
+                    setAuthorityBusy(true);
+                    try {
+                      const result = await props.bridge.reauthorizeRoot(props.sessionId, root.rootId);
+                      if (!result) return;
+                      props.onSession(result.session);
+                      await load(result.session.sessionId);
+                    } catch (reason) { props.onError(messageFrom(reason)); }
+                    finally { setAuthorityBusy(false); }
+                  }}>Reauthorize</button>}
                   {root.activeJobId ? (
-                    <button disabled={props.disabled} onClick={async () => { try { await props.bridge.cancelJob(props.sessionId, root.activeJobId!); await load(); } catch (reason) { props.onError(messageFrom(reason)); } }}>Cancel</button>
+                    <button disabled={props.disabled || authorityBusy} onClick={async () => { try { await props.bridge.cancelJob(props.sessionId, root.activeJobId!); await load(); } catch (reason) { props.onError(messageFrom(reason)); } }}>Cancel</button>
                   ) : (
-                    <button className="button--quiet" disabled={props.disabled || !root.authorized} onClick={async () => { try { await props.bridge.scanRoot(props.sessionId, root.rootId); await load(); } catch (reason) { props.onError(messageFrom(reason)); } }}>Rescan</button>
+                    <button className="button--quiet" disabled={props.disabled || authorityBusy || !root.authorized} onClick={async () => { try { await props.bridge.scanRoot(props.sessionId, root.rootId); await load(); } catch (reason) { props.onError(messageFrom(reason)); } }}>Rescan</button>
                   )}
                 </div>
               </li>

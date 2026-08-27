@@ -111,7 +111,7 @@ function LibraryWorkspace({ bridge }: { bridge: ReferenceWorkspaceBridge }) {
 
   return (
     <OpenWorkspace
-      key={session.sessionId}
+      key={session.libraryId}
       bridge={bridge}
       session={session}
       eventPulse={eventPulse}
@@ -287,6 +287,7 @@ function OpenWorkspace(props: {
         onError={props.setShellError}
         onCollectionInventory={setCollections}
         onRootInventory={setRoots}
+        onSession={props.onSession}
       />
       <section className="workspace-main" aria-label="Assets">
         {props.shellError && <div className="error-banner" role="alert"><span>{props.shellError}</span>{props.needsRestart && <button onClick={restartCore}>Restart Core</button>}</div>}
