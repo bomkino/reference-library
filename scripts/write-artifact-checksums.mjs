@@ -1,10 +1,9 @@
 #!/usr/bin/env node
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
-import { createArtifactReceipt } from "./artifact-receipt.mjs";
-import { sha256File } from "./artifact-checksums.mjs";
+import { createArtifactChecksumManifest, sha256File } from "./artifact-checksums.mjs";
 import { verifyReleaseMetadata } from "./release-metadata.mjs";
 import { inspectCleanSource } from "./source-tree.mjs";
 
@@ -14,35 +13,31 @@ const { values, positionals } = parseArgs({
     source: { type: "string" },
     repository: { type: "string" },
     target: { type: "string" },
-    checksums: { type: "string" },
     output: { type: "string" },
   },
 });
-if (!values.source || !values.repository || !values.target || !values.checksums || !values.output || !positionals.length) {
-  throw new Error("Usage: write-artifact-receipt --source <sha> --repository <git-root> --target <target> --checksums <SHA256SUMS> --output <receipt.json> <artifact...>");
+if (!values.source || !values.repository || !values.target || !values.output || !positionals.length) {
+  throw new Error("Usage: write-artifact-checksums --source <sha> --repository <git-root> --target <target> --output <SHA256SUMS> <artifact...>");
 }
 const repository = path.resolve(values.repository);
 const sourceTree = await inspectCleanSource(repository, values.source);
 const metadata = await verifyReleaseMetadata(repository);
-const target = metadata.targets[values.target];
-if (!target) throw new Error(`unsupported release target: ${values.target}`);
-const expected = [...target.artifacts].sort();
+const expected = [...metadata.targets[values.target].artifacts].sort();
 const observed = positionals.map((file) => path.basename(file)).sort();
 if (JSON.stringify(expected) !== JSON.stringify(observed)) {
   throw new Error(`artifact set does not match release metadata target ${values.target}`);
 }
+const metadataPath = path.join(repository, "release-metadata.json");
 const releaseIdentity = {
   version: metadata.version,
   bundleIdentifier: metadata.bundleIdentifier,
-  metadataSha256: await sha256File(path.join(repository, "release-metadata.json")),
+  metadataSha256: await sha256File(metadataPath),
 };
-const receipt = await createArtifactReceipt({
+const manifest = await createArtifactChecksumManifest({
   sourceTree,
   releaseIdentity,
   targetName: values.target,
   artifactPaths: positionals,
-  checksumManifestPath: values.checksums,
 });
-const output = path.resolve(values.output);
-await writeFile(output, `${JSON.stringify(receipt, null, 2)}\n`, { flag: "wx" });
-process.stdout.write(`${output}\n`);
+await writeFile(path.resolve(values.output), manifest, { flag: "wx" });
+process.stdout.write(`${path.resolve(values.output)}\n`);

@@ -1,45 +1,52 @@
-import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
+import assert from "node:assert/strict";
 import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 
+import {
+  assertReleaseIdentity,
+  assertSourceTree,
+  inspectArtifacts,
+  sha256File,
+  verifyArtifactChecksumManifest,
+} from "./artifact-checksums.mjs";
+
 const TARGETS = Object.freeze({
-  "linux-x86_64": { os: "linux", arch: "x86_64" },
-  "macos-arm64": { os: "macos", arch: "arm64" },
+  "linux-x86_64": { name: "linux-x86_64", os: "linux", arch: "x86_64" },
+  "macos-arm64": { name: "macos-arm64", os: "macos", arch: "arm64" },
 });
 
-export async function createArtifactReceipt({ sourceCommit, targetName, artifactPaths }) {
-  assertSourceCommit(sourceCommit);
+export async function createArtifactReceipt({
+  sourceTree,
+  releaseIdentity,
+  targetName,
+  artifactPaths,
+  checksumManifestPath,
+}) {
+  assertSourceTree(sourceTree);
+  assertReleaseIdentity(releaseIdentity);
   const target = TARGETS[targetName];
   if (!target) throw new Error(`Unsupported artifact target: ${targetName}`);
-  if (!Array.isArray(artifactPaths) || artifactPaths.length === 0) {
-    throw new Error("At least one artifact is required");
-  }
-
-  const artifacts = [];
-  const names = new Set();
-  for (const artifactPath of artifactPaths) {
-    const absolutePath = path.resolve(artifactPath);
-    const metadata = await lstat(absolutePath);
-    if (!metadata.isFile() || metadata.isSymbolicLink()) {
-      throw new Error(`Artifact must be a regular non-symlink file: ${artifactPath}`);
-    }
-    const file = path.basename(absolutePath);
-    if (names.has(file)) throw new Error(`Duplicate artifact filename: ${file}`);
-    names.add(file);
-    artifacts.push({
-      file,
-      bytes: metadata.size,
-      sha256: await sha256File(absolutePath),
-    });
-  }
-  artifacts.sort((left, right) => left.file.localeCompare(right.file));
-
+  const artifacts = await inspectArtifacts(artifactPaths);
+  const checksumManifest = await verifyArtifactChecksumManifest(checksumManifestPath);
+  assert.equal(checksumManifest.sourceCommit, sourceTree.commit);
+  assert.equal(checksumManifest.sourceTree, sourceTree.tree);
+  assert.equal(checksumManifest.releaseVersion, releaseIdentity.version);
+  assert.equal(checksumManifest.releaseMetadataSha256, releaseIdentity.metadataSha256);
+  assert.equal(checksumManifest.target, targetName);
+  assert.deepEqual(
+    [...checksumManifest.artifacts.entries()].sort(),
+    artifacts.map((artifact) => [artifact.file, artifact.sha256]).sort(),
+  );
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     evidenceScope: "packaged_in_compatible_environment",
-    sourceCommit,
+    sourceTree,
+    releaseIdentity,
     target,
+    checksumManifest: {
+      file: path.basename(checksumManifestPath),
+      sha256: await sha256File(checksumManifestPath),
+    },
     artifacts,
     claimExclusions: ["installed", "target_integrated", "released"],
   };
@@ -48,83 +55,87 @@ export async function createArtifactReceipt({ sourceCommit, targetName, artifact
 export async function verifyArtifactReceipt(receiptPath, { requireCurrentTarget = false } = {}) {
   const absoluteReceipt = path.resolve(receiptPath);
   const receipt = JSON.parse(await readFile(absoluteReceipt, "utf8"));
-  if (receipt?.schemaVersion !== 1) throw new Error("Unsupported artifact receipt schema");
-  if (receipt?.evidenceScope !== "packaged_in_compatible_environment") {
-    throw new Error("Artifact receipt overstates or omits its evidence scope");
-  }
-  assertSourceCommit(receipt.sourceCommit);
+  assert.equal(receipt?.schemaVersion, 2, "unsupported artifact receipt schema");
+  assert.equal(
+    receipt?.evidenceScope,
+    "packaged_in_compatible_environment",
+    "artifact receipt overstates or omits its evidence scope",
+  );
+  assertSourceTree(receipt.sourceTree);
+  assertReleaseIdentity(receipt.releaseIdentity);
   assertTarget(receipt.target);
   if (requireCurrentTarget) assertCurrentTarget(receipt.target);
   if (!Array.isArray(receipt.artifacts) || receipt.artifacts.length === 0) {
-    throw new Error("Artifact receipt contains no artifacts");
+    throw new Error("artifact receipt contains no artifacts");
   }
   if (
     !Array.isArray(receipt.claimExclusions) ||
     !["installed", "target_integrated", "released"].every((value) =>
-      receipt.claimExclusions.includes(value),
-    )
+      receipt.claimExclusions.includes(value))
   ) {
-    throw new Error("Artifact receipt must retain install, integration, and release exclusions");
+    throw new Error("artifact receipt must retain install, integration, and release exclusions");
   }
-
   const receiptDirectory = path.dirname(absoluteReceipt);
+  const checksumPath = safeSibling(receiptDirectory, receipt.checksumManifest?.file);
+  if (await sha256File(checksumPath) !== receipt.checksumManifest?.sha256) {
+    throw new Error("checksum manifest hash mismatch");
+  }
+  const checksums = await verifyArtifactChecksumManifest(checksumPath);
+  assert.equal(checksums.sourceCommit, receipt.sourceTree.commit);
+  assert.equal(checksums.sourceTree, receipt.sourceTree.tree);
+  assert.equal(checksums.releaseMetadataSha256, receipt.releaseIdentity.metadataSha256);
+  assert.equal(checksums.target, receipt.target.name);
+
   const names = new Set();
   for (const artifact of receipt.artifacts) {
-    if (
-      typeof artifact?.file !== "string" ||
-      artifact.file !== path.basename(artifact.file) ||
-      artifact.file === "." ||
-      artifact.file === ".." ||
-      names.has(artifact.file)
-    ) {
-      throw new Error("Artifact receipt contains an unsafe or duplicate filename");
-    }
+    const artifactPath = safeSibling(receiptDirectory, artifact?.file);
+    if (names.has(artifact.file)) throw new Error("artifact receipt contains a duplicate filename");
     names.add(artifact.file);
     if (!Number.isSafeInteger(artifact.bytes) || artifact.bytes < 0) {
-      throw new Error(`Invalid artifact size: ${artifact.file}`);
+      throw new Error(`invalid artifact size: ${artifact.file}`);
     }
     if (!/^[0-9a-f]{64}$/.test(artifact.sha256)) {
-      throw new Error(`Invalid artifact SHA-256: ${artifact.file}`);
+      throw new Error(`invalid artifact SHA-256: ${artifact.file}`);
     }
-    const artifactPath = path.join(receiptDirectory, artifact.file);
     const metadata = await lstat(artifactPath);
     if (!metadata.isFile() || metadata.isSymbolicLink()) {
-      throw new Error(`Artifact is not a regular non-symlink file: ${artifact.file}`);
+      throw new Error(`artifact is not a regular non-symlink file: ${artifact.file}`);
     }
-    if (metadata.size !== artifact.bytes) throw new Error(`Artifact size mismatch: ${artifact.file}`);
+    if (metadata.size !== artifact.bytes) throw new Error(`artifact size mismatch: ${artifact.file}`);
     const observedHash = await sha256File(artifactPath);
-    if (observedHash !== artifact.sha256) throw new Error(`Artifact hash mismatch: ${artifact.file}`);
+    if (observedHash !== artifact.sha256 || checksums.artifacts.get(artifact.file) !== observedHash) {
+      throw new Error(`artifact hash mismatch: ${artifact.file}`);
+    }
   }
-
+  if (checksums.artifacts.size !== names.size) throw new Error("checksum artifact set mismatch");
   return {
     status: "verified_build_artifacts",
-    sourceCommit: receipt.sourceCommit,
+    sourceCommit: receipt.sourceTree.commit,
+    sourceTree: receipt.sourceTree.tree,
+    releaseVersion: receipt.releaseIdentity.version,
     target: receipt.target,
     artifactCount: receipt.artifacts.length,
   };
 }
 
-async function sha256File(filePath) {
-  const hash = createHash("sha256");
-  for await (const chunk of createReadStream(filePath)) hash.update(chunk);
-  return hash.digest("hex");
-}
-
-function assertSourceCommit(value) {
-  if (typeof value !== "string" || !/^[0-9a-f]{40}$/.test(value)) {
-    throw new Error("sourceCommit must be a full lowercase Git SHA");
+function safeSibling(directory, file) {
+  if (
+    typeof file !== "string" ||
+    file !== path.basename(file) ||
+    file === "." ||
+    file === ".."
+  ) {
+    throw new Error("artifact receipt contains an unsafe filename");
   }
+  return path.join(directory, file);
 }
 
 function assertTarget(value) {
-  if (
-    !value ||
-    !Object.values(TARGETS).some(
-      (target) => target.os === value.os && target.arch === value.arch,
-    )
-  ) {
-    throw new Error("Unsupported artifact receipt target");
-  }
+  assert.ok(
+    value && Object.values(TARGETS).some((target) =>
+      target.name === value.name && target.os === value.os && target.arch === value.arch),
+    "unsupported artifact receipt target",
+  );
 }
 
 function assertCurrentTarget(target) {
@@ -132,7 +143,7 @@ function assertCurrentTarget(target) {
   const currentArch = process.arch === "x64" ? "x86_64" : process.arch;
   if (target.os !== currentOS || target.arch !== currentArch) {
     throw new Error(
-      `Artifact target ${target.os}-${target.arch} does not match ${currentOS}-${currentArch}`,
+      `artifact target ${target.os}-${target.arch} does not match ${currentOS}-${currentArch}`,
     );
   }
 }
