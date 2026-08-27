@@ -39,7 +39,10 @@ test("resource delivery opens once without following links and streams bounded c
   const stream = await source("ResourceFileStreamer.swift");
   const handler = await source("WorkspaceSchemeHandler.swift");
   assert.match(stream, /O_RDONLY \| O_NOFOLLOW \| O_CLOEXEC/);
+  assert.match(stream, /pitchdog-reference-cache[\s\S]*reference-library-v1/);
+  assert.match(stream, /descendantComponents[\s\S]*openat/);
   assert.match(stream, /fstat\(descriptor/);
+  assert.match(stream, /st_uid[\s\S]*0o022[\s\S]*st_nlink == 1/);
   assert.match(stream, /pread\(descriptor/);
   assert.match(stream, /chunkBytes = 64 \* 1_024/);
   assert.doesNotMatch(handler, /resourceValues\(forKeys: \[\.fileSizeKey/);

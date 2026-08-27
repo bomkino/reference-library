@@ -13,6 +13,7 @@ final class ResourceFileStreamerTests: XCTestCase {
             try await ResourceFileStreamer.stream(
                 path: file.path,
                 expectedSize: bytes.count,
+                cacheRoot: directory,
                 onClose: { closes.withValue { $0 += 1 } }
             ) { chunk in chunks.withValue { $0.append(chunk) } }
             let delivered = chunks.read()
@@ -33,6 +34,7 @@ final class ResourceFileStreamerTests: XCTestCase {
             try await ResourceFileStreamer.stream(
                 path: candidate.path,
                 expectedSize: 8,
+                cacheRoot: directory,
                 afterValidation: {
                     try FileManager.default.moveItem(at: candidate, to: retained)
                     try FileManager.default.moveItem(at: replacement, to: candidate)
@@ -49,7 +51,11 @@ final class ResourceFileStreamerTests: XCTestCase {
             try Data(repeating: 1, count: 8).write(to: target)
             try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
             await XCTAssertThrowsErrorAsync {
-                try await ResourceFileStreamer.stream(path: link.path, expectedSize: 8) { _ in }
+                try await ResourceFileStreamer.stream(
+                    path: link.path,
+                    expectedSize: 8,
+                    cacheRoot: directory
+                ) { _ in }
             }
         }
     }
@@ -65,6 +71,7 @@ final class ResourceFileStreamerTests: XCTestCase {
             try await ResourceFileStreamer.stream(
                 path: candidate.path,
                 expectedSize: 8,
+                cacheRoot: directory,
                 afterValidation: {
                     try FileManager.default.moveItem(at: candidate, to: retained)
                     try FileManager.default.createSymbolicLink(at: candidate, withDestinationURL: other)
@@ -84,6 +91,7 @@ final class ResourceFileStreamerTests: XCTestCase {
                 try await ResourceFileStreamer.stream(
                     path: file.path,
                     expectedSize: ResourceFileStreamer.chunkBytes * 4,
+                    cacheRoot: directory,
                     onClose: { closed.fulfill() }
                 ) { _ in
                     firstChunk.fulfill()
@@ -94,6 +102,85 @@ final class ResourceFileStreamerTests: XCTestCase {
             stream.cancel()
             await XCTAssertThrowsErrorAsync { try await stream.value }
             await fulfillment(of: [closed], timeout: 1)
+        }
+    }
+
+    func testOutsideCacheAndPrefixCollisionAreRejected() async throws {
+        try await withTemporary { directory in
+            let cache = directory.appendingPathComponent("cache", isDirectory: true)
+            let prefixCollision = directory.appendingPathComponent("cache-escape", isDirectory: true)
+            let outside = directory.appendingPathComponent("outside.png")
+            try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: prefixCollision, withIntermediateDirectories: true)
+            try Data(repeating: 1, count: 8).write(to: outside)
+            let colliding = prefixCollision.appendingPathComponent("still.png")
+            try Data(repeating: 2, count: 8).write(to: colliding)
+
+            await XCTAssertThrowsErrorAsync {
+                try await ResourceFileStreamer.stream(
+                    path: outside.path,
+                    expectedSize: 8,
+                    cacheRoot: cache
+                ) { _ in }
+            }
+            await XCTAssertThrowsErrorAsync {
+                try await ResourceFileStreamer.stream(
+                    path: colliding.path,
+                    expectedSize: 8,
+                    cacheRoot: cache
+                ) { _ in }
+            }
+        }
+    }
+
+    func testIntermediateSymlinkEscapeIsRejected() async throws {
+        try await withTemporary { directory in
+            let cache = directory.appendingPathComponent("cache", isDirectory: true)
+            let outside = directory.appendingPathComponent("outside", isDirectory: true)
+            try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+            let outsideFile = outside.appendingPathComponent("still.png")
+            try Data(repeating: 3, count: 8).write(to: outsideFile)
+            let escape = cache.appendingPathComponent("escape", isDirectory: true)
+            try FileManager.default.createSymbolicLink(at: escape, withDestinationURL: outside)
+
+            await XCTAssertThrowsErrorAsync {
+                try await ResourceFileStreamer.stream(
+                    path: escape.appendingPathComponent("still.png").path,
+                    expectedSize: 8,
+                    cacheRoot: cache
+                ) { _ in }
+            }
+        }
+    }
+
+    func testWritableOrMultiplyLinkedCacheFileIsRejected() async throws {
+        try await withTemporary { directory in
+            let writable = directory.appendingPathComponent("writable.png")
+            try Data(repeating: 4, count: 8).write(to: writable)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: NSNumber(value: 0o666)],
+                ofItemAtPath: writable.path
+            )
+            await XCTAssertThrowsErrorAsync {
+                try await ResourceFileStreamer.stream(
+                    path: writable.path,
+                    expectedSize: 8,
+                    cacheRoot: directory
+                ) { _ in }
+            }
+
+            let linked = directory.appendingPathComponent("linked.png")
+            let alias = directory.appendingPathComponent("alias.png")
+            try Data(repeating: 5, count: 8).write(to: linked)
+            try FileManager.default.linkItem(at: linked, to: alias)
+            await XCTAssertThrowsErrorAsync {
+                try await ResourceFileStreamer.stream(
+                    path: linked.path,
+                    expectedSize: 8,
+                    cacheRoot: directory
+                ) { _ in }
+            }
         }
     }
 
