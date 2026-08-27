@@ -57,13 +57,42 @@ jobs:
           node-version: 24
           cache: npm
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libarchive-tools
       - run: npm ci
       - run: cargo build --release --locked -p reference-core
       - run: npm run build -w @pitchdog/reference-workspace
-      - run: npm run package:dir -w @pitchdog/reference-linux
+      - run: npm run package -w @pitchdog/reference-linux
       - run: test -x release/linux/linux-unpacked/reference-library
       - run: test -x release/linux/linux-unpacked/resources/bin/reference-core
       - run: test -f release/linux/linux-unpacked/resources/app.asar
+      - run: test -f release/linux/reference-library-0.1.0-x64.pacman
+      - run: test -f release/linux/reference-library-0.1.0-x86_64.AppImage
+      - run: test -f release/linux/reference-library-0.1.0-x64.tar.gz
+      - run: bsdtar -tf release/linux/reference-library-0.1.0-x64.pacman > "$RUNNER_TEMP/pacman-contents.txt"
+      - run: grep -Fxq 'opt/Reference Library/reference-library' "$RUNNER_TEMP/pacman-contents.txt"
+      - run: tar -tzf release/linux/reference-library-0.1.0-x64.tar.gz > "$RUNNER_TEMP/tar-contents.txt"
+      - run: grep -Fxq 'reference-library-0.1.0-x64/reference-library' "$RUNNER_TEMP/tar-contents.txt"
+      - run: >-
+          node scripts/write-artifact-receipt.mjs
+          --source "$GITHUB_SHA"
+          --target linux-x86_64
+          --output release/linux/T01_BUILD_RECEIPT.json
+          release/linux/reference-library-0.1.0-x64.pacman
+          release/linux/reference-library-0.1.0-x86_64.AppImage
+          release/linux/reference-library-0.1.0-x64.tar.gz
+      - run: node scripts/verify-artifact-receipt.mjs --require-current-target release/linux/T01_BUILD_RECEIPT.json
+      - if: startsWith(github.ref, 'refs/heads/')
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: reference-library-linux-x86_64-${{ github.sha }}
+          path: |
+            release/linux/reference-library-0.1.0-x64.pacman
+            release/linux/reference-library-0.1.0-x86_64.AppImage
+            release/linux/reference-library-0.1.0-x64.tar.gz
+            release/linux/T01_BUILD_RECEIPT.json
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
 
   macos-arm64-package:
     runs-on: macos-26
@@ -81,3 +110,22 @@ jobs:
       - run: apps/macos/scripts/build-app.sh
       - run: test -f release/macos/reference-library-0.1.0-macos-arm64.app.zip
       - run: shasum -a 256 -c release/macos/reference-library-0.1.0-macos-arm64.app.zip.sha256
+      - run: >-
+          node scripts/write-artifact-receipt.mjs
+          --source "$GITHUB_SHA"
+          --target macos-arm64
+          --output release/macos/T01_BUILD_RECEIPT.json
+          release/macos/reference-library-0.1.0-macos-arm64.app.zip
+          release/macos/reference-library-0.1.0-macos-arm64.app.zip.sha256
+      - run: node scripts/verify-artifact-receipt.mjs --require-current-target release/macos/T01_BUILD_RECEIPT.json
+      - if: startsWith(github.ref, 'refs/heads/')
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: reference-library-macos-arm64-${{ github.sha }}
+          path: |
+            release/macos/reference-library-0.1.0-macos-arm64.app.zip
+            release/macos/reference-library-0.1.0-macos-arm64.app.zip.sha256
+            release/macos/T01_BUILD_RECEIPT.json
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0

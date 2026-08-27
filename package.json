@@ -10,7 +10,7 @@
   "scripts": {
     "build": "npm run build -w @pitchdog/reference-workspace && npm run build -w @pitchdog/reference-linux",
     "typecheck": "npm run typecheck -w @pitchdog/reference-bridge && npm run typecheck -w @pitchdog/reference-workspace",
-    "test": "npm run test -w @pitchdog/reference-workspace && npm run test -w @pitchdog/reference-linux",
+    "test": "node --test scripts/tests/*.test.mjs && npm run test -w @pitchdog/reference-workspace && npm run test -w @pitchdog/reference-linux",
     "check": "npm run typecheck && npm test && npm run build",
     "test:semantic-roundtrip": "node scripts/t01-semantic-roundtrip.mjs"
   },
