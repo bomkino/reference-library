@@ -13,7 +13,7 @@ export type InterfaceScale = 0.8 | 1 | 1.25 | 1.5;
 export type ResourceProfile = "grid_standard" | "preview";
 export type AssetProjection = "contact_sheet_tiny" | "contact_sheet_standard" | "contact_sheet_detailed";
 export type ReviewState = "unreviewed" | "keep" | "maybe" | "reject";
-export type Availability = "present" | "missing" | "needs_permission" | "offline_volume" | "unreadable" | "unavailable";
+export type Availability = "present" | "missing" | "needs_permission" | "offline_volume" | "unreadable" | "unavailable" | "unsupported";
 export type AssetSort = "created_ascending" | "created_descending" | "name_ascending" | "name_descending" | "review_state";
 export type JobState = "queued" | "running" | "cancelled" | "completed" | "failed";
 
@@ -163,7 +163,7 @@ export interface ReferenceWorkspaceBridge {
   scanRoot(sessionId: string, rootId: string): Promise<{ rootId: string; jobId: string }>;
   cancelJob(sessionId: string, jobId: string): Promise<void>;
   queryJobs(input: { sessionId: string; offset: number; limit: number; query: { rootId?: string; states: JobState[] } }): Promise<JobPage>;
-  queryAssets(input: { sessionId: string; offset: number; limit: number; projection: AssetProjection; query: AssetQuery }): Promise<AssetPage>;
+  queryAssets(input: { sessionId: string; offset: number; limit: number; projection: AssetProjection; query: AssetQuery; expectedLibraryRevision?: number | null }): Promise<AssetPage>;
   getAsset(sessionId: string, assetId: string): Promise<AssetDetail>;
   updateAsset(input: { sessionId: string; assetId: string; expectedRevision: number; patch: AssetPatch }): Promise<{ asset: AssetDetail; libraryRevision: number }>;
   listCollections(sessionId: string): Promise<CollectionSummary[]>;

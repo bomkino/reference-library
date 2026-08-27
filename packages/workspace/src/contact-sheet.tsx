@@ -217,7 +217,9 @@ export function ContactSheet(props: ContactSheetProps) {
                       })}
                     />
                   ) : (
-                    <span className="asset-card__missing">Source {asset.availability}</span>
+                    <span className="asset-card__missing">
+                      {asset.availability === "unsupported" ? "Catalogue only · unsupported media" : `Source ${asset.availability}`}
+                    </span>
                   )}
                 </span>
                 <span className="asset-card__name" title={asset.displayName}>

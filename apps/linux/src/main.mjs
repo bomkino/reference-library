@@ -275,9 +275,15 @@ function registerNamedOperations() {
 
   ipcMain.handle(IPC.queryAssets, trusted(async (_event, input) => {
     assertAssetQuery(input); assertSession(recovery.activeSession, input.sessionId);
-    return expectResult(await core.request({ method: "query_asset_index", params: {
-      ...input, query: { ...input.query, search: input.query.search?.trim() || null },
-    } }), "asset_page");
+    try {
+      const page = expectResult(await core.request({ method: "query_asset_index", params: {
+        ...input, query: { ...input.query, search: input.query.search?.trim() || null },
+      } }), "asset_page");
+      return { kind: "asset_page", page };
+    } catch (error) {
+      if (error?.code === "QuerySnapshotChanged") return { kind: "query_snapshot_changed" };
+      throw error;
+    }
   }));
 
   ipcMain.handle(IPC.getAsset, trusted(async (_event, sessionId, assetId) => {

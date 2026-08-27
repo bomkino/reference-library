@@ -23,6 +23,7 @@ const ASSETS: AssetSummary[] = [
   asset("asset-3", "Offline.jpg", "offline_volume"),
   asset("asset-4", "Unreadable.jpg", "unreadable"),
   asset("asset-5", "Missing.jpg", "missing"),
+  asset("asset-6", "Animated.gif", "unsupported"),
 ];
 
 describe("V1 keyboard daily-use seams", () => {
@@ -61,7 +62,9 @@ describe("V1 keyboard daily-use seams", () => {
     expect(host.querySelector('[aria-label*="offline_volume"]')).not.toBeNull();
     expect(host.querySelector('[aria-label*="unreadable"]')).not.toBeNull();
     expect(host.querySelector('[aria-label*="missing"]')).not.toBeNull();
-    expect(host.querySelector('[role="grid"]')?.getAttribute("aria-label")).toContain("5 assets");
+    expect(host.querySelector('[aria-label*="unsupported"]')).not.toBeNull();
+    expect(text()).toContain("Catalogue only · unsupported media");
+    expect(host.querySelector('[role="grid"]')?.getAttribute("aria-label")).toContain("6 assets");
     expect(host.querySelector(".selection-announcer")?.getAttribute("aria-live")).toBe("polite");
 
     await selectByKeyboard(select("Interface"), "1.25");
@@ -85,6 +88,8 @@ describe("V1 keyboard daily-use seams", () => {
     await waitFor(() => expect(harness.lastQuery?.search).toBe("frame"));
     await selectByKeyboard(select("Root"), "root-1");
     await selectByKeyboard(select("Review"), "keep");
+    await selectByKeyboard(select("Availability"), "unsupported");
+    expect(harness.lastQuery?.availability).toEqual(["unsupported"]);
     await selectByKeyboard(select("Availability"), "present");
     await selectByKeyboard(select("Sort"), "name_descending");
     expect(harness.lastQuery).toMatchObject({ rootId: "root-1", reviewStates: ["keep"], availability: ["present"], sort: "name_descending" });

@@ -78,6 +78,7 @@ export function QueryToolbar(props: {
           <option value="offline_volume">Offline volume</option>
           <option value="unreadable">Unreadable</option>
           <option value="unavailable">Unavailable</option>
+          <option value="unsupported">Unsupported (catalogue only)</option>
         </select>
       </label>
       <label>

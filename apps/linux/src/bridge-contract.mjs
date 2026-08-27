@@ -27,7 +27,7 @@ export const IPC = Object.freeze({
 });
 
 const REVIEW_STATES = Object.freeze(["unreviewed", "keep", "maybe", "reject"]);
-const AVAILABILITY = Object.freeze(["present", "missing", "needs_permission", "offline_volume", "unreadable", "unavailable"]);
+const AVAILABILITY = Object.freeze(["present", "missing", "needs_permission", "offline_volume", "unreadable", "unavailable", "unsupported"]);
 const SORTS = Object.freeze(["created_ascending", "created_descending", "name_ascending", "name_descending", "review_state"]);
 const JOB_STATES = Object.freeze(["queued", "running", "cancelled", "completed", "failed"]);
 
@@ -53,6 +53,10 @@ export function assetResourceUrl({ sessionId, assetId, profile }) {
 
 export function assertAssetQuery(input) {
   assertPage(input, 250);
+  if (input.expectedLibraryRevision !== undefined && input.expectedLibraryRevision !== null &&
+      (!Number.isSafeInteger(input.expectedLibraryRevision) || input.expectedLibraryRevision < 0)) {
+    throw new TypeError("expectedLibraryRevision must be null or a non-negative integer");
+  }
   assertProjection(input?.projection);
   const query = input?.query;
   if (!query || typeof query !== "object") throw new TypeError("query must be an object");
@@ -65,6 +69,14 @@ export function assertAssetQuery(input) {
   assertStringSet(query.availability, AVAILABILITY, "availability");
   if (!SORTS.includes(query.sort)) throw new TypeError("Unknown Asset sort");
   return input;
+}
+
+export function unwrapAssetQueryIpcResult(result) {
+  if (result?.kind === "asset_page" && Object.keys(result).length === 2 && result.page) return result.page;
+  if (result?.kind === "query_snapshot_changed" && Object.keys(result).length === 1) {
+    throw coreLikeError("QuerySnapshotChanged");
+  }
+  throw new TypeError("Invalid Asset query response");
 }
 
 export function assertJobQuery(input) {

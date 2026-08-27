@@ -1,7 +1,7 @@
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const JOB_STATES = new Set(["queued", "running", "completed", "failed", "cancelled"]);
 const REVIEW_STATES = new Set(["unreviewed", "keep", "maybe", "reject"]);
-const AVAILABILITY = new Set(["present", "missing", "needs_permission", "offline_volume", "unreadable", "unavailable"]);
+const AVAILABILITY = new Set(["present", "missing", "needs_permission", "offline_volume", "unreadable", "unavailable", "unsupported"]);
 const PROFILES = new Set(["grid_standard", "preview"]);
 const MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const CANCELLATION_STATES = new Set(["cancellation_requested", "already_terminal", "unknown_job"]);

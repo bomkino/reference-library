@@ -30,19 +30,48 @@ export function useAssetPager(
   const loadedPages = useRef(new Set<number>());
   const generation = useRef(0);
   const accessSequence = useRef(0);
+  const snapshotRevision = useRef<number | null>(null);
 
   const loadPage = useCallback(
-    (offset: number, replace = false): Promise<void> => {
+    function requestPage(offset: number, replace = false): Promise<void> {
       const normalizedOffset = Math.max(0, Math.floor(offset / PAGE_SIZE) * PAGE_SIZE);
       pageAccess.current.set(normalizedOffset, ++accessSequence.current);
       if (!replace && loadedPages.current.has(normalizedOffset)) return Promise.resolve();
       const existing = inFlight.current.get(normalizedOffset);
       if (existing) return existing;
       const currentGeneration = generation.current;
+      if (normalizedOffset > 0 && snapshotRevision.current === null) {
+        return requestPage(0, true).then(() => {
+          if (currentGeneration !== generation.current) return;
+          return requestPage(normalizedOffset, replace);
+        });
+      }
+      const expectedLibraryRevision = normalizedOffset === 0 ? null : snapshotRevision.current;
+      const restartSnapshot = () => {
+        if (currentGeneration !== generation.current) return;
+        generation.current += 1;
+        const restartedGeneration = generation.current;
+        inFlight.current.clear();
+        pageAccess.current.clear();
+        loadedPages.current.clear();
+        snapshotRevision.current = null;
+        setItems(new Map());
+        setTotal(0);
+        setLoading(true);
+        setError(null);
+        queueMicrotask(() => {
+          if (restartedGeneration === generation.current) void requestPage(0, true);
+        });
+      };
       const request = bridge
-        .queryAssets({ sessionId, offset: normalizedOffset, limit: PAGE_SIZE, projection: "contact_sheet_standard", query })
+        .queryAssets({ sessionId, offset: normalizedOffset, limit: PAGE_SIZE, projection: "contact_sheet_standard", query, expectedLibraryRevision })
         .then((page: AssetPage) => {
           if (currentGeneration !== generation.current) return;
+          if (normalizedOffset === 0) snapshotRevision.current = page.libraryRevision;
+          else if (page.libraryRevision !== expectedLibraryRevision) {
+            restartSnapshot();
+            return;
+          }
           setTotal(page.total);
           if (replace) loadedPages.current.clear();
           loadedPages.current.add(normalizedOffset);
@@ -64,7 +93,8 @@ export function useAssetPager(
           setError(null);
         })
         .catch((reason: unknown) => {
-          if (currentGeneration === generation.current) setError(messageFrom(reason));
+          if (isQuerySnapshotChanged(reason)) restartSnapshot();
+          else if (currentGeneration === generation.current) setError(messageFrom(reason));
         })
         .finally(() => {
           if (inFlight.current.get(normalizedOffset) === request) inFlight.current.delete(normalizedOffset);
@@ -88,6 +118,7 @@ export function useAssetPager(
     inFlight.current.clear();
     pageAccess.current.clear();
     loadedPages.current.clear();
+    snapshotRevision.current = null;
     setLoading(true);
     void loadPage(0, true);
   }, [loadPage]);
@@ -116,6 +147,7 @@ export function useAssetPager(
     inFlight.current.clear();
     pageAccess.current.clear();
     loadedPages.current.clear();
+    snapshotRevision.current = null;
     setItems(new Map());
     setTotal(0);
     setLoading(true);
@@ -139,6 +171,11 @@ function messageFrom(reason: unknown): string {
 }
 
 export const PAGE_CACHE_LIMIT = MAX_CACHED_PAGES;
+
+export function isQuerySnapshotChanged(reason: unknown): boolean {
+  return Boolean(reason && typeof reason === "object" && "code" in reason &&
+    (reason as { code?: unknown }).code === "QuerySnapshotChanged");
+}
 
 export function retainedPageOffsets(access: ReadonlyMap<number, number>, maximum: number): number[] {
   return [...access.entries()]

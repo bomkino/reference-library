@@ -7,7 +7,9 @@ import {
   IPC,
   assertAssetQuery,
   assetResourceUrl,
+  unwrapAssetQueryIpcResult,
 } from "../src/bridge-contract.mjs";
+import { validateCoreResult } from "../src/core-wire-validation.mjs";
 import {
   isTrustedWorkspaceUrl,
   resolveBundledUiPath,
@@ -39,12 +41,13 @@ test("query contract caps pages and names projections", () => {
       sessionId: SESSION,
       offset: 100,
       limit: 250,
+      expectedLibraryRevision: 42,
       projection: "contact_sheet_standard",
       query: {
         search: null,
         rootId: null,
         reviewStates: [],
-        availability: ["offline_volume", "unreadable"],
+        availability: ["offline_volume", "unreadable", "unsupported"],
         collectionId: null,
         sort: "created_ascending",
       },
@@ -61,6 +64,49 @@ test("query contract caps pages and names projections", () => {
     }),
     /between 1 and 250/,
   );
+  assert.throws(
+    () => assertAssetQuery({
+      sessionId: SESSION,
+      offset: 0,
+      limit: 100,
+      expectedLibraryRevision: -1,
+      projection: "contact_sheet_standard",
+      query: { search: null, rootId: null, reviewStates: [], availability: [], collectionId: null, sort: "created_ascending" },
+    }),
+    /expectedLibraryRevision/,
+  );
+});
+
+test("Asset query IPC preserves typed snapshot changes without exposing Core detail", () => {
+  const page = { offset: 0, limit: 100, total: 0, items: [], nextOffset: null, libraryRevision: 9 };
+  assert.equal(unwrapAssetQueryIpcResult({ kind: "asset_page", page }), page);
+  assert.throws(
+    () => unwrapAssetQueryIpcResult({ kind: "query_snapshot_changed" }),
+    (error) => error.code === "QuerySnapshotChanged" && error.message === "QuerySnapshotChanged",
+  );
+  assert.throws(() => unwrapAssetQueryIpcResult({ kind: "query_snapshot_changed", privatePath: "/tmp/private" }), /Invalid Asset query response/);
+});
+
+test("Core wire accepts unsupported catalogue-only Assets as a bounded availability", () => {
+  const result = validateCoreResult("query_asset_index", { result: "asset_page", value: {
+    offset: 0,
+    limit: 1,
+    total: 1,
+    items: [{
+      assetId: ASSET,
+      locationId: "55c16e93-f8e4-4fb9-970f-783ae9d34c18",
+      displayName: "Animated.gif",
+      relativeDisplayPath: "Stills/Animated.gif",
+      mediaFamily: "still",
+      availability: "unsupported",
+      reviewState: "unreviewed",
+      customTitle: null,
+      revision: 1,
+    }],
+    nextOffset: null,
+    libraryRevision: 9,
+  } });
+  assert.equal(result.value.items[0].availability, "unsupported");
 });
 
 test("workspace resources and senders stay inside named origin", () => {

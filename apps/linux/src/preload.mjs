@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { IPC, assetResourceUrl } from "./bridge-contract.mjs";
+import { IPC, assetResourceUrl, unwrapAssetQueryIpcResult } from "./bridge-contract.mjs";
 
 const listeners = new Set();
 const pendingEvents = [];
@@ -24,7 +24,7 @@ const bridge = Object.freeze({
   scanRoot: (sessionId, rootId) => ipcRenderer.invoke(IPC.scanRoot, sessionId, rootId),
   cancelJob: (sessionId, jobId) => ipcRenderer.invoke(IPC.cancelJob, sessionId, jobId),
   queryJobs: (input) => ipcRenderer.invoke(IPC.queryJobs, input),
-  queryAssets: (input) => ipcRenderer.invoke(IPC.queryAssets, input),
+  queryAssets: (input) => ipcRenderer.invoke(IPC.queryAssets, input).then(unwrapAssetQueryIpcResult),
   getAsset: (sessionId, assetId) => ipcRenderer.invoke(IPC.getAsset, sessionId, assetId),
   updateAsset: (input) => ipcRenderer.invoke(IPC.updateAsset, input),
   listCollections: (sessionId) => ipcRenderer.invoke(IPC.listCollections, sessionId),
