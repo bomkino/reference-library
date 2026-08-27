@@ -159,3 +159,14 @@ Do not rewrite or delete entries. Corrections append a superseding entry.
 **Fresh measurement:** GitHub branch readback returned the exact V1 SHA on `main`. Run `33120794811` then passed all five jobs on the actual `main` ref. Main-scoped artifacts are Apple arm64 `9666411956` (workflow ZIP SHA-256 `46466368be45f203592d30170aeedc1f6f8241f79e5ab415e9374831d085463e`) and Linux x86_64 `9666523446` (workflow ZIP SHA-256 `cf63aac91c147375739b4e11b497db49d4c265d9edd592a755a5686632d36af9`).
 
 **Decision:** treat `main` as canonical source-ready V1. Target integration and public release remain separate states. Close documentation on `main`, require exact-head CI, and delete only obsolete branches already proved to be ancestors.
+
+
+## 2026-08-28 — Repository lifecycle and CI hardening
+
+**Hypothesis:** completed worker controls and ambient toolchain drift can leave source behavior correct while leaking runtime capacity or making later evidence irreproducible.
+
+**Change:** release every finished scan control even when terminal ledger persistence fails; ignore preference-read failures after their workspace unmounts; add focused regressions; pin Node and Rust; bind CI to those pins; add concurrency cancellation, job timeouts, stronger repository checks and maintenance documentation.
+
+**Fresh measurement:** the repair bootstrap passed the expanded repository-boundary check and `git diff --check`. Full Rust, Node, Linux-package and macOS-package evidence remains required on the exact branch head before integration.
+
+**Decision:** keep the narrow lifecycle and maintenance repairs only if the complete five-job workflow passes. Preserve the existing source-ready/target-integrated distinction; M1, L1, X1 and C1 remain open.

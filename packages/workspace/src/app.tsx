@@ -202,7 +202,9 @@ function OpenWorkspace(props: {
       setInterfaceScale(preferences.interfaceScale);
       setThumbnailSize(preferences.thumbnailDensity);
       setPreviewZoom(preferences.previewZoom);
-    }).catch((reason) => props.setShellError(messageFrom(reason)));
+    }).catch((reason) => {
+      if (active) props.setShellError(messageFrom(reason));
+    });
     return () => { active = false; };
   }, [props.bridge]);
 

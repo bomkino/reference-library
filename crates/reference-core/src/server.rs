@@ -659,13 +659,12 @@ impl CommandEngine {
             let Some(mut job) = self.jobs.remove(&job_id) else {
                 continue;
             };
-            let persisted = job
-                .handle
-                .take()
-                .and_then(|handle| handle.join().ok())
-                .unwrap_or(false);
-            if !persisted {
-                self.jobs.insert(job_id, job);
+            // A finished worker must release its in-memory capacity even when
+            // writing the terminal ledger state failed. scan_root already
+            // emitted CoreNeedsRestart; retaining a consumed JoinHandle would
+            // make the slot impossible to reap in this process.
+            if let Some(handle) = job.handle.take() {
+                let _ = handle.join();
             }
         }
     }
@@ -1032,7 +1031,7 @@ mod tests {
     }
 
     #[test]
-    fn finished_scan_control_is_reaped_even_when_its_terminal_event_was_dropped() {
+    fn finished_scan_control_is_reaped_after_terminal_persistence_failure() {
         let mut engine = CommandEngine::new();
         let job_id = "finished-scan".to_owned();
         engine.jobs.insert(
@@ -1040,7 +1039,7 @@ mod tests {
             JobControl {
                 session_id: "closed-session".into(),
                 cancelled: Arc::new(AtomicBool::new(false)),
-                handle: Some(thread::spawn(|| true)),
+                handle: Some(thread::spawn(|| false)),
                 kind: JobKind::Scan,
                 completion: None,
             },

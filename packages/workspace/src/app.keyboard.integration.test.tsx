@@ -13,10 +13,12 @@ import {
   type RootSummary,
   type SessionOpened,
   type WorkspaceEvent,
+  type WorkspacePreferences,
 } from "@pitchdog/reference-bridge";
 import { App } from "./app";
 
 const SESSION: SessionOpened = { sessionId: "session-1", libraryId: "library-1", schemaVersion: 1, name: "Film References" };
+const PREFERENCES: WorkspacePreferences = { interfaceScale: 1, thumbnailDensity: 220, previewZoom: 1 };
 const ASSETS: AssetSummary[] = [
   asset("asset-1", "A-frame.jpg"),
   asset("asset-2", "B-frame.jpg"),
@@ -365,6 +367,37 @@ describe("V1 keyboard daily-use seams", () => {
     expect(host.querySelector(".draft-mark")).toBeNull();
   });
 
+  it("ignores a stale preference rejection after a Library replacement", async () => {
+    let rejectStalePreferences!: (reason: unknown) => void;
+    harness.preferenceReads.push(
+      new Promise<WorkspacePreferences>((_resolve, reject) => {
+        rejectStalePreferences = reject;
+      }),
+      Promise.resolve(PREFERENCES),
+    );
+
+    await focusAndPress(button("New Library"), "Enter");
+    await waitFor(() => expect(text()).toContain("Film References"));
+    await act(async () => {
+      harness.emit({
+        event: "library_opened",
+        value: {
+          ...SESSION,
+          sessionId: "session-replacement",
+          libraryId: "library-replacement",
+          name: "Replacement Library",
+        },
+      });
+      await settle();
+    });
+    await waitFor(() => expect(text()).toContain("Replacement Library"));
+    await act(async () => {
+      rejectStalePreferences(new Error("stale preference read failed"));
+      await settle();
+    });
+    expect(host.querySelector(".error-banner")).toBeNull();
+  });
+
   it("renames and confirms Collection deletion with Enter and Escape", async () => {
     await focusAndPress(button("New Library"), "Enter");
     await waitFor(() => expect(button("Rename Selects")).not.toBeNull());
@@ -392,6 +425,7 @@ class BridgeHarness {
   details = new Map(ASSETS.map((summary) => [summary.assetId, detail(summary)]));
   assets = [...ASSETS];
   assetTotal: number | null = null;
+  preferenceReads: Array<Promise<WorkspacePreferences>> = [];
   queryGate: Promise<void> | null = null;
   queryError: Error | null = null;
   authoritySession = SESSION;
@@ -403,7 +437,7 @@ class BridgeHarness {
     createLibrary: async () => { this.authoritySession = SESSION; return SESSION; },
     openLibrary: async () => { this.calls.openLibrary += 1; this.authoritySession = SESSION; return SESSION; },
     completeOpenIntent: async (intentId, decision) => { this.calls.completeOpenIntent.push([intentId, decision]); this.authoritySession = { ...SESSION, sessionId: "session-2", name: "Other Library" }; return this.authoritySession; },
-    readPreferences: async () => ({ interfaceScale: 1, thumbnailDensity: 220, previewZoom: 1 }),
+    readPreferences: async () => this.preferenceReads.shift() ?? PREFERENCES,
     writePreferences: async (patch) => { this.calls.writePreferences.push(patch); return { interfaceScale: 1, thumbnailDensity: 220, previewZoom: 1, ...patch }; },
     closeLibrary: async () => undefined,
     chooseRoot: async (sessionId) => {
