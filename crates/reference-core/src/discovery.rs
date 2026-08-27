@@ -71,10 +71,22 @@ impl EventSink for SyncSender<Event> {
     }
 }
 
-pub fn scan_root(plan: ScanPlan, cancelled: Arc<AtomicBool>, events: impl EventSink) {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScanOutcome {
+    pub terminal_persisted: bool,
+}
+
+pub fn scan_root(
+    plan: ScanPlan,
+    cancelled: Arc<AtomicBool>,
+    events: impl EventSink,
+) -> ScanOutcome {
     let outcome = run_scan(&plan, &cancelled, &events);
-    if let Err(error) = outcome {
-        match mark_failed(&plan, &error) {
+    match outcome {
+        Ok(()) => ScanOutcome {
+            terminal_persisted: true,
+        },
+        Err(error) => match mark_failed(&plan, &error) {
             Ok(state) => {
                 events.emit(Event::RootStateChanged {
                     root_id: plan.root_id.clone(),
@@ -84,11 +96,19 @@ pub fn scan_root(plan: ScanPlan, cancelled: Arc<AtomicBool>, events: impl EventS
                     job_id: plan.job_id,
                     state: "failed".into(),
                 });
+                ScanOutcome {
+                    terminal_persisted: true,
+                }
             }
-            Err(persistence_error) => events.emit(Event::CoreNeedsRestart {
-                reason: persistence_error.to_protocol_error().code,
-            }),
-        }
+            Err(persistence_error) => {
+                events.emit(Event::CoreNeedsRestart {
+                    reason: persistence_error.to_protocol_error().code,
+                });
+                ScanOutcome {
+                    terminal_persisted: false,
+                }
+            }
+        },
     }
 }
 

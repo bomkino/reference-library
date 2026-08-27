@@ -362,7 +362,8 @@ fn scanner_persistence_failure_emits_restart_truth_not_a_false_terminal_event() 
     fs::rename(&database, &preserved).unwrap();
     fs::create_dir(&database).unwrap();
     let (sender, receiver) = mpsc::channel();
-    scan_root(plan, Arc::new(AtomicBool::new(false)), sender);
+    let outcome = scan_root(plan, Arc::new(AtomicBool::new(false)), sender);
+    assert!(!outcome.terminal_persisted);
     let events = receiver.try_iter().collect::<Vec<_>>();
     assert!(
         events
@@ -398,7 +399,7 @@ fn scanner_persistence_failure_emits_restart_truth_not_a_false_terminal_event() 
 
 fn run(plan: reference_core::discovery::ScanPlan) {
     let (sender, _receiver) = mpsc::channel();
-    scan_root(plan, Arc::new(AtomicBool::new(false)), sender);
+    assert!(scan_root(plan, Arc::new(AtomicBool::new(false)), sender).terminal_persisted);
 }
 
 fn current_revision(library: &Path) -> String {

@@ -77,6 +77,18 @@ fn digest_and_snapshot_page_are_reachable_through_the_framed_public_protocol() {
     let library = directory.join("Project.pitchlibrary");
     let mut core = CoreProcess::start();
     core.send(
+        &"x".repeat(reference_protocol::MAX_REQUEST_ID_BYTES + 1),
+        Command::GetCapabilities { session_id: None },
+    );
+    let ServerFrame::Error {
+        request_id, error, ..
+    } = core.next()
+    else {
+        panic!("overlong requestId was not rejected")
+    };
+    assert_eq!(request_id, "invalid-request-id");
+    assert_eq!(error.code, "ProtocolFrameInvalid");
+    core.send(
         "create",
         Command::CreateLibrary {
             path: library.to_string_lossy().into(),

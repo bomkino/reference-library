@@ -5,7 +5,7 @@ use std::{
     sync::{
         Arc, Condvar, Mutex,
         atomic::{AtomicBool, Ordering},
-        mpsc::{self, Receiver, Sender, SyncSender, TryRecvError},
+        mpsc::{self, Receiver, SyncSender, TryRecvError},
     },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -13,7 +13,7 @@ use std::{
 
 use reference_protocol::{
     CancellationState, Capabilities, CapabilityDetail, ClientFrame, Command, CommandResult, Event,
-    HelloResult, PROTOCOL_VERSION, ServerFrame, read_frame, write_frame,
+    HelloResult, MAX_REQUEST_ID_BYTES, PROTOCOL_VERSION, ServerFrame, read_frame, write_frame,
 };
 
 use crate::{
@@ -37,7 +37,7 @@ enum Input {
 struct JobControl {
     session_id: String,
     cancelled: Arc<AtomicBool>,
-    handle: Option<JoinHandle<()>>,
+    handle: Option<JoinHandle<bool>>,
     kind: JobKind,
     completion: Option<Completion>,
 }
@@ -187,6 +187,7 @@ impl CommandEngine {
     }
 
     fn execute(&mut self, request: ClientFrame) -> Result<CommandResult, CoreError> {
+        self.reap_finished_scans();
         if request.protocol_version != PROTOCOL_VERSION {
             return Err(CoreError::ProtocolVersionUnsupported(
                 request.protocol_version,
@@ -258,8 +259,9 @@ impl CommandEngine {
                 let cancelled = Arc::new(AtomicBool::new(false));
                 let worker_cancelled = Arc::clone(&cancelled);
                 let sender = self.event_sender.clone();
-                let handle =
-                    thread::spawn(move || discovery::scan_root(plan, worker_cancelled, sender));
+                let handle = thread::spawn(move || {
+                    discovery::scan_root(plan, worker_cancelled, sender).terminal_persisted
+                });
                 self.jobs.insert(
                     job_id.clone(),
                     JobControl {
@@ -306,8 +308,9 @@ impl CommandEngine {
                 let cancelled = Arc::new(AtomicBool::new(false));
                 let worker_cancelled = Arc::clone(&cancelled);
                 let sender = self.event_sender.clone();
-                let handle =
-                    thread::spawn(move || discovery::scan_root(plan, worker_cancelled, sender));
+                let handle = thread::spawn(move || {
+                    discovery::scan_root(plan, worker_cancelled, sender).terminal_persisted
+                });
                 self.jobs.insert(
                     job_id.clone(),
                     JobControl {
@@ -614,6 +617,31 @@ impl CommandEngine {
         self.event_sender.emit(event);
     }
 
+    fn reap_finished_scans(&mut self) {
+        let finished = self
+            .jobs
+            .iter()
+            .filter(|(_, job)| {
+                job.kind == JobKind::Scan
+                    && job.handle.as_ref().is_some_and(JoinHandle::is_finished)
+            })
+            .map(|(job_id, _)| job_id.clone())
+            .collect::<Vec<_>>();
+        for job_id in finished {
+            let Some(mut job) = self.jobs.remove(&job_id) else {
+                continue;
+            };
+            let persisted = job
+                .handle
+                .take()
+                .and_then(|handle| handle.join().ok())
+                .unwrap_or(false);
+            if !persisted {
+                self.jobs.insert(job_id, job);
+            }
+        }
+    }
+
     fn stop_jobs_for_session(&mut self, session_id: &str) -> Result<(), CoreError> {
         let job_ids = self
             .jobs
@@ -730,7 +758,7 @@ pub fn run_server(
     reader: impl Read + Send + 'static,
     mut writer: impl Write,
 ) -> Result<(), String> {
-    let (input_sender, input_receiver) = mpsc::channel();
+    let (input_sender, input_receiver) = mpsc::sync_channel(64);
     thread::spawn(move || read_input(reader, input_sender));
     let mut engine = CommandEngine::new();
     let mut shutdown = false;
@@ -743,6 +771,22 @@ pub fn run_server(
         }
         match input_receiver.try_recv() {
             Ok(Input::Request(request)) => {
+                if !valid_request_id(&request.request_id) {
+                    write_frame(
+                        &mut writer,
+                        &ServerFrame::Error {
+                            protocol_version: PROTOCOL_VERSION,
+                            request_id: "invalid-request-id".into(),
+                            error: reference_protocol::ProtocolError::new(
+                                "ProtocolFrameInvalid",
+                                "requestId must be a short printable identifier",
+                                false,
+                            ),
+                        },
+                    )
+                    .map_err(|e| e.to_string())?;
+                    continue;
+                }
                 let request_id = request.request_id.clone();
                 let is_shutdown = matches!(&request.command, Command::Shutdown);
                 if let Command::AuthorizeResource {
@@ -807,7 +851,7 @@ pub fn run_server(
     Ok(())
 }
 
-fn read_input(mut reader: impl Read, sender: Sender<Input>) {
+fn read_input(mut reader: impl Read, sender: SyncSender<Input>) {
     loop {
         match read_frame::<ClientFrame>(&mut reader) {
             Ok(Some(request)) => {
@@ -825,6 +869,12 @@ fn read_input(mut reader: impl Read, sender: Sender<Input>) {
             }
         }
     }
+}
+
+fn valid_request_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_REQUEST_ID_BYTES
+        && value.bytes().all(|byte| byte.is_ascii_graphic())
 }
 
 #[cfg(test)]
@@ -846,5 +896,33 @@ mod tests {
         };
         assert!(!capabilities.source_mutation);
         assert!(capabilities.opaque_asset_resources);
+    }
+
+    #[test]
+    fn finished_scan_control_is_reaped_even_when_its_terminal_event_was_dropped() {
+        let mut engine = CommandEngine::new();
+        let job_id = "finished-scan".to_owned();
+        engine.jobs.insert(
+            job_id.clone(),
+            JobControl {
+                session_id: "closed-session".into(),
+                cancelled: Arc::new(AtomicBool::new(false)),
+                handle: Some(thread::spawn(|| true)),
+                kind: JobKind::Scan,
+                completion: None,
+            },
+        );
+        while !engine.jobs[&job_id].handle.as_ref().unwrap().is_finished() {
+            thread::yield_now();
+        }
+        let result = engine
+            .execute(ClientFrame {
+                protocol_version: PROTOCOL_VERSION,
+                request_id: "capabilities".into(),
+                command: Command::GetCapabilities { session_id: None },
+            })
+            .unwrap();
+        assert!(matches!(result, CommandResult::Capabilities(_)));
+        assert!(!engine.jobs.contains_key(&job_id));
     }
 }

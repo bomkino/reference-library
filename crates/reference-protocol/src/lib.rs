@@ -11,6 +11,7 @@ use thiserror::Error;
 
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const MAX_FRAME_BYTES: usize = 1024 * 1024;
+pub const MAX_REQUEST_ID_BYTES: usize = 128;
 pub const MAX_PAGE_SIZE: u32 = 250;
 pub const MAX_JOB_PAGE_SIZE: u32 = 100;
 pub const MAX_CANONICAL_PAGE_SIZE: u32 = 250;
