@@ -15,7 +15,7 @@ export type AssetProjection = "contact_sheet_tiny" | "contact_sheet_standard" | 
 export type ReviewState = "unreviewed" | "keep" | "maybe" | "reject";
 export type Availability = "present" | "missing" | "needs_permission" | "offline_volume" | "unreadable" | "unavailable";
 export type AssetSort = "created_ascending" | "created_descending" | "name_ascending" | "name_descending" | "review_state";
-export type JobState = "queued" | "running" | "cancellation_requested" | "cancelled" | "completed" | "failed";
+export type JobState = "queued" | "running" | "cancelled" | "completed" | "failed";
 
 export interface SessionOpened {
   sessionId: string;

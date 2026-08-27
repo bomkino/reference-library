@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -305,6 +305,12 @@ test("job query states exclude the cancellation command disposition", async () =
     sessionId: SESSION, offset: 0, limit: 10,
     query: { rootId: null, states: ["cancellation_requested"] },
   }), /Unknown states value/);
+  const typedBridge = await readFile(
+    path.resolve(import.meta.dirname, "../../../packages/bridge-contract/src/index.ts"),
+    "utf8",
+  );
+  const jobState = typedBridge.match(/export type JobState = ([^;]+);/)?.[1] ?? "";
+  assert.doesNotMatch(jobState, /cancellation_requested/);
 });
 
 function opened(sessionId) {
