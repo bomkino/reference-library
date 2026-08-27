@@ -8,16 +8,17 @@ final class ResourceFileStreamerTests: XCTestCase {
             let file = directory.appendingPathComponent("large.png")
             let bytes = Data(repeating: 7, count: ResourceFileStreamer.chunkBytes * 3 + 17)
             try bytes.write(to: file)
-            var chunks: [Data] = []
-            var closes = 0
+            let chunks = LockedBox<[Data]>([])
+            let closes = LockedBox(0)
             try await ResourceFileStreamer.stream(
                 path: file.path,
                 expectedSize: bytes.count,
-                onClose: { closes += 1 }
-            ) { chunk in chunks.append(chunk) }
-            XCTAssertEqual(Data(chunks.joined()), bytes)
-            XCTAssertTrue(chunks.allSatisfy { $0.count <= ResourceFileStreamer.chunkBytes })
-            XCTAssertEqual(closes, 1)
+                onClose: { closes.withValue { $0 += 1 } }
+            ) { chunk in chunks.withValue { $0.append(chunk) } }
+            let delivered = chunks.read()
+            XCTAssertEqual(Data(delivered.joined()), bytes)
+            XCTAssertTrue(delivered.allSatisfy { $0.count <= ResourceFileStreamer.chunkBytes })
+            XCTAssertEqual(closes.read(), 1)
         }
     }
 
@@ -28,7 +29,7 @@ final class ResourceFileStreamerTests: XCTestCase {
             let retained = directory.appendingPathComponent("retained.png")
             try Data("original".utf8).write(to: candidate)
             try Data("replaced".utf8).write(to: replacement)
-            var result = Data()
+            let result = LockedBox(Data())
             try await ResourceFileStreamer.stream(
                 path: candidate.path,
                 expectedSize: 8,
@@ -36,8 +37,8 @@ final class ResourceFileStreamerTests: XCTestCase {
                     try FileManager.default.moveItem(at: candidate, to: retained)
                     try FileManager.default.moveItem(at: replacement, to: candidate)
                 }
-            ) { result.append($0) }
-            XCTAssertEqual(String(data: result, encoding: .utf8), "original")
+            ) { chunk in result.withValue { $0.append(chunk) } }
+            XCTAssertEqual(String(data: result.read(), encoding: .utf8), "original")
         }
     }
 
@@ -60,7 +61,7 @@ final class ResourceFileStreamerTests: XCTestCase {
             let retained = directory.appendingPathComponent("retained.png")
             try Data("trusted!".utf8).write(to: candidate)
             try Data("hostile!".utf8).write(to: other)
-            var result = Data()
+            let result = LockedBox(Data())
             try await ResourceFileStreamer.stream(
                 path: candidate.path,
                 expectedSize: 8,
@@ -68,8 +69,8 @@ final class ResourceFileStreamerTests: XCTestCase {
                     try FileManager.default.moveItem(at: candidate, to: retained)
                     try FileManager.default.createSymbolicLink(at: candidate, withDestinationURL: other)
                 }
-            ) { result.append($0) }
-            XCTAssertEqual(String(data: result, encoding: .utf8), "trusted!")
+            ) { chunk in result.withValue { $0.append(chunk) } }
+            XCTAssertEqual(String(data: result.read(), encoding: .utf8), "trusted!")
         }
     }
 
@@ -102,6 +103,27 @@ final class ResourceFileStreamerTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         try await body(directory)
+    }
+}
+
+private final class LockedBox<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Value
+
+    init(_ value: Value) {
+        self.value = value
+    }
+
+    func withValue<Result>(_ body: (inout Value) -> Result) -> Result {
+        lock.lock()
+        defer { lock.unlock() }
+        return body(&value)
+    }
+
+    func read() -> Value {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
     }
 }
 
