@@ -3,6 +3,32 @@ import XCTest
 @testable import ReferenceLibraryMac
 
 final class CoreResultValidatorTests: XCTestCase {
+    func testCancellationRequestedIsOnlyACancellationDisposition() throws {
+        XCTAssertThrowsError(try CoreResultValidator.jobPage([
+            "items": [[
+                "jobId": "11111111-1111-4111-8111-111111111111",
+                "rootId": "22222222-2222-4222-8222-222222222222",
+                "state": "cancellation_requested",
+                "jobKind": "root_scan",
+                "observedCount": 0,
+                "unsupportedCount": 0,
+                "createdAtMs": 1,
+                "updatedAtMs": 1,
+                "finishedAtMs": NSNull(),
+                "errorCode": NSNull()
+            ]],
+            "total": 1,
+            "offset": 0,
+            "limit": 100,
+            "nextOffset": NSNull()
+        ]))
+
+        XCTAssertNoThrow(try CoreResultValidator.jobCancellation([
+            "jobId": "11111111-1111-4111-8111-111111111111",
+            "state": "cancellation_requested"
+        ], expectedJobID: "11111111-1111-4111-8111-111111111111"))
+    }
+
     private let assetID = "11111111-1111-4111-8111-111111111111"
     private let locationID = "22222222-2222-4222-8222-222222222222"
     private let sessionID = "33333333-3333-4333-8333-333333333333"

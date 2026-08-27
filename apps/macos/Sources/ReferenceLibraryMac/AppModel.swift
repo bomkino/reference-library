@@ -1230,7 +1230,7 @@ final class AppModel: ObservableObject {
         "created_ascending", "created_descending", "name_ascending", "name_descending", "review_state"
     ])
     private static let jobStates = Set([
-        "queued", "running", "cancellation_requested", "cancelled", "completed", "failed"
+        "queued", "running", "cancelled", "completed", "failed"
     ])
 
     private struct OpenedSession {

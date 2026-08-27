@@ -9,7 +9,7 @@ enum CoreResultValidator {
     ])
     private static let reviewStates = Set(["unreviewed", "keep", "maybe", "reject"])
     private static let jobStates = Set([
-        "queued", "running", "cancellation_requested", "cancelled", "completed", "failed"
+        "queued", "running", "cancelled", "completed", "failed"
     ])
     private static let capabilityStates = Set([
         "required_parity", "native_equivalent", "intentionally_absent", "unavailable"
