@@ -15,6 +15,7 @@ Prohibited renderer powers include `readFile(path)`, `writeFile(path, bytes)`, `
 - Resource requests validate grammar, session, Library, Asset, profile and limits; closed sessions cancel and deny requests; errors omit paths.
 - Root authorization is explicit. Directory symlink traversal is disabled by default. Platform grant secrets remain outside neutral canonical state.
 - New Library creation asks Powerbox for an existing parent directory. The active directory lease authorizes Core's sibling staging directory and final rename, preserving atomic package creation inside the sandbox; a final-item-only save-panel grant is deliberately not used.
+- Open Library asks Powerbox for the declared Finder package, then persists only that package grant. Core opens the already-canonical granted directory with `O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC` and verifies the retained descriptor against the expected device/inode identity; it does not request directory-listing access to every ancestor.
 - SQL is parameterized. Migrations are bundled and sequential. One writer owns WAL and lock lifecycle. Future schema never downgrades silently.
 - No analytics, crash upload, hidden update ping, external thumbnail service, AI API or automatic project-content support upload.
 

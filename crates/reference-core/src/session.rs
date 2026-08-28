@@ -2,7 +2,7 @@ use std::{
     cell::RefCell,
     collections::HashMap,
     ffi::CString,
-    fs::{self, File},
+    fs::{self, File, OpenOptions},
     io::{Read, Write},
     path::{Component, Path, PathBuf},
     sync::{
@@ -11,15 +11,12 @@ use std::{
     },
 };
 
-#[cfg(not(unix))]
-use std::fs::OpenOptions;
-
 #[cfg(unix)]
 use std::{
     os::fd::{AsRawFd, FromRawFd},
     os::unix::{
         ffi::{OsStrExt, OsStringExt},
-        fs::MetadataExt,
+        fs::{MetadataExt, OpenOptionsExt},
     },
 };
 
@@ -1335,22 +1332,18 @@ fn validate_relative(path: &Path) -> Result<(), CoreError> {
 
 #[cfg(unix)]
 fn open_canonical_directory(path: &Path) -> Result<File, CoreError> {
-    let mut current = File::open("/").map_err(|_| CoreError::RootPermissionRequired)?;
-    for component in path.components() {
-        match component {
-            Component::RootDir => continue,
-            Component::Normal(name) => {
-                current = openat(
-                    &current,
-                    name.as_bytes(),
-                    libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-                )
-                .map_err(|_| CoreError::RootPermissionRequired)?;
-            }
-            _ => return Err(CoreError::RootPermissionRequired),
-        }
-    }
-    Ok(current)
+    // A Powerbox/security-scoped grant authorizes the selected directory, not
+    // broad directory-listing access to every ancestor between it and `/`.
+    // Open the already-canonical target directly, refuse a final symlink, then
+    // let each caller compare the retained descriptor's device/inode identity
+    // with metadata sampled immediately before this open.
+    let mut options = OpenOptions::new();
+    options
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC);
+    options
+        .open(path)
+        .map_err(|_| CoreError::RootPermissionRequired)
 }
 
 #[cfg(unix)]

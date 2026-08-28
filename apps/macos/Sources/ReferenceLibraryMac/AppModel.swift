@@ -355,6 +355,8 @@ final class AppModel: ObservableObject {
             await restorePreviousLibrary(previous, epoch: epoch)
             throw error
         }
+        // The parent grant authorizes atomic creation. Persist only the child
+        // package afterward so future launches do not retain broader access.
         guard let provisional = grants.prepareLibraryGrant(url: packageURL, libraryID: created.libraryID),
               grants.commitLibraryGrant(provisional) else {
             _ = try? await cleanupCoreCommand(
@@ -395,8 +397,12 @@ final class AppModel: ObservableObject {
     private func openLibrary() async throws -> Any? {
         let panel = NSOpenPanel()
         panel.title = "Open Reference Library"
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
+        // Finder presents a declared package as a file even though its storage
+        // is a directory. File-only selection returns the package itself;
+        // directory-only selection returns the containing folder.
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.treatsFilePackagesAsDirectories = false
         panel.allowedContentTypes = [Self.libraryContentType]
         panel.allowsMultipleSelection = false
         panel.prompt = "Open Library"
