@@ -1,0 +1,40 @@
+name: Apply feature-parity source patch
+
+on:
+  push:
+    branches:
+      - codex/reference-library-feature-parity
+    paths:
+      - .github/workflows/apply-feature-parity.yml
+      - .github/feature-parity-patch/**
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - name: Reconstruct and verify source patch
+        run: |
+          cat .github/feature-parity-patch/part-* > /tmp/feature-parity.patch.gz
+          echo "5cf71d396b907695b298a28e1771dfe8a6fe6200a9cfffa11e48d0028bb8e3cd  /tmp/feature-parity.patch.gz" | sha256sum -c -
+          gzip -dc /tmp/feature-parity.patch.gz > /tmp/feature-parity.patch
+          echo "d34ebcf2aed2325025c62ce932f484191ba1c57c8d36f0ce987d8d1eb1e4dbd0  /tmp/feature-parity.patch" | sha256sum -c -
+          git apply --check --binary /tmp/feature-parity.patch
+      - name: Materialise reviewed source changes
+        run: |
+          git apply --index --binary /tmp/feature-parity.patch
+          git diff --cached --check
+          git status --short
+      - name: Commit exact source patch
+        run: |
+          git config user.name "pitch.dog"
+          git config user.email "111725271+bomkino@users.noreply.github.com"
+          git commit -m "feat: restore Asset Browser parity surface"
+          git push origin HEAD:codex/reference-library-feature-parity
