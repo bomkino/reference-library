@@ -1,0 +1,36 @@
+name: Export feature-parity worktree
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/reference-library-feature-parity
+    paths:
+      - .github/workflows/export-feature-parity-worktree.yml
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - name: Package clean worktree
+        run: |
+          git status --short
+          tar --exclude=.git -czf reference-library-feature-parity-worktree.tar.gz .
+          sha256sum reference-library-feature-parity-worktree.tar.gz > reference-library-feature-parity-worktree.tar.gz.sha256
+      - name: Upload worktree
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: reference-library-feature-parity-worktree
+          path: |
+            reference-library-feature-parity-worktree.tar.gz
+            reference-library-feature-parity-worktree.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 1
