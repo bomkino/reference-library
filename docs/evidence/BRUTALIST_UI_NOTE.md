@@ -1,0 +1,1 @@
+Visual review is subordinate to behavioral and package evidence. A screenshot cannot close this interface change.
