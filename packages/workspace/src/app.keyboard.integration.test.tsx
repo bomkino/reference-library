@@ -18,7 +18,21 @@ import {
 import { App } from "./app";
 
 const SESSION: SessionOpened = { sessionId: "session-1", libraryId: "library-1", schemaVersion: 1, name: "Film References" };
-const PREFERENCES: WorkspacePreferences = { interfaceScale: 1, thumbnailDensity: 220, previewZoom: 1 };
+const PREFERENCES: WorkspacePreferences = {
+  interfaceScale: 1,
+  thumbnailDensity: 220,
+  previewZoom: 1,
+  viewMode: "grid",
+  multiThumbnailPreviews: false,
+  autoRescan: false,
+};
+const EMPTY_FACETS: AssetPage["facets"] = {
+  categories: [],
+  extensions: [],
+  mediaFamilies: [],
+  tags: [],
+  usedIn: [],
+};
 const ASSETS: AssetSummary[] = [
   asset("asset-1", "A-frame.jpg"),
   asset("asset-2", "B-frame.jpg"),
@@ -456,7 +470,7 @@ class BridgeHarness {
   queryError: Error | null = null;
   authoritySession = SESSION;
   lastQuery: AssetQuery | null = null;
-  calls = { openLibrary: 0, listRoots: 0, listCollections: 0, queryAssets: 0, getAsset: 0, reauthorizeRoot: 0, scanRoot: 0, cancelJob: 0, updateAsset: 0, revealLocation: 0, renameCollection: 0, deleteCollection: 0, createCollection: 0, setCollectionMembership: 0, restartCore: 0, staleFollowUps: 0, updateSessions: [] as string[], writePreferences: [] as Array<Record<string, unknown>>, completeOpenIntent: [] as Array<[string, string]> };
+  calls = { openLibrary: 0, listRoots: 0, listCollections: 0, queryAssets: 0, getAsset: 0, reauthorizeRoot: 0, scanRoot: 0, cancelJob: 0, updateAsset: 0, revealLocation: 0, openLocation: 0, copyLocationPath: 0, renameCollection: 0, deleteCollection: 0, createCollection: 0, setCollectionMembership: 0, restartCore: 0, staleFollowUps: 0, updateSessions: [] as string[], writePreferences: [] as Array<Record<string, unknown>>, completeOpenIntent: [] as Array<[string, string]> };
 
   bridge: ReferenceWorkspaceBridge = {
     version: BRIDGE_VERSION,
@@ -464,7 +478,7 @@ class BridgeHarness {
     openLibrary: async () => { this.calls.openLibrary += 1; this.authoritySession = SESSION; return SESSION; },
     completeOpenIntent: async (intentId, decision) => { this.calls.completeOpenIntent.push([intentId, decision]); this.authoritySession = { ...SESSION, sessionId: "session-2", name: "Other Library" }; return this.authoritySession; },
     readPreferences: async () => this.preferenceReads.shift() ?? PREFERENCES,
-    writePreferences: async (patch) => { this.calls.writePreferences.push(patch); return { interfaceScale: 1, thumbnailDensity: 220, previewZoom: 1, ...patch }; },
+    writePreferences: async (patch) => { this.calls.writePreferences.push(patch); return { ...PREFERENCES, ...patch }; },
     closeLibrary: async () => undefined,
     chooseRoot: async (sessionId) => {
       this.recordFollowUp(sessionId);
@@ -482,15 +496,15 @@ class BridgeHarness {
       this.lastQuery = input.query;
       if (this.queryGate) await this.queryGate;
       if (this.queryError) throw this.queryError;
-      if (input.query.search === "no-match") return { offset: input.offset, limit: input.limit, total: 0, items: [], nextOffset: null, libraryRevision: 1 };
-      if (input.query.search === "other") return { offset: input.offset, limit: input.limit, total: 1, items: [this.assets[1]!], nextOffset: null, libraryRevision: 1 };
-      if (this.assetTotal === null) return { offset: input.offset, limit: input.limit, total: this.assets.length, items: this.assets, nextOffset: null, libraryRevision: 1 };
+      if (input.query.search === "no-match") return { offset: input.offset, limit: input.limit, total: 0, items: [], nextOffset: null, libraryRevision: 1, facets: EMPTY_FACETS };
+      if (input.query.search === "other") return { offset: input.offset, limit: input.limit, total: 1, items: [this.assets[1]!], nextOffset: null, libraryRevision: 1, facets: EMPTY_FACETS };
+      if (this.assetTotal === null) return { offset: input.offset, limit: input.limit, total: this.assets.length, items: this.assets, nextOffset: null, libraryRevision: 1, facets: EMPTY_FACETS };
       const count = Math.max(0, Math.min(input.limit, this.assetTotal - input.offset));
       const items = Array.from({ length: count }, (_, index) => {
         const absolute = input.offset + index;
         return asset(`asset-${absolute + 1}`, absolute === 0 ? "A-frame.jpg" : `Frame-${absolute + 1}.jpg`);
       });
-      return { offset: input.offset, limit: input.limit, total: this.assetTotal, items, nextOffset: input.offset + count < this.assetTotal ? input.offset + count : null, libraryRevision: 1 };
+      return { offset: input.offset, limit: input.limit, total: this.assetTotal, items, nextOffset: input.offset + count < this.assetTotal ? input.offset + count : null, libraryRevision: 1, facets: EMPTY_FACETS };
     },
     getAsset: async (sessionId, assetId) => {
       this.calls.getAsset += 1;
@@ -514,6 +528,8 @@ class BridgeHarness {
     setCollectionMembership: async (input) => { this.calls.setCollectionMembership += 1; const current = this.details.get(input.assetIds[0]!)!; this.details.set(current.assetId, { ...current, collectionIds: input.member ? [...new Set([...current.collectionIds, input.collectionId])] : current.collectionIds.filter((id) => id !== input.collectionId) }); return { collectionId: input.collectionId, affected: input.assetIds.length, libraryRevision: 2 }; },
     assetResourceUrl: ({ assetId }) => `pitchdog-asset://opaque/${assetId}`,
     revealLocation: async () => { this.calls.revealLocation += 1; },
+    openLocation: async () => { this.calls.openLocation += 1; },
+    copyLocationPath: async () => { this.calls.copyLocationPath += 1; },
     queryCapabilities: async () => [],
     restartCore: async () => { this.calls.restartCore += 1; return null; },
     subscribe: (listener) => { this.listeners.add(listener); return () => this.listeners.delete(listener); },
@@ -524,9 +540,49 @@ class BridgeHarness {
 }
 
 function asset(assetId: string, displayName: string, availability: AssetSummary["availability"] = "present"): AssetSummary {
-  return { assetId, locationId: `location-${assetId}`, displayName, relativeDisplayPath: `Stills/${displayName}`, mediaFamily: "still", availability, reviewState: "unreviewed", customTitle: null, revision: 1 };
+  return {
+    assetId,
+    locationId: `location-${assetId}`,
+    displayName,
+    relativeDisplayPath: `Stills/${displayName}`,
+    mediaFamily: "still",
+    mimeType: displayName.endsWith(".gif") ? "image/gif" : "image/jpeg",
+    extension: displayName.split(".").pop()?.toLowerCase() ?? null,
+    byteSize: 1_024,
+    category: "Stills",
+    previewKind: "image",
+    availability,
+    reviewState: "unreviewed",
+    customTitle: null,
+    tags: [],
+    usedIn: [],
+    previewAssetIds: [],
+    createdAtMs: 1,
+    revision: 1,
+  };
 }
-function detail(summary: AssetSummary): AssetDetail { return { assetId: summary.assetId, locationId: summary.locationId, originalDisplayName: summary.displayName, relativeDisplayPath: summary.relativeDisplayPath, mediaFamily: summary.mediaFamily, availability: summary.availability, reviewState: summary.reviewState, customTitle: summary.customTitle, note: null, revision: summary.revision, collectionIds: [] }; }
+function detail(summary: AssetSummary): AssetDetail {
+  return {
+    assetId: summary.assetId,
+    locationId: summary.locationId,
+    originalDisplayName: summary.displayName,
+    relativeDisplayPath: summary.relativeDisplayPath,
+    mediaFamily: summary.mediaFamily,
+    mimeType: summary.mimeType,
+    extension: summary.extension,
+    byteSize: summary.byteSize,
+    category: summary.category,
+    previewKind: summary.previewKind,
+    availability: summary.availability,
+    reviewState: summary.reviewState,
+    customTitle: summary.customTitle,
+    note: null,
+    tags: summary.tags,
+    usedIn: summary.usedIn,
+    revision: summary.revision,
+    collectionIds: [],
+  };
+}
 function applyText(current: string | null, patch: { action: string; value?: string }): string | null { return patch.action === "clear" ? null : patch.action === "set" ? patch.value ?? null : current; }
 function text() { return document.body.textContent ?? ""; }
 function button(name: string, scope: ParentNode = hostNode()): HTMLElement { const found = [...scope.querySelectorAll<HTMLElement>("button")].find((element) => element.textContent?.trim() === name || element.getAttribute("aria-label") === name); if (!found) throw new Error(`button not found: ${name}`); return found; }

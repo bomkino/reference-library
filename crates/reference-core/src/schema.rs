@@ -124,7 +124,12 @@ fn canonical_database_path(path: &Path) -> Result<PathBuf, CoreError> {
 fn validate_embedded_migrations() -> Result<(), CoreError> {
     for (index, ((version, _, _), sql)) in LEDGER
         .iter()
-        .zip([MIGRATION_0001, MIGRATION_0002, MIGRATION_0003, MIGRATION_0004])
+        .zip([
+            MIGRATION_0001,
+            MIGRATION_0002,
+            MIGRATION_0003,
+            MIGRATION_0004,
+        ])
         .enumerate()
     {
         if migration_digest(sql) != MIGRATION_SOURCE_DIGESTS[index] {
@@ -307,9 +312,14 @@ fn validate_migration_ledger(connection: &Connection, version: u32) -> Result<()
 
 fn validate_schema_contract(connection: &Connection, version: u32) -> Result<(), CoreError> {
     let expected = Connection::open_in_memory()?;
-    for sql in [MIGRATION_0001, MIGRATION_0002, MIGRATION_0003, MIGRATION_0004]
-        .into_iter()
-        .take(version as usize)
+    for sql in [
+        MIGRATION_0001,
+        MIGRATION_0002,
+        MIGRATION_0003,
+        MIGRATION_0004,
+    ]
+    .into_iter()
+    .take(version as usize)
     {
         expected.execute_batch(sql)?;
     }

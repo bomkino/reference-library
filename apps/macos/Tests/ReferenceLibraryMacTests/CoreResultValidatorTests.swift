@@ -40,11 +40,12 @@ final class CoreResultValidatorTests: XCTestCase {
             "total": 1,
             "items": [assetSummary()],
             "nextOffset": NSNull(),
-            "libraryRevision": 4
+            "libraryRevision": 4,
+            "facets": emptyFacets()
         ]
         let safe = try CoreResultValidator.assetPage(page)
         XCTAssertEqual(Set(safe.keys), Set([
-            "offset", "limit", "total", "items", "nextOffset", "libraryRevision"
+            "offset", "limit", "total", "items", "nextOffset", "libraryRevision", "facets"
         ]))
         XCTAssertEqual((safe["items"] as? [[String: Any]])?.count, 1)
     }
@@ -54,11 +55,13 @@ final class CoreResultValidatorTests: XCTestCase {
         malicious["nativePath"] = "/Users/private/secret.png"
         XCTAssertThrowsError(try CoreResultValidator.assetPage([
             "offset": 0, "limit": 1, "total": 1, "items": [malicious],
-            "nextOffset": NSNull(), "libraryRevision": 4
+            "nextOffset": NSNull(), "libraryRevision": 4,
+            "facets": emptyFacets()
         ]))
         XCTAssertThrowsError(try CoreResultValidator.assetPage([
             "offset": 0, "limit": 1, "total": 2, "items": [assetSummary(), assetSummary()],
-            "nextOffset": NSNull(), "libraryRevision": 4
+            "nextOffset": NSNull(), "libraryRevision": 4,
+            "facets": emptyFacets()
         ]))
     }
 
@@ -67,14 +70,16 @@ final class CoreResultValidatorTests: XCTestCase {
         absolute["relativeDisplayPath"] = "/Users/private/secret.png"
         XCTAssertThrowsError(try CoreResultValidator.assetPage([
             "offset": 0, "limit": 1, "total": 1, "items": [absolute],
-            "nextOffset": NSNull(), "libraryRevision": 4
+            "nextOffset": NSNull(), "libraryRevision": 4,
+            "facets": emptyFacets()
         ]))
 
         var oversized = assetSummary()
         oversized["displayName"] = String(repeating: "x", count: 256)
         XCTAssertThrowsError(try CoreResultValidator.assetPage([
             "offset": 0, "limit": 1, "total": 1, "items": [oversized],
-            "nextOffset": NSNull(), "libraryRevision": 4
+            "nextOffset": NSNull(), "libraryRevision": 4,
+            "facets": emptyFacets()
         ]))
     }
 
@@ -83,7 +88,8 @@ final class CoreResultValidatorTests: XCTestCase {
         unsupported["availability"] = "unsupported"
         let page = try CoreResultValidator.assetPage([
             "offset": 0, "limit": 1, "total": 1, "items": [unsupported],
-            "nextOffset": NSNull(), "libraryRevision": 4
+            "nextOffset": NSNull(), "libraryRevision": 4,
+            "facets": emptyFacets()
         ])
         let safe = try XCTUnwrap((page["items"] as? [[String: Any]])?.first)
         XCTAssertEqual(safe["availability"] as? String, "unsupported")
@@ -96,7 +102,8 @@ final class CoreResultValidatorTests: XCTestCase {
         summary["relativeDisplayPath"] = "References/Client (A)/\(weirdName)"
         let page = try CoreResultValidator.assetPage([
             "offset": 0, "limit": 1, "total": 1, "items": [summary],
-            "nextOffset": NSNull(), "libraryRevision": 4
+            "nextOffset": NSNull(), "libraryRevision": 4,
+            "facets": emptyFacets()
         ])
         let safeSummary = try XCTUnwrap((page["items"] as? [[String: Any]])?.first)
         XCTAssertEqual(safeSummary["displayName"] as? String, weirdName)
@@ -111,10 +118,17 @@ final class CoreResultValidatorTests: XCTestCase {
             "originalDisplayName": weirdName,
             "relativeDisplayPath": "References/Client (A)/\(weirdName)",
             "mediaFamily": "still_image",
+            "mimeType": "image/png",
+            "extension": "png",
+            "byteSize": 1_024,
+            "category": "References",
+            "previewKind": "image",
             "availability": "present",
             "reviewState": "unreviewed",
             "customTitle": NSNull(),
             "note": NSNull(),
+            "tags": [],
+            "usedIn": [],
             "revision": 0,
             "collectionIds": []
         ])
@@ -124,7 +138,8 @@ final class CoreResultValidatorTests: XCTestCase {
         maximumUnicode["displayName"] = String(repeating: "界", count: 255)
         XCTAssertNoThrow(try CoreResultValidator.assetPage([
             "offset": 0, "limit": 1, "total": 1, "items": [maximumUnicode],
-            "nextOffset": NSNull(), "libraryRevision": 4
+            "nextOffset": NSNull(), "libraryRevision": 4,
+            "facets": emptyFacets()
         ]))
     }
 
@@ -133,21 +148,24 @@ final class CoreResultValidatorTests: XCTestCase {
         hierarchy["displayName"] = "folder/still.png"
         XCTAssertThrowsError(try CoreResultValidator.assetPage([
             "offset": 0, "limit": 1, "total": 1, "items": [hierarchy],
-            "nextOffset": NSNull(), "libraryRevision": 4
+            "nextOffset": NSNull(), "libraryRevision": 4,
+            "facets": emptyFacets()
         ]))
 
         var traversal = assetSummary()
         traversal["relativeDisplayPath"] = "References/../still.png"
         XCTAssertThrowsError(try CoreResultValidator.assetPage([
             "offset": 0, "limit": 1, "total": 1, "items": [traversal],
-            "nextOffset": NSNull(), "libraryRevision": 4
+            "nextOffset": NSNull(), "libraryRevision": 4,
+            "facets": emptyFacets()
         ]))
 
         var control = assetSummary()
         control["relativeDisplayPath"] = "References/draft\nfinal.png"
         XCTAssertThrowsError(try CoreResultValidator.assetPage([
             "offset": 0, "limit": 1, "total": 1, "items": [control],
-            "nextOffset": NSNull(), "libraryRevision": 4
+            "nextOffset": NSNull(), "libraryRevision": 4,
+            "facets": emptyFacets()
         ]))
     }
 
@@ -221,10 +239,29 @@ final class CoreResultValidatorTests: XCTestCase {
             "displayName": "still.png",
             "relativeDisplayPath": "References/still.png",
             "mediaFamily": "still_image",
+            "mimeType": "image/png",
+            "extension": "png",
+            "byteSize": 1_024,
+            "category": "References",
+            "previewKind": "image",
             "availability": "present",
             "reviewState": "unreviewed",
             "customTitle": NSNull(),
+            "tags": [],
+            "usedIn": [],
+            "previewAssetIds": [],
+            "createdAtMs": 1,
             "revision": 0
+        ]
+    }
+
+    private func emptyFacets() -> [String: Any] {
+        [
+            "categories": [],
+            "extensions": [],
+            "mediaFamilies": [],
+            "tags": [],
+            "usedIn": []
         ]
     }
 

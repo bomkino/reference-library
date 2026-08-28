@@ -82,6 +82,7 @@ class MutatingQuerySeam {
         items,
         nextOffset: input.offset + items.length < 250 ? input.offset + items.length : null,
         libraryRevision: this.revision,
+        facets: { categories: [], extensions: [], mediaFamilies: [], tags: [], usedIn: [] },
       };
     },
   } as ReferenceWorkspaceBridge;
@@ -94,9 +95,18 @@ function asset(revision: number, index: number): AssetSummary {
     displayName: `Frame ${index}`,
     relativeDisplayPath: `Stills/Frame ${index}`,
     mediaFamily: "still",
+    mimeType: "image/jpeg",
+    extension: "jpg",
+    byteSize: 1_024 + index,
+    category: "Stills",
+    previewKind: "image",
     availability: revision === 2 && index === 150 ? "unsupported" : "present",
     reviewState: "unreviewed",
     customTitle: null,
+    tags: [],
+    usedIn: [],
+    previewAssetIds: [],
+    createdAtMs: index + 1,
     revision,
   };
 }

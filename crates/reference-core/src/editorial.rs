@@ -4,10 +4,10 @@ use reference_protocol::{
     AssetDetail, AssetFacets, AssetPage, AssetPatch, AssetProjection, AssetQuery, AssetSort,
     AssetSummary, AvailabilityFilter, CollectionSummary, CommandResult, FacetCount, JobPage,
     JobQuery, JobState, MAX_ASSET_COLLECTIONS, MAX_ASSET_QUERY_VALUES, MAX_ASSET_TOKEN_CHARS,
-    MAX_ASSET_TOKENS, MAX_COLLECTION_MEMBERSHIP_BATCH, MAX_COLLECTION_NAME_CHARS,
-    MAX_COLLECTIONS, MAX_FACET_VALUES, MAX_FRAME_BYTES, MAX_JOB_PAGE_SIZE, MAX_NOTE_CHARS,
-    MAX_PAGE_SIZE, MAX_REQUEST_ID_BYTES, MAX_SEARCH_CHARS, MAX_TITLE_CHARS, PROTOCOL_VERSION,
-    ReviewState, ServerFrame, StringListPatch, TextPatch,
+    MAX_ASSET_TOKENS, MAX_COLLECTION_MEMBERSHIP_BATCH, MAX_COLLECTION_NAME_CHARS, MAX_COLLECTIONS,
+    MAX_FACET_VALUES, MAX_FRAME_BYTES, MAX_JOB_PAGE_SIZE, MAX_NOTE_CHARS, MAX_PAGE_SIZE,
+    MAX_REQUEST_ID_BYTES, MAX_SEARCH_CHARS, MAX_TITLE_CHARS, PROTOCOL_VERSION, ReviewState,
+    ServerFrame, StringListPatch, TextPatch,
 };
 use rusqlite::types::Value;
 use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
@@ -85,7 +85,12 @@ pub fn query_assets(
         "pl.location_rank = 1".to_owned(),
     ];
 
-    if let Some(search) = query.search.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+    if let Some(search) = query
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         values.push(Value::Text(format!("%{}%", escape_like(search))));
         let index = values.len();
         where_parts.push(format!(
@@ -99,7 +104,10 @@ pub fn query_assets(
         ));
     }
     if !query.review_states.is_empty() {
-        let slots = push_text_values(&mut values, query.review_states.iter().map(|state| state.as_str()));
+        let slots = push_text_values(
+            &mut values,
+            query.review_states.iter().map(|state| state.as_str()),
+        );
         where_parts.push(format!("a.review_state IN ({slots})"));
     }
     if !query.availability.is_empty() {
@@ -137,24 +145,42 @@ pub fn query_assets(
         where_parts.push(format!("{category_sql} IN ({slots})"));
     }
     if !query.extensions.is_empty() {
-        let normalized = query.extensions.iter().map(|value| value.trim_start_matches('.').to_ascii_lowercase()).collect::<Vec<_>>();
+        let normalized = query
+            .extensions
+            .iter()
+            .map(|value| value.trim_start_matches('.').to_ascii_lowercase())
+            .collect::<Vec<_>>();
         let slots = push_text_values(&mut values, normalized.iter().map(String::as_str));
-        where_parts.push(format!("lower(COALESCE(pl.extension_observed, '')) IN ({slots})"));
+        where_parts.push(format!(
+            "lower(COALESCE(pl.extension_observed, '')) IN ({slots})"
+        ));
     }
     if !query.media_families.is_empty() {
-        let normalized = query.media_families.iter().map(|value| value.to_ascii_lowercase()).collect::<Vec<_>>();
+        let normalized = query
+            .media_families
+            .iter()
+            .map(|value| value.to_ascii_lowercase())
+            .collect::<Vec<_>>();
         let slots = push_text_values(&mut values, normalized.iter().map(String::as_str));
         where_parts.push(format!("lower(pl.media_family) IN ({slots})"));
     }
     if !query.tags.is_empty() {
-        let normalized = query.tags.iter().map(|value| value.to_lowercase()).collect::<Vec<_>>();
+        let normalized = query
+            .tags
+            .iter()
+            .map(|value| value.to_lowercase())
+            .collect::<Vec<_>>();
         let slots = push_text_values(&mut values, normalized.iter().map(String::as_str));
         where_parts.push(format!(
             "EXISTS (SELECT 1 FROM json_each(a.tags_json) token WHERE lower(token.value) IN ({slots}))"
         ));
     }
     if !query.used_in.is_empty() {
-        let normalized = query.used_in.iter().map(|value| value.to_lowercase()).collect::<Vec<_>>();
+        let normalized = query
+            .used_in
+            .iter()
+            .map(|value| value.to_lowercase())
+            .collect::<Vec<_>>();
         let slots = push_text_values(&mut values, normalized.iter().map(String::as_str));
         where_parts.push(format!(
             "EXISTS (SELECT 1 FROM json_each(a.used_in_json) token WHERE lower(token.value) IN ({slots}))"
@@ -169,8 +195,12 @@ pub fn query_assets(
     let order = match query.sort {
         AssetSort::CreatedAscending => "a.created_at_ms ASC, a.id ASC",
         AssetSort::CreatedDescending => "a.created_at_ms DESC, a.id DESC",
-        AssetSort::NameAscending => "lower(COALESCE(a.custom_title, pl.relative_path_display)) ASC, a.id ASC",
-        AssetSort::NameDescending => "lower(COALESCE(a.custom_title, pl.relative_path_display)) DESC, a.id DESC",
+        AssetSort::NameAscending => {
+            "lower(COALESCE(a.custom_title, pl.relative_path_display)) ASC, a.id ASC"
+        }
+        AssetSort::NameDescending => {
+            "lower(COALESCE(a.custom_title, pl.relative_path_display)) DESC, a.id DESC"
+        }
         AssetSort::SizeAscending => "pl.byte_size ASC, a.id ASC",
         AssetSort::SizeDescending => "pl.byte_size DESC, a.id DESC",
         AssetSort::ReviewState => "a.review_state ASC, a.created_at_ms ASC, a.id ASC",
@@ -185,10 +215,15 @@ pub fn query_assets(
     if let Some(expected) = expected_library_revision
         && expected != library_revision
     {
-        return Err(CoreError::QuerySnapshotChanged { expected, actual: library_revision });
+        return Err(CoreError::QuerySnapshotChanged {
+            expected,
+            actual: library_revision,
+        });
     }
     let total_sql = format!("{cte} SELECT COUNT(*) {from}");
-    let total = transaction.query_row(&total_sql, params_from_iter(values.iter()), |row| row.get::<_, i64>(0))? as u64;
+    let total = transaction.query_row(&total_sql, params_from_iter(values.iter()), |row| {
+        row.get::<_, i64>(0)
+    })? as u64;
 
     let mut page_values = values;
     page_values.push(Value::Integer(limit as i64));
@@ -311,7 +346,10 @@ pub fn update_asset(
     let note = apply_patch(current.2, note_patch);
     let tags = apply_string_list_patch(current.3, tags_patch);
     let used_in = apply_string_list_patch(current.4, used_in_patch);
-    let review_state = patch.review_state.map(ReviewState::as_str).unwrap_or(current.1.as_str());
+    let review_state = patch
+        .review_state
+        .map(ReviewState::as_str)
+        .unwrap_or(current.1.as_str());
     transaction.execute(
         "UPDATE assets SET custom_title = ?1, review_state = ?2, note = ?3,
                            tags_json = ?4, used_in_json = ?5,
@@ -690,7 +728,9 @@ fn asset_detail(
          ORDER BY collection_id LIMIT ?2",
     )?;
     detail.collection_ids = statement
-        .query_map(params![asset_id, MAX_ASSET_COLLECTIONS as i64 + 1], |row| row.get(0))?
+        .query_map(params![asset_id, MAX_ASSET_COLLECTIONS as i64 + 1], |row| {
+            row.get(0)
+        })?
         .collect::<Result<Vec<_>, _>>()?;
     if detail.collection_ids.len() > MAX_ASSET_COLLECTIONS {
         return Err(CoreError::AssetCollectionLimitReached);
@@ -747,9 +787,9 @@ fn byte_bound_asset_page(
     };
     items.truncate(selected);
     let returned = items.len() as u64;
-    let end = offset.checked_add(returned).ok_or_else(|| {
-        CoreError::QueryInvalid("query offset is outside supported range".into())
-    })?;
+    let end = offset
+        .checked_add(returned)
+        .ok_or_else(|| CoreError::QueryInvalid("query offset is outside supported range".into()))?;
     Ok(AssetPage {
         offset,
         limit,
@@ -782,7 +822,9 @@ fn validate_query(
         &query.used_in,
     ] {
         if values.len() > MAX_ASSET_QUERY_VALUES
-            || values.iter().any(|value| value.is_empty() || value.contains('\0') || value.chars().count() > 1_024)
+            || values.iter().any(|value| {
+                value.is_empty() || value.contains('\0') || value.chars().count() > 1_024
+            })
         {
             return Err(CoreError::QueryInvalid("facet filter is invalid".into()));
         }
@@ -854,10 +896,14 @@ fn normalize_tokens(values: Vec<String>) -> Result<Vec<String>, CoreError> {
     let mut normalized = Vec::new();
     for value in values {
         let value = value.trim();
-        if value.is_empty() || value.contains('\0') || value.chars().count() > MAX_ASSET_TOKEN_CHARS {
+        if value.is_empty() || value.contains('\0') || value.chars().count() > MAX_ASSET_TOKEN_CHARS
+        {
             return Err(CoreError::QueryInvalid("editorial token is invalid".into()));
         }
-        if !normalized.iter().any(|existing: &String| existing.eq_ignore_ascii_case(value)) {
+        if !normalized
+            .iter()
+            .any(|existing: &String| existing.eq_ignore_ascii_case(value))
+        {
             normalized.push(value.to_owned());
         }
     }
@@ -902,10 +948,12 @@ fn category_expression(path_expression: &str) -> String {
 
 fn preview_kind_for_mime(mime: &str) -> &'static str {
     match mime {
-        "image/png" | "image/jpeg" | "image/webp" | "image/gif" | "image/svg+xml"
-        | "image/bmp" | "image/avif" | "image/x-icon" => "image",
+        "image/png" | "image/jpeg" | "image/webp" | "image/gif" | "image/svg+xml" | "image/bmp"
+        | "image/avif" | "image/x-icon" => "image",
         "video/mp4" | "video/webm" | "video/quicktime" => "video",
-        "audio/mpeg" | "audio/wav" | "audio/ogg" | "audio/flac" | "audio/mp4" | "audio/aiff" => "audio",
+        "audio/mpeg" | "audio/wav" | "audio/ogg" | "audio/flac" | "audio/mp4" | "audio/aiff" => {
+            "audio"
+        }
         "application/pdf" => "pdf",
         "font/otf" | "font/ttf" | "font/woff" | "font/woff2" => "font",
         "text/plain" => "text",
@@ -938,7 +986,9 @@ fn related_preview_asset_ids(
     );
     let mut statement = connection.prepare(&sql)?;
     Ok(statement
-        .query_map(params![library_id, root_id, asset_id, category], |row| row.get(0))?
+        .query_map(params![library_id, root_id, asset_id, category], |row| {
+            row.get(0)
+        })?
         .collect::<Result<Vec<_>, _>>()?)
 }
 
@@ -960,17 +1010,23 @@ fn query_facets(connection: &Connection, library_id: &str) -> Result<AssetFacets
     Ok(AssetFacets {
         categories: facet_query(
             connection,
-            &format!("{base} SELECT {category_sql} AS value, COUNT(*) FROM preferred_locations pl WHERE pl.location_rank = 1 GROUP BY value ORDER BY lower(value) LIMIT ?2"),
+            &format!(
+                "{base} SELECT {category_sql} AS value, COUNT(*) FROM preferred_locations pl WHERE pl.location_rank = 1 GROUP BY value ORDER BY lower(value) LIMIT ?2"
+            ),
             library_id,
         )?,
         extensions: facet_query(
             connection,
-            &format!("{base} SELECT lower(pl.extension_observed) AS value, COUNT(*) FROM preferred_locations pl WHERE pl.location_rank = 1 AND pl.extension_observed IS NOT NULL GROUP BY value ORDER BY value LIMIT ?2"),
+            &format!(
+                "{base} SELECT lower(pl.extension_observed) AS value, COUNT(*) FROM preferred_locations pl WHERE pl.location_rank = 1 AND pl.extension_observed IS NOT NULL GROUP BY value ORDER BY value LIMIT ?2"
+            ),
             library_id,
         )?,
         media_families: facet_query(
             connection,
-            &format!("{base} SELECT pl.media_family AS value, COUNT(*) FROM preferred_locations pl WHERE pl.location_rank = 1 GROUP BY value ORDER BY lower(value) LIMIT ?2"),
+            &format!(
+                "{base} SELECT pl.media_family AS value, COUNT(*) FROM preferred_locations pl WHERE pl.location_rank = 1 GROUP BY value ORDER BY lower(value) LIMIT ?2"
+            ),
             library_id,
         )?,
         tags: token_facets(connection, library_id, "tags_json")?,
@@ -978,7 +1034,11 @@ fn query_facets(connection: &Connection, library_id: &str) -> Result<AssetFacets
     })
 }
 
-fn facet_query(connection: &Connection, sql: &str, library_id: &str) -> Result<Vec<FacetCount>, CoreError> {
+fn facet_query(
+    connection: &Connection,
+    sql: &str,
+    library_id: &str,
+) -> Result<Vec<FacetCount>, CoreError> {
     let mut statement = connection.prepare(sql)?;
     Ok(statement
         .query_map(params![library_id, MAX_FACET_VALUES as i64], |row| {
@@ -990,7 +1050,11 @@ fn facet_query(connection: &Connection, sql: &str, library_id: &str) -> Result<V
         .collect::<Result<Vec<_>, _>>()?)
 }
 
-fn token_facets(connection: &Connection, library_id: &str, column: &str) -> Result<Vec<FacetCount>, CoreError> {
+fn token_facets(
+    connection: &Connection,
+    library_id: &str,
+    column: &str,
+) -> Result<Vec<FacetCount>, CoreError> {
     let sql = format!(
         "SELECT MIN(token.value), COUNT(DISTINCT a.id)
          FROM assets a, json_each(a.{column}) token

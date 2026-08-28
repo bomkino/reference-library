@@ -640,7 +640,12 @@ fn refresh_existing(
         transaction.execute(
             "UPDATE sources SET current_revision_id = ?1, media_family = ?2,
                                 lineage_state = 'active', updated_at_ms = ?3 WHERE id = ?4",
-            params![revision_id, candidate.media_family, timestamp, existing.source_id],
+            params![
+                revision_id,
+                candidate.media_family,
+                timestamp,
+                existing.source_id
+            ],
         )?;
     } else {
         transaction.execute(
@@ -659,7 +664,8 @@ fn refresh_existing(
                     "pixelHeight": candidate.pixel_height,
                     "previewKind": candidate.preview_kind,
                     "gridPreview": candidate.grid_servable
-                }).to_string(),
+                })
+                .to_string(),
                 existing.source_id
             ],
         )?;
@@ -683,7 +689,13 @@ fn insert_new(
             id, library_id, media_family, current_revision_id, lineage_state,
             created_at_ms, updated_at_ms
          ) VALUES (?1, ?2, ?3, ?4, 'active', ?5, ?5)",
-        params![source_id, plan.library_id, candidate.media_family, revision_id, timestamp],
+        params![
+            source_id,
+            plan.library_id,
+            candidate.media_family,
+            revision_id,
+            timestamp
+        ],
     )?;
     insert_revision(transaction, &revision_id, &source_id, candidate, timestamp)?;
     let location_state = if candidate.preview_kind == "none" {
@@ -1355,8 +1367,20 @@ fn classify_media(bytes: &[u8], extension: Option<&str>) -> Option<MediaClassifi
     }
     if bytes.starts_with(b"PK\x03\x04") {
         return Some(match extension {
-            Some("pptx") => media("application/vnd.openxmlformats-officedocument.presentationml.presentation", "presentation", "none", false, false),
-            Some("docx") => media("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "document", "none", false, false),
+            Some("pptx") => media(
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "presentation",
+                "none",
+                false,
+                false,
+            ),
+            Some("docx") => media(
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "document",
+                "none",
+                false,
+                false,
+            ),
             Some("zip") | None => media("application/zip", "archive", "none", false, false),
             _ => media("application/zip", "archive", "none", false, false),
         });
@@ -1374,7 +1398,13 @@ fn classify_media(bytes: &[u8], extension: Option<&str>) -> Option<MediaClassifi
         return Some(media("font/woff2", "font", "font", false, false));
     }
     if bytes.starts_with(b"8BPS") {
-        return Some(media("image/vnd.adobe.photoshop", "design", "none", false, false));
+        return Some(media(
+            "image/vnd.adobe.photoshop",
+            "design",
+            "none",
+            false,
+            false,
+        ));
     }
     if bytes.starts_with(b"BM") {
         return Some(media("image/bmp", "still", "image", false, false));
@@ -1387,7 +1417,10 @@ fn classify_media(bytes: &[u8], extension: Option<&str>) -> Option<MediaClassifi
         if matches!(brand, b"avif" | b"avis") {
             return Some(media("image/avif", "still", "image", false, false));
         }
-        if matches!(brand, b"heic" | b"heix" | b"hevc" | b"hevx" | b"mif1" | b"msf1") {
+        if matches!(
+            brand,
+            b"heic" | b"heix" | b"hevc" | b"hevx" | b"mif1" | b"msf1"
+        ) {
             return Some(media("image/heic", "still", "none", false, false));
         }
         if matches!(brand, b"M4A " | b"M4B ") {
@@ -1439,21 +1472,53 @@ fn classify_media(bytes: &[u8], extension: Option<&str>) -> Option<MediaClassifi
         "heic" | "heif" => media("image/heic", "still", "none", false, false),
         "ico" => media("image/x-icon", "still", "image", false, false),
         "psd" | "psb" => media("image/vnd.adobe.photoshop", "design", "none", false, false),
-        "ai" => media("application/vnd.adobe.illustrator", "design", "none", false, false),
+        "ai" => media(
+            "application/vnd.adobe.illustrator",
+            "design",
+            "none",
+            false,
+            false,
+        ),
         "eps" => media("application/postscript", "design", "none", false, false),
         "indd" | "indl" | "indt" => media("application/x-indesign", "design", "none", false, false),
         "sketch" => media("application/x-sketch", "design", "none", false, false),
         "fig" => media("application/x-figma", "design", "none", false, false),
         "xd" => media("application/x-adobe-xd", "design", "none", false, false),
-        "afdesign" | "afphoto" | "afpub" => media("application/x-affinity", "design", "none", false, false),
+        "afdesign" | "afphoto" | "afpub" => {
+            media("application/x-affinity", "design", "none", false, false)
+        }
         "pdf" => media("application/pdf", "document", "pdf", false, false),
         "txt" | "md" => media("text/plain", "document", "text", false, false),
         "rtf" => media("application/rtf", "document", "none", false, false),
         "doc" => media("application/msword", "document", "none", false, false),
-        "docx" => media("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "document", "none", false, false),
-        "ppt" => media("application/vnd.ms-powerpoint", "presentation", "none", false, false),
-        "pptx" => media("application/vnd.openxmlformats-officedocument.presentationml.presentation", "presentation", "none", false, false),
-        "key" => media("application/x-iwork-keynote-sffkey", "presentation", "none", false, false),
+        "docx" => media(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "document",
+            "none",
+            false,
+            false,
+        ),
+        "ppt" => media(
+            "application/vnd.ms-powerpoint",
+            "presentation",
+            "none",
+            false,
+            false,
+        ),
+        "pptx" => media(
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "presentation",
+            "none",
+            false,
+            false,
+        ),
+        "key" => media(
+            "application/x-iwork-keynote-sffkey",
+            "presentation",
+            "none",
+            false,
+            false,
+        ),
         "mp4" | "m4v" => media("video/mp4", "video", "video", false, false),
         "mov" => media("video/quicktime", "video", "video", false, false),
         "webm" => media("video/webm", "video", "video", false, false),
@@ -1472,7 +1537,13 @@ fn classify_media(bytes: &[u8], extension: Option<&str>) -> Option<MediaClassifi
         "woff2" => media("font/woff2", "font", "font", false, false),
         "zip" => media("application/zip", "archive", "none", false, false),
         "rar" => media("application/vnd.rar", "archive", "none", false, false),
-        "7z" => media("application/x-7z-compressed", "archive", "none", false, false),
+        "7z" => media(
+            "application/x-7z-compressed",
+            "archive",
+            "none",
+            false,
+            false,
+        ),
         "tar" => media("application/x-tar", "archive", "none", false, false),
         "gz" | "tgz" => media("application/gzip", "archive", "none", false, false),
         "xz" => media("application/x-xz", "archive", "none", false, false),

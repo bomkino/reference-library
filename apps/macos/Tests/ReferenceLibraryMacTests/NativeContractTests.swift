@@ -4,13 +4,14 @@ import XCTest
 
 final class NativeContractTests: XCTestCase {
     @MainActor
-    func testBridgeV3IsFixedAndExcludesRootRemoval() {
+    func testBridgeV4IsFixedAndExcludesRootRemoval() {
         let source = WorkspaceBridge.bootstrap
-        XCTAssertTrue(source.contains("version: 3"))
+        XCTAssertTrue(source.contains("version: 4"))
         for operation in [
             "completeOpenIntent", "listRoots", "reauthorizeRoot", "scanRoot", "cancelJob",
             "queryJobs", "queryAssets", "getAsset", "updateAsset", "listCollections",
             "createCollection", "renameCollection", "deleteCollection", "setCollectionMembership",
+            "revealLocation", "openLocation", "copyLocationPath",
             "readPreferences", "writePreferences",
         ] { XCTAssertTrue(source.contains(operation), "missing \(operation)") }
         XCTAssertFalse(source.contains("removeRoot"))

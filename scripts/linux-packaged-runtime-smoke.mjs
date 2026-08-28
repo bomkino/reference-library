@@ -207,12 +207,15 @@ export function assertPackagedJourneyObservation(observation) {
   assert.equal(observation?.url, "pitchdog-ui://app/index.html");
   assert.ok(["interactive", "complete"].includes(observation.readyState), "workspace document did not become ready");
   assert.equal(observation.heading, "Your project’s visual memory.");
-  assert.equal(observation.bridgeVersion, 3);
+  assert.equal(observation.bridgeVersion, 4);
   assert.ok([0.8, 1, 1.25, 1.5].includes(observation.preferences?.interfaceScale));
   assert.ok(Number.isSafeInteger(observation.preferences?.thumbnailDensity));
   assert.ok(observation.preferences.thumbnailDensity >= 140 && observation.preferences.thumbnailDensity <= 340);
   assert.ok(Number.isFinite(observation.preferences?.previewZoom));
   assert.ok(observation.preferences.previewZoom >= 0.25 && observation.preferences.previewZoom <= 4);
+  assert.ok(["grid", "compact", "list"].includes(observation.preferences?.viewMode));
+  assert.equal(typeof observation.preferences?.multiThumbnailPreviews, "boolean");
+  assert.equal(typeof observation.preferences?.autoRescan, "boolean");
   assert.ok(Array.isArray(observation.capabilities), "Core capability response is missing");
   assert.ok(observation.capabilities.some((item) =>
     item?.name === "common-stills" && item.state === "required_parity"));

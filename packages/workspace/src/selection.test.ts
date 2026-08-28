@@ -52,8 +52,17 @@ function asset(
     relativeDisplayPath: `Stills/${displayName}`,
     availability,
     mediaFamily: "still",
+    mimeType: "image/png",
+    extension: "png",
+    byteSize: 1_024,
+    category: "Stills",
+    previewKind: "image",
     reviewState: "unreviewed",
     customTitle: null,
+    tags: [],
+    usedIn: [],
+    previewAssetIds: [],
+    createdAtMs: 1,
     revision: 1,
   };
 }
