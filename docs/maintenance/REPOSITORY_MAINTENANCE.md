@@ -6,7 +6,7 @@ This file describes how Reference Library stays reproducible, reviewable and hon
 
 `main` is the only canonical branch. Work happens on short-lived branches. Merge only after the exact branch head passes the complete required workflow. Delete merged branches when the available GitHub interface permits it; never preserve a branch merely as informal release evidence.
 
-No tag or GitHub release should exist until the relevant packaged journey has passed on representative Apple Silicon and Garuda/KDE hardware. Workflow artifacts are retained build evidence, not public releases.
+For the user-authorized 0.1.0 release, the exact installed Apple-Silicon journey and exact-main Ubuntu X11/Wayland package rehearsal are the public-release gates. Garuda/KDE hardware remains a distinct open target-integration gate and must not be implied by the release. Future gate changes require an explicit maintainer decision. Workflow artifacts are retained build evidence, not public releases.
 
 ## Toolchain policy
 

@@ -43,3 +43,13 @@ node scripts/legal-bundle-contract.mjs --directory .
 CI additionally runs pinned RustSec auditing, exact Linux package extraction and runtime rehearsals, checksum/receipt verification, Swift tests and Apple-Silicon app packaging. Run `swift test --package-path apps/macos` on compatible macOS source changes.
 
 A green compatible runner proves source-ready behavior only. M1, L1, X1 and C1 remain separate target-machine gates.
+
+## Interface system
+
+- Read `docs/product/BRUTALIST_INTERFACE_SYSTEM.md` before changing workspace presentation.
+- Preserve independent Interface Scale, thumbnail density and Preview zoom.
+- Keep ordinary targets at least `max(44px, 3.5rem)` in the root sizing system.
+- Reflow the Inspector at supported narrow widths; do not hide it.
+- Use one restrained signal colour. Do not add gradients, glass panels or dashboard-card styling.
+- Keep frequent keyboard actions instant and respect `prefers-reduced-motion`.
+- Generate product icon output through `scripts/generate-product-icon.mjs`; never hand-edit a derivative alone.

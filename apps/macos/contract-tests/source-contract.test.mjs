@@ -19,7 +19,7 @@ test("Finder package-open routes through opaque serialized intent acknowledgemen
   assert.match(model, /case "completeOpenIntent"/);
   assert.match(model, /LibraryTransitionGate/);
   assert.match(model, /library_open_requested/);
-  assert.doesNotMatch(queue, /\["[^\"]*path/);
+  assert.doesNotMatch(queue, /\["[^"]*path/);
   assert.match(delegate, /applicationShouldTerminate[\s\S]*await model\.stop\(\)[\s\S]*terminateLater/);
 });
 
@@ -79,6 +79,17 @@ test("supervision is lazy, generation-bound, fail-all, and resource-correlated",
   assert.match(core, /BoundedRegistry<String, Authorization>/);
   assert.match(core, /Darwin\.kill\(process\.processIdentifier, SIGKILL\)/);
   assert.match(core, /sequence\.uint64Value > lastEventSequence/);
+});
+
+test("new Library creation authorizes a parent directory for atomic staging", async () => {
+  const model = await source("AppModel.swift");
+  const create = model.match(/private func createLibrary\(name: String\)[\s\S]*?\n    private func openLibrary/)?.[0] ?? "";
+  assert.match(create, /let panel = NSOpenPanel\(\)/);
+  assert.match(create, /panel\.canChooseDirectories = true/);
+  assert.match(create, /panel\.canChooseFiles = false/);
+  assert.match(create, /selectedURL\.appendingPathComponent\("\\\(safeName\)\.pitchlibrary"/);
+  assert.match(create, /selectedURL\.startAccessingSecurityScopedResource\(\)/);
+  assert.doesNotMatch(create, /NSSavePanel|nameFieldStringValue/);
 });
 
 test("integrity errors remain fixed, preserved, and path-free", async () => {

@@ -206,7 +206,13 @@ impl LibrarySession {
             let manifest = Manifest::new(name);
             manifest.validate()?;
             manifest.write_atomic(&staging)?;
-            let connection = schema::create_database(&staging.join("library.sqlite"), &manifest)?;
+            // macOS exposes its temporary directory through `/var`, which is
+            // a symlink to `/private/var`. SQLite's NOFOLLOW mode correctly
+            // rejects that alias, so resolve the already-created package
+            // directory before opening canonical database storage.
+            let canonical_staging = fs::canonicalize(&staging)?;
+            let connection =
+                schema::create_database(&canonical_staging.join("library.sqlite"), &manifest)?;
             connection.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
             drop(connection);
             fs::write(
@@ -235,8 +241,12 @@ impl LibrarySession {
                 "Library package storage is invalid".into(),
             ));
         }
-        let manifest = Manifest::read(package_path)?;
-        let mut lock_file = open_writer_lock(package_path)?;
+        // Preserve the final-component symlink refusal above, then resolve
+        // harmless ancestor aliases before SQLite opens with NOFOLLOW.
+        let package_path = fs::canonicalize(package_path)
+            .map_err(|_| CoreError::InvalidManifest("Library package storage is invalid".into()))?;
+        let manifest = Manifest::read(&package_path)?;
+        let mut lock_file = open_writer_lock(&package_path)?;
         lock_file
             .try_lock()
             .map_err(|_| CoreError::LibraryLockedByOtherWriter)?;
@@ -262,7 +272,7 @@ impl LibrarySession {
         // markers and then recovered the manifest. Keep the session's durable
         // copy authoritative so SessionOpened and close can never report or
         // rewrite the pre-migration schema version.
-        let manifest = match Manifest::read(package_path) {
+        let manifest = match Manifest::read(&package_path) {
             Ok(manifest) => manifest,
             Err(error) => {
                 drop(connection);
@@ -274,7 +284,7 @@ impl LibrarySession {
         mark_linked_roots_unbound(&connection)?;
         Ok(Self {
             session_id: Uuid::new_v4().to_string(),
-            package_path: package_path.to_path_buf(),
+            package_path,
             manifest,
             connection: Some(connection),
             lock_file: Some(lock_file),

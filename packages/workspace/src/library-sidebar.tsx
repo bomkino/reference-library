@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   MAX_COLLECTION_NAME_SCALARS,
   type CollectionSummary,
@@ -24,6 +25,7 @@ export function LibrarySidebar(props: {
   onCollectionInventory(collections: CollectionSummary[]): void;
   onRootInventory(roots: RootSummary[]): void;
   onSession(session: SessionOpened): void;
+  onModalChange(open: boolean): void;
 }) {
   const [roots, setRoots] = useState<RootSummary[]>([]);
   const [collections, setCollections] = useState<CollectionSummary[]>([]);
@@ -81,6 +83,10 @@ export function LibrarySidebar(props: {
     const frame = requestAnimationFrame(() => deleteConfirm.current?.focus());
     return () => cancelAnimationFrame(frame);
   }, [deleting]);
+  useEffect(() => {
+    props.onModalChange(Boolean(deleting));
+    return () => props.onModalChange(false);
+  }, [deleting, props.onModalChange]);
 
   const dismissDelete = () => {
     setDeleting(null);
@@ -165,7 +171,7 @@ export function LibrarySidebar(props: {
           <ul className="plain-list">
             {roots.map((root) => (
               <li className="root-row" key={root.rootId}>
-                <div><strong>{root.displayName}</strong><span role="status">{root.state} · {root.observedCount.toLocaleString()} observed{root.unsupportedCount ? ` · ${root.unsupportedCount.toLocaleString()} unsupported` : ""}</span>{root.activeJobId && <progress aria-label={`Scanning ${root.displayName}`} />}</div>
+                <div><strong>{root.displayName}</strong><span role="status">{rootStateLabel(root.state)} · {root.observedCount.toLocaleString()} observed{root.unsupportedCount ? ` · ${root.unsupportedCount.toLocaleString()} unsupported` : ""}</span>{root.activeJobId && <progress aria-label={`Scanning ${root.displayName}`} />}</div>
                 <div className="compact-actions">
                   {!root.authorized && <button disabled={props.disabled || authorityBusy} onClick={async () => {
                     setAuthorityBusy(true);
@@ -204,8 +210,8 @@ export function LibrarySidebar(props: {
               ) : (
                 <>
                   <button className={props.selectedCollectionId === collection.collectionId ? "nav-choice nav-choice--active" : "nav-choice"} disabled={props.disabled} onClick={() => props.onCollectionChange(collection.collectionId)}>{collection.name}<span>{collection.assetCount}</span></button>
-                  <button className="icon-button" aria-label={`Rename ${collection.name}`} disabled={props.disabled} onClick={(event) => { returnFocus.current = event.currentTarget; setEditing(collection); setRename(collection.name); }}>Rename</button>
-                  <button className="icon-button" aria-label={`Delete ${collection.name}`} disabled={props.disabled} onClick={(event) => { returnFocus.current = event.currentTarget; setDeleting(collection); }}>Delete</button>
+                  <button className="icon-button" aria-label={`Rename ${collection.name}`} title={`Rename ${collection.name}`} disabled={props.disabled} onClick={(event) => { returnFocus.current = event.currentTarget; setEditing(collection); setRename(collection.name); }}><span className="ui-icon ui-icon--edit" aria-hidden="true" /></button>
+                  <button className="icon-button" aria-label={`Delete ${collection.name}`} title={`Delete ${collection.name}`} disabled={props.disabled} onClick={(event) => { returnFocus.current = event.currentTarget; setDeleting(collection); }}><span className="ui-icon ui-icon--trash" aria-hidden="true" /></button>
                 </>
               )}
             </li>
@@ -218,12 +224,13 @@ export function LibrarySidebar(props: {
         </form>
       </section>
 
-      {deleting && (
+      {deleting && createPortal(
         <div className="confirmation" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" onKeyDown={(event) => handleDialogKey(event, dismissDelete)}>
           <h3 id="delete-title">Delete “{deleting.name}”?</h3>
           <p>Assets and original files remain unchanged.</p>
           <div className="button-row"><button ref={deleteConfirm} autoFocus onClick={() => void confirmDelete()}>Delete Collection</button><button className="button--secondary" onClick={dismissDelete}>Cancel</button></div>
-        </div>
+        </div>,
+        document.body,
       )}
     </aside>
   );
@@ -231,4 +238,17 @@ export function LibrarySidebar(props: {
 
 function messageFrom(reason: unknown): string {
   return safeErrorMessage(reason, "Library operation failed.");
+}
+
+function rootStateLabel(value: string): string {
+  const labels: Record<string, string> = {
+    ready: "Ready",
+    scanning: "Scanning",
+    needs_permission: "Needs permission",
+    missing: "Missing",
+    failed: "Scan failed",
+    cancelled: "Scan cancelled",
+  };
+  const words = value.replaceAll("_", " ").trim();
+  return labels[value] ?? (words ? words[0]!.toUpperCase() + words.slice(1) : "Unknown");
 }

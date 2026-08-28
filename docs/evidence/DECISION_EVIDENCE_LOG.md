@@ -192,3 +192,14 @@ Do not rewrite or delete entries. Corrections append a superseding entry.
 **Fresh measurement:** the focused shutdown regression, format gate and repository boundary must pass before commit; the complete five-job workflow remains the integration gate.
 
 **Decision:** successful session shutdown is now the final in-memory ownership boundary. Timed-out workers remain retained because the session and writer lock must stay alive until quiescence.
+
+
+## 2026-08-28 — Public identity, macOS runtime repair and 0.1.0 release candidate
+
+**Hypothesis:** the first public build needs one authored visual system and a real sandboxed create/open path; passing source tests or rendering an empty window cannot substitute for either.
+
+**Change:** added the editorial-brutalist workspace and dog-through-frame product mark; strengthened modal, focus, stale-Inspector and actionable-error behavior; removed the case-only macOS test collision; canonicalized harmless macOS ancestor aliases before SQLite NOFOLLOW opens; added the WebKit process-topology entitlement; and changed New Library to authorize an existing parent directory so Core can retain sibling-staged atomic publication inside the sandbox.
+
+**Fresh measurement:** repository, icon, release-metadata and legal checks passed; 33 script/native-contract, 30 workspace, 55 Linux and the complete Rust suite passed; T01 and V1 semantic diffs were zero; an arm64 ad-hoc-signed app ZIP passed bundle, architecture, entitlement, signature and legal validation. Local npm audit could not reach the registry and remains an exact-head CI gate. The installed create/open journey and all five exact-head workflow jobs remain required before merge or release.
+
+**Decision:** keep the changes only if the parent-folder runtime journey succeeds and exact-head CI is green. Publish 0.1.0 from exact `main` under the maintainer's explicit Ubuntu-CI exception; keep notarization, Garuda/KDE L1, cross-host X1 and production-architecture C1 explicitly open.

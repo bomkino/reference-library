@@ -18,8 +18,8 @@ export function AssetPreview(props: { asset: AssetSummary; source: string; initi
   }, [props.asset.assetId, props.source]);
 
   useEffect(() => {
-    close.current?.focus();
-  }, [props.onClose]);
+    close.current?.focus({ preventScroll: true });
+  }, [props.asset.assetId]);
 
   const stepZoom = (direction: -1 | 1) => {
     const viewport = stage.current;
@@ -41,16 +41,19 @@ export function AssetPreview(props: { asset: AssetSummary; source: string; initi
   }, [fit, zoom]);
 
   return (
-    <div className="preview" role="dialog" aria-modal="true" aria-label={`Preview ${props.asset.displayName}`} onKeyDown={(event) => handleDialogKey(event, props.onClose)}>
-      <div className="preview__toolbar">
-        <button ref={close} onClick={props.onClose}>Close Preview</button>
+    <div className="preview" role="dialog" aria-modal="true" aria-labelledby="preview-title" onKeyDown={(event) => handleDialogKey(event, props.onClose)}>
+      <header className="preview__header">
+        <div><p className="eyebrow">Preview</p><h2 id="preview-title">{props.asset.displayName}</h2></div>
+        <button ref={close} className="button--secondary" onClick={props.onClose}>Close</button>
+      </header>
+      <div className="preview__toolbar" aria-label="Preview zoom">
         <button aria-pressed={fit} onClick={() => setFit(true)}>Fit</button>
         <button aria-label="Zoom out" disabled={!fit && zoom === ZOOM_LEVELS[0]} onClick={() => stepZoom(-1)}>−</button>
         <output aria-live="polite">{fit ? "Fit" : `${Math.round(zoom * 100)}%`}</output>
         <button aria-label="Zoom in" disabled={!fit && zoom === ZOOM_LEVELS.at(-1)} onClick={() => stepZoom(1)}>+</button>
       </div>
       {resourceState === "failed" || unavailable ? (
-        <div className="preview__error" role="alert"><strong>Preview unavailable</strong><span>{unavailable ? `The source is ${props.asset.availability}. Its curation remains catalogued.` : "The original remains catalogued. Its source was not changed."}</span></div>
+        <div className="preview__error" role="alert"><strong>Preview unavailable</strong><span>{unavailable ? `The source is ${availabilityLabel(props.asset.availability)}. Its curation remains catalogued.` : "The original remains catalogued. Its source was not changed."}</span></div>
       ) : (
         <div ref={stage} className={fit ? "preview__stage preview__stage--fit" : "preview__stage"} aria-busy={resourceState === "loading"}>
           {resourceState === "loading" && <p className="preview__loading" role="status">Loading Preview…</p>}
@@ -59,6 +62,18 @@ export function AssetPreview(props: { asset: AssetSummary; source: string; initi
       )}
     </div>
   );
+}
+
+function availabilityLabel(value: string): string {
+  const labels: Record<string, string> = {
+    needs_permission: "waiting for permission",
+    offline_volume: "on an offline volume",
+    unreadable: "unreadable",
+    unavailable: "unavailable",
+    missing: "missing",
+    unsupported: "unsupported",
+  };
+  return labels[value] ?? "not available";
 }
 
 export function focalScrollOffset(

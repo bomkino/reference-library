@@ -315,23 +315,26 @@ final class AppModel: ObservableObject {
 
     private func createLibrary(name: String) async throws -> Any? {
         let safeName = try Self.libraryName(name)
-        let panel = NSSavePanel()
+        // The Core publishes through a sibling staging directory before the
+        // final rename. Ask Powerbox for the parent directory so that atomic
+        // creation is authorized; a save-panel grant covers only the final
+        // item and cannot safely authorize its sibling staging directory.
+        let panel = NSOpenPanel()
         panel.title = "New Reference Library"
-        panel.nameFieldStringValue = "\(safeName).pitchlibrary"
-        panel.allowedContentTypes = [Self.libraryContentType]
-        panel.allowsOtherFileTypes = false
-        panel.isExtensionHidden = false
+        panel.message = "Choose the folder where \(safeName).pitchlibrary will live."
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
         panel.canCreateDirectories = true
-        panel.prompt = "Create Library"
+        panel.prompt = "Create Here"
         guard panel.runModal() == .OK, let selectedURL = panel.url else { return nil }
         var panelScopeActive = selectedURL.startAccessingSecurityScopedResource()
         defer {
             if panelScopeActive { selectedURL.stopAccessingSecurityScopedResource() }
         }
-        guard selectedURL.pathExtension.lowercased() == "pitchlibrary" else {
-            throw ModelFailure.notLibraryPackage
-        }
-        let packageURL = Self.canonicalCreationURL(selectedURL)
+        let packageURL = Self.canonicalCreationURL(
+            selectedURL.appendingPathComponent("\(safeName).pitchlibrary", isDirectory: true)
+        )
         let previous = currentLibrarySnapshot()
         try await closeActiveLibraryForSwitch()
         let epoch = beginTransition()

@@ -1,4 +1,7 @@
-use std::{path::Path, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
@@ -33,8 +36,9 @@ const LEGACY_LEDGER_CHECKSUMS: [&[&str]; 3] = [
 
 pub fn create_database(path: &Path, manifest: &Manifest) -> Result<Connection, CoreError> {
     validate_embedded_migrations()?;
+    let path = canonical_database_path(path)?;
     let connection = Connection::open_with_flags(
-        path,
+        &path,
         OpenFlags::SQLITE_OPEN_READ_WRITE
             | OpenFlags::SQLITE_OPEN_CREATE
             | OpenFlags::SQLITE_OPEN_NOFOLLOW,
@@ -61,10 +65,11 @@ pub fn create_database(path: &Path, manifest: &Manifest) -> Result<Connection, C
 pub fn open_database(path: &Path, manifest: &Manifest) -> Result<Connection, CoreError> {
     validate_embedded_migrations()?;
     validate_database_storage(path)?;
+    let path = canonical_database_path(path)?;
     // Refuse corrupt or tampered bytes through a read-only handle before any
     // connection setting, journal transition, or migration can mutate them.
     let validation = Connection::open_with_flags(
-        path,
+        &path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NOFOLLOW,
     )?;
     validation.busy_timeout(Duration::from_secs(5))?;
@@ -72,7 +77,7 @@ pub fn open_database(path: &Path, manifest: &Manifest) -> Result<Connection, Cor
     drop(validation);
 
     let connection = Connection::open_with_flags(
-        path,
+        &path,
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NOFOLLOW,
     )?;
     let writable_version = validate_existing(&connection, manifest)?;
@@ -96,6 +101,16 @@ pub fn open_database(path: &Path, manifest: &Manifest) -> Result<Connection, Cor
         recovered.write_atomic(package)?;
     }
     Ok(connection)
+}
+
+fn canonical_database_path(path: &Path) -> Result<PathBuf, CoreError> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| CoreError::InvalidManifest("database path has no package parent".into()))?;
+    let name = path
+        .file_name()
+        .ok_or_else(|| CoreError::InvalidManifest("database path has no file name".into()))?;
+    Ok(parent.canonicalize()?.join(name))
 }
 
 fn validate_embedded_migrations() -> Result<(), CoreError> {

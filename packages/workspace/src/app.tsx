@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BRIDGE_VERSION,
   DEFAULT_ASSET_QUERY,
@@ -17,11 +17,13 @@ import { AssetPreview } from "./asset-preview";
 import { ContactSheet } from "./contact-sheet";
 import { LibrarySidebar } from "./library-sidebar";
 import { QueryToolbar } from "./query-toolbar";
+import { ProductMark } from "./product-mark";
 import { refreshSelectedAsset } from "./selection";
 import { assetDraftErrors, useAssetEditor } from "./use-asset-editor";
 import { useAssetPager } from "./use-asset-pager";
 import { handleDialogKey } from "./dialog-keys";
 import { safeErrorMessage } from "./safe-errors";
+import { useModalIsolation } from "./modal-isolation";
 import {
   WorkspaceEventInvalidator,
   applyInvalidationBatch,
@@ -113,8 +115,10 @@ function LibraryWorkspace({ bridge }: { bridge: ReferenceWorkspaceBridge }) {
   if (!session) {
     return (
       <main className="document-empty">
-        <section className="document-empty__card" aria-busy={busy}>
-          <p className="eyebrow">Reference Library</p><h1>Your project’s visual memory.</h1><p>Local. Manual. One Library per project.</p>
+        <section className="document-empty__card" aria-busy={busy} inert={Boolean(openIntent)} aria-hidden={Boolean(openIntent)}>
+          <div className="document-empty__mark"><ProductMark variant="hero" /></div>
+          <div className="document-empty__content">
+          <p className="eyebrow">Reference Library</p><h1>Your project’s visual memory.</h1><p className="document-empty__lede">Local. Manual. One Library per project.</p>
           <div className="button-row">
             <button disabled={busy || needsRestart} onClick={() => void openSession("create")}>New Library</button>
             <button className="button--secondary" disabled={busy || needsRestart} onClick={() => void openSession("open")}>Open Library</button>
@@ -122,6 +126,7 @@ function LibraryWorkspace({ bridge }: { bridge: ReferenceWorkspaceBridge }) {
           </div>
           {busy && <p role="status">Waiting for destination…</p>}
           {shellError && <p className="error-state" role="alert">{shellError}</p>}
+          </div>
         </section>
         {openIntent && <SimpleIntentDialog displayName={openIntent.displayName} onOpen={() => void resolveCleanIntent("discard")} onCancel={() => void resolveCleanIntent("cancel")} />}
       </main>
@@ -174,7 +179,10 @@ function OpenWorkspace(props: {
   const [collections, setCollections] = useState<CollectionSummary[]>([]);
   const [roots, setRoots] = useState<RootSummary[]>([]);
   const [pending, setPending] = useState<PendingTransition | null>(null);
+  const [sidebarModalOpen, setSidebarModalOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const workspace = useRef<HTMLElement>(null);
+  useModalIsolation(workspace, Boolean(preview || pending || sidebarModalOpen));
   const pager = useAssetPager(
     props.bridge,
     props.session.sessionId,
@@ -287,9 +295,12 @@ function OpenWorkspace(props: {
   });
 
   return (
-    <main className="workspace-shell">
+    <main ref={workspace} className="workspace-shell">
       <header className="topbar">
-        <div><p className="eyebrow">Editorial Contact Sheet</p><h1>{props.session.name}</h1></div>
+        <div className="topbar__identity">
+          <ProductMark variant="compact" />
+          <div className="topbar__title"><p className="eyebrow">Editorial Contact Sheet</p><h1>{props.session.name}</h1></div>
+        </div>
         <div className="topbar__controls">
           <label>Interface<select value={interfaceScale} onChange={(event) => { const value = Number(event.target.value) as InterfaceScale; setInterfaceScale(value); writePreferences({ interfaceScale: value }); }}>{INTERFACE_SCALES.map((scale) => <option key={scale} value={scale}>{Math.round(scale * 100)}%</option>)}</select></label>
           <label>Thumbnail density<input aria-label="Thumbnail density" max="340" min="140" step="20" type="range" value={thumbnailSize} onChange={(event) => { const value = Number(event.target.value); setThumbnailSize(value); writePreferences({ thumbnailDensity: value }); }} /></label>
@@ -315,9 +326,10 @@ function OpenWorkspace(props: {
         onCollectionInventory={setCollections}
         onRootInventory={setRoots}
         onSession={props.onSession}
+        onModalChange={setSidebarModalOpen}
       />
       <section className="workspace-main" aria-label="Assets">
-        {props.shellError && <div className="error-banner" role="alert"><span>{props.shellError}</span>{props.needsRestart && <button onClick={restartCore}>Restart Core</button>}</div>}
+        {props.shellError && <div className="error-banner" role="alert"><span>{props.shellError}</span><div className="compact-actions">{props.needsRestart ? <button onClick={restartCore}>Restart Core</button> : <button className="button--quiet" onClick={() => props.setShellError(null)}>Dismiss</button>}</div></div>}
         {pager.error ? <WorkspaceState kind="error" title="Library query failed" detail={pager.error} action="Retry" onAction={pager.refresh} />
           : pager.loading && pager.total === 0 ? <WorkspaceState kind="status" title="Opening contact sheet" detail="Reading the first bounded Asset window…" />
           : pager.total === 0 ? <WorkspaceState

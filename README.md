@@ -8,11 +8,31 @@ One project gets one `.pitchlibrary` package. Apple-Silicon macOS is primary. Ga
 
 ## Status
 
-V1 is **source-ready and canonical on `main`**. The five-job CI workflow verifies repository boundaries, Rust protocol/Core behavior, shared workspace and Linux source, extracted Linux packages under X11 and headless Wayland, and the ad-hoc-signed Apple-Silicon app ZIP.
+Version 0.1.0 is the first public, GitHub-hosted release. The five-job CI workflow verifies repository boundaries, Rust protocol/Core behavior, the shared workspace and Linux source, extracted Linux packages under X11 and headless Wayland, and the ad-hoc-signed Apple-Silicon app ZIP.
 
-Source-ready is not target-integrated. Representative Apple Silicon and Jenai's Garuda system still need the M1, L1, X1 and C1 journeys. No tag or public GitHub release exists.
+Released is not fully target-integrated. Garuda/KDE hardware, the cross-host X1 journey and production-architecture C1 remain open evidence gates. The release does not claim those states.
 
 Exact historical evidence lives in the [V1 main-integration receipt](docs/evidence/V1_MAIN_INTEGRATION_RECEIPT.md) and [V1 source-ready receipt](docs/evidence/V1_SOURCE_READY_RECEIPT.md). The latest successful `main` workflow is the current source evidence; CI artifacts are not releases.
+
+## Download and install
+
+Download the current assets from [GitHub Releases](https://github.com/bomkino/reference-library/releases/latest). Verify the downloaded file against `SHA256SUMS` from the same release before opening it.
+
+### Apple-Silicon macOS
+
+1. Download `reference-library-0.1.0-macos-arm64.app.zip` and expand it.
+2. Move `Reference Library.app` to `/Applications`.
+3. On first launch, Control-click the app in Finder and choose **Open**. If macOS still blocks it, use **System Settings → Privacy & Security → Open Anyway**.
+
+The app is ad-hoc signed but not notarized because this project does not use a paid Apple Developer membership. Do not remove quarantine attributes globally; approve this exact app through macOS instead.
+
+### Linux x86_64
+
+The release includes AppImage, pacman and tar distributions produced by exact-`main` Ubuntu CI. Ubuntu package/runtime rehearsal is verified; Garuda/KDE hardware integration is not yet claimed.
+
+- AppImage: make `reference-library-0.1.0-x86_64.AppImage` executable, then run it.
+- Arch/Garuda: install `reference-library-0.1.0-x64.pacman` with `sudo pacman -U`.
+- Portable fallback: expand `reference-library-0.1.0-x64.tar.gz` and run the bundled executable.
 
 ## V1 scope
 
