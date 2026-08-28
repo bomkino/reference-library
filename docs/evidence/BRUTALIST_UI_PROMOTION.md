@@ -1,0 +1,1 @@
+Promotion is permitted only after exact-branch CI succeeds.
