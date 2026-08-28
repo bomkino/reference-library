@@ -27,6 +27,40 @@ pub const MAX_DECODE_BYTES: u64 = 256 * 1024 * 1024;
 pub const MAX_DECODE_PIXELS: u64 = 64 * 1024 * 1024;
 pub const MAX_GRID_EDGE: u32 = 512;
 pub const MAX_GRID_BYTES: u64 = 8 * 1024 * 1024;
+
+pub fn grid_mime_supported(mime: &str) -> bool {
+    matches!(mime, "image/png" | "image/jpeg" | "image/webp")
+}
+
+pub fn preview_mime_supported(mime: &str) -> bool {
+    matches!(
+        mime,
+        "image/png"
+            | "image/jpeg"
+            | "image/webp"
+            | "image/gif"
+            | "image/svg+xml"
+            | "image/bmp"
+            | "image/avif"
+            | "image/x-icon"
+            | "application/pdf"
+            | "video/mp4"
+            | "video/quicktime"
+            | "video/webm"
+            | "audio/mpeg"
+            | "audio/wav"
+            | "audio/ogg"
+            | "audio/flac"
+            | "audio/mp4"
+            | "audio/aiff"
+            | "font/otf"
+            | "font/ttf"
+            | "font/woff"
+            | "font/woff2"
+            | "text/plain"
+            | "text/markdown"
+    )
+}
 const DEADLINE: Duration = Duration::from_secs(30);
 const MAX_INTEGRITY_BYTES: u64 = 4 * 1024;
 
@@ -698,6 +732,27 @@ fn extension_for_mime(mime: &str) -> Result<&'static str, CoreError> {
         "image/png" => Ok("png"),
         "image/jpeg" => Ok("jpg"),
         "image/webp" => Ok("webp"),
+        "image/gif" => Ok("gif"),
+        "image/svg+xml" => Ok("svg"),
+        "image/bmp" => Ok("bmp"),
+        "image/avif" => Ok("avif"),
+        "image/x-icon" => Ok("ico"),
+        "application/pdf" => Ok("pdf"),
+        "video/mp4" => Ok("mp4"),
+        "video/quicktime" => Ok("mov"),
+        "video/webm" => Ok("webm"),
+        "audio/mpeg" => Ok("mp3"),
+        "audio/wav" => Ok("wav"),
+        "audio/ogg" => Ok("ogg"),
+        "audio/flac" => Ok("flac"),
+        "audio/mp4" => Ok("m4a"),
+        "audio/aiff" => Ok("aiff"),
+        "font/otf" => Ok("otf"),
+        "font/ttf" => Ok("ttf"),
+        "font/woff" => Ok("woff"),
+        "font/woff2" => Ok("woff2"),
+        "text/plain" => Ok("txt"),
+        "text/markdown" => Ok("md"),
         _ => Err(CoreError::UnsupportedPreview),
     }
 }

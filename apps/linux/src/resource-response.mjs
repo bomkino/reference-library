@@ -7,13 +7,19 @@ const MAXIMUM_RESOURCE_BYTES = 512 * 1024 * 1024;
 const STREAM_CHUNK_BYTES = 64 * 1024;
 const MAXIMUM_OPEN_RESOURCE_HANDLES = 32;
 const RESOURCE_IDLE_TIMEOUT_MS = 30_000;
-const MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+const MIME_TYPES = new Set([
+  "image/png", "image/jpeg", "image/webp", "image/gif", "image/svg+xml", "image/bmp",
+  "image/avif", "image/x-icon", "application/pdf", "video/mp4", "video/quicktime",
+  "video/webm", "audio/mpeg", "audio/wav", "audio/ogg", "audio/flac", "audio/mp4",
+  "audio/aiff", "font/otf", "font/ttf", "font/woff", "font/woff2", "text/plain",
+  "text/markdown",
+]);
 let activeResourceHandles = 0;
 
 export async function authorizedResourceResponse(
   descriptor,
   {
-    signal, onHandleValidated, onHandleClosed,
+    signal, onHandleValidated, onHandleClosed, rangeHeader = null,
     cacheRoot = privateResourceCacheRoot(), idleTimeoutMs = RESOURCE_IDLE_TIMEOUT_MS,
   } = {},
 ) {
@@ -62,7 +68,9 @@ export async function authorizedResourceResponse(
     throw error?.name === "AbortError" || error?.resourceSafe ? error : safeFailure("ResourceChanged");
   }
 
-  let position = 0;
+  const range = parseByteRange(rangeHeader, contentLength);
+  let position = range.start;
+  const endExclusive = range.endExclusive;
   let controller;
   let idleTimer;
   const armIdleTimeout = () => {
@@ -89,8 +97,8 @@ export async function authorizedResourceResponse(
       armIdleTimeout();
       if (closed) return;
       if (signal?.aborted) { await finish(); value.error(abortError()); return; }
-      if (position === contentLength) { await finish(); value.close(); return; }
-      const length = Math.min(STREAM_CHUNK_BYTES, contentLength - position);
+      if (position === endExclusive) { await finish(); value.close(); return; }
+      const length = Math.min(STREAM_CHUNK_BYTES, endExclusive - position);
       const buffer = Buffer.allocUnsafe(length);
       try {
         const { bytesRead } = await handle.read(buffer, 0, length, position);
@@ -105,14 +113,43 @@ export async function authorizedResourceResponse(
     async cancel() { await finish(); },
   });
 
-  return new Response(body, {
-    headers: {
-      "Content-Type": mimeType,
-      "Content-Length": String(contentLength),
-      "Cache-Control": "private, no-store",
-      "X-Content-Type-Options": "nosniff",
-    },
-  });
+  const headers = {
+    "Content-Type": mimeType,
+    "Content-Length": String(endExclusive - range.start),
+    "Accept-Ranges": "bytes",
+    "Cache-Control": "private, no-store",
+    "X-Content-Type-Options": "nosniff",
+  };
+  if (range.partial) headers["Content-Range"] = `bytes ${range.start}-${endExclusive - 1}/${contentLength}`;
+  return new Response(body, { status: range.partial ? 206 : 200, headers });
+}
+
+function parseByteRange(header, length) {
+  if (header === null || header === undefined || header === "") {
+    return { start: 0, endExclusive: length, partial: false };
+  }
+  if (typeof header !== "string" || !header.startsWith("bytes=") || header.includes(",")) {
+    throw safeFailure("RangeNotSatisfiable");
+  }
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!match || length === 0) throw safeFailure("RangeNotSatisfiable");
+  const [, rawStart, rawEnd] = match;
+  let start;
+  let endExclusive;
+  if (rawStart) {
+    start = Number(rawStart);
+    const end = rawEnd ? Number(rawEnd) : length - 1;
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || start >= length) {
+      throw safeFailure("RangeNotSatisfiable");
+    }
+    endExclusive = Math.min(length, end + 1);
+  } else {
+    const suffix = Number(rawEnd);
+    if (!Number.isSafeInteger(suffix) || suffix <= 0) throw safeFailure("RangeNotSatisfiable");
+    start = Math.max(0, length - suffix);
+    endExclusive = length;
+  }
+  return { start, endExclusive, partial: true };
 }
 
 async function assertPrivateCachePath(nativePath, cacheRoot) {

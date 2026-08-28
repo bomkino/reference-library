@@ -7,7 +7,20 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
         let registration: SchemeTaskRegistration
     }
 
+    private struct ByteRange {
+        let start: Int
+        let endExclusive: Int
+        let partial: Bool
+    }
+
     private static let maximumAssetTasks = 32
+    private static let assetMimeTypes: Set<String> = [
+        "image/png", "image/jpeg", "image/webp", "image/gif", "image/svg+xml",
+        "image/bmp", "image/avif", "image/x-icon", "application/pdf", "video/mp4",
+        "video/quicktime", "video/webm", "audio/mpeg", "audio/wav", "audio/ogg",
+        "audio/flac", "audio/mp4", "audio/aiff", "font/otf", "font/ttf",
+        "font/woff", "font/woff2", "text/plain", "text/markdown"
+    ]
     private weak var model: AppModel?
     private let taskLock = NSLock()
     private var assetTasks: [ObjectIdentifier: AssetTaskEntry] = [:]
@@ -60,21 +73,30 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
                 )
                 guard descriptor.contentLength >= 0,
                       descriptor.contentLength <= byteLimit,
-                      ["image/png", "image/jpeg", "image/webp"].contains(descriptor.mimeType) else {
+                      Self.assetMimeTypes.contains(descriptor.mimeType) else {
                     throw SchemeFailure.resourceTooLarge
                 }
+                let range = try Self.byteRange(
+                    urlSchemeTask.request.value(forHTTPHeaderField: "Range"),
+                    contentLength: descriptor.contentLength
+                )
                 try Task.checkCancellation()
                 let taskBox = SchemeTaskBox(urlSchemeTask)
+                var headers = [
+                    "Content-Type": descriptor.mimeType,
+                    "Content-Length": String(range.endExclusive - range.start),
+                    "Accept-Ranges": "bytes",
+                    "Cache-Control": "private, no-store",
+                    "X-Content-Type-Options": "nosniff"
+                ]
+                if range.partial {
+                    headers["Content-Range"] = "bytes \(range.start)-\(range.endExclusive - 1)/\(descriptor.contentLength)"
+                }
                 let response = HTTPURLResponse(
                     url: url,
-                    statusCode: 200,
+                    statusCode: range.partial ? 206 : 200,
                     httpVersion: "HTTP/1.1",
-                    headerFields: [
-                        "Content-Type": descriptor.mimeType,
-                        "Content-Length": String(descriptor.contentLength),
-                        "Cache-Control": "private, no-store",
-                        "X-Content-Type-Options": "nosniff"
-                    ]
+                    headerFields: headers
                 )!
                 guard registration.markStreaming() else { throw CancellationError() }
                 let stream = Task.detached(priority: .userInitiated) {
@@ -82,6 +104,8 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
                         path: descriptor.nativePath,
                         expectedSize: descriptor.contentLength,
                         byteLimit: byteLimit,
+                        startOffset: range.start,
+                        endOffsetExclusive: range.endExclusive,
                         afterValidation: {
                             try Task.checkCancellation()
                             try await MainActor.run {
@@ -108,7 +132,13 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
                 try Task.checkCancellation()
                 urlSchemeTask.didFinish()
             } catch {
-                if !Task.isCancelled { urlSchemeTask.didFailWithError(SchemeFailure.denied) }
+                if !Task.isCancelled {
+                    if case SchemeFailure.invalidRange = error {
+                        self.fail(urlSchemeTask, status: 416)
+                    } else {
+                        urlSchemeTask.didFailWithError(SchemeFailure.denied)
+                    }
+                }
             }
             removeAssetTask(identifier)
         }
@@ -188,13 +218,35 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
                 mimeType: Self.mimeType(for: candidate.pathExtension),
                 headers: [
                     "Cache-Control": "no-store",
-                    "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src pitchdog-asset: data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+                    "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src pitchdog-asset: data:; font-src 'self' pitchdog-asset:; media-src pitchdog-asset:; frame-src pitchdog-asset:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
                     "X-Content-Type-Options": "nosniff"
                 ]
             )
         } catch {
             fail(task, status: 404)
         }
+    }
+
+    private static func byteRange(_ header: String?, contentLength: Int) throws -> ByteRange {
+        guard let header, !header.isEmpty else {
+            return ByteRange(start: 0, endExclusive: contentLength, partial: false)
+        }
+        guard header.hasPrefix("bytes="), !header.contains(","), contentLength > 0 else {
+            throw SchemeFailure.invalidRange
+        }
+        let value = String(header.dropFirst(6))
+        let parts = value.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2 else { throw SchemeFailure.invalidRange }
+        if !parts[0].isEmpty {
+            guard let start = Int(parts[0]), start >= 0, start < contentLength else {
+                throw SchemeFailure.invalidRange
+            }
+            let end = parts[1].isEmpty ? contentLength - 1 : Int(parts[1])
+            guard let end, end >= start else { throw SchemeFailure.invalidRange }
+            return ByteRange(start: start, endExclusive: min(contentLength, end + 1), partial: true)
+        }
+        guard let suffix = Int(parts[1]), suffix > 0 else { throw SchemeFailure.invalidRange }
+        return ByteRange(start: max(0, contentLength - suffix), endExclusive: contentLength, partial: true)
     }
 
     private func respond(
@@ -258,6 +310,7 @@ final class WorkspaceSchemeHandler: NSObject, WKURLSchemeHandler {
         case denied
         case notFound
         case resourceTooLarge
+        case invalidRange
         case sourceChanged
     }
 }

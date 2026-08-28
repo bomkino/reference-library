@@ -1,11 +1,15 @@
+import { useState, type KeyboardEvent } from "react";
 import {
   MAX_ASSET_NOTE_SCALARS,
   MAX_ASSET_TITLE_SCALARS,
+  MAX_ASSET_TOKENS,
+  MAX_ASSET_TOKEN_SCALARS,
   type AssetDetail,
   type CollectionSummary,
   type ReferenceWorkspaceBridge,
 } from "@pitchdog/reference-bridge";
 import type { AssetDraft } from "./use-asset-editor";
+import { normalizeTokens } from "./use-asset-editor";
 import { safeRelativeDisplayPath, textLimitError } from "./text-boundaries";
 import { safeErrorMessage } from "./safe-errors";
 
@@ -23,64 +27,116 @@ export function AssetInspector(props: {
   onSave(): Promise<boolean>;
   onDiscard(): void;
   onReload(): Promise<void>;
+  onPreview(detail: AssetDetail): void;
   onError(message: string): void;
 }) {
+  const [actionStatus, setActionStatus] = useState<string | null>(null);
   const titleError = props.draft ? textLimitError(props.draft.title, MAX_ASSET_TITLE_SCALARS, "Title") : null;
   const noteError = props.draft ? textLimitError(props.draft.note, MAX_ASSET_NOTE_SCALARS, "Note") : null;
-  const cannotSave = Boolean(titleError || noteError || props.saving);
+  const tokenErrors = props.draft ? tokenFieldErrors(props.draft) : { tags: null, usedIn: null };
+  const cannotSave = Boolean(titleError || noteError || tokenErrors.tags || tokenErrors.usedIn || props.saving);
 
   if (props.loading) return <aside className="inspector" aria-label="Inspector" aria-busy="true"><h2>Inspector</h2><p role="status">Loading Asset…</p></aside>;
-  if (!props.detail || !props.draft) {
-    return <aside className="inspector" aria-label="Inspector"><h2>Inspector</h2>{props.error ? <><p className="field-error" role="alert">{props.error}</p><button className="button--secondary" onClick={() => void props.onReload()}>Retry Asset</button></> : <p className="muted">Select an Asset. Inspector geometry stays put.</p>}</aside>;
-  }
+  if (!props.detail || !props.draft) return <aside className="inspector" aria-label="Inspector"><h2>Inspector</h2><p className="muted">Select an Asset. Inspector geometry stays put.</p></aside>;
 
   const detail = props.detail;
   const draft = props.draft;
+  const sourceAvailable = detail.availability === "present" || detail.availability === "unsupported";
+  const nativeAction = async (action: "open" | "reveal" | "copy") => {
+    setActionStatus(null);
+    try {
+      if (action === "open") await props.bridge.openLocation(props.sessionId, detail.locationId);
+      else if (action === "reveal") await props.bridge.revealLocation(props.sessionId, detail.locationId);
+      else await props.bridge.copyLocationPath(props.sessionId, detail.locationId);
+      if (action === "copy") setActionStatus("Path copied.");
+    } catch (reason) {
+      props.onError(safeErrorMessage(reason, "Asset operation failed."));
+    }
+  };
+
   return (
     <aside className="inspector" aria-label="Inspector">
-      <div className="section-heading"><h2>Inspector</h2>{props.dirty && <span className="draft-mark" role="status">Edited</span>}</div>
-      <label>
-        Title
-        <input
-          aria-invalid={Boolean(titleError)}
-          aria-describedby={titleError ? "title-limit-error" : undefined}
-          value={draft.title}
-          onChange={(event) => props.onDraft({ ...draft, title: event.target.value })}
-        />
-      </label>
-      {titleError && <p className="field-error" id="title-limit-error" role="alert">{titleError}</p>}
-      <label>
-        Review
-        <select value={draft.reviewState} onChange={(event) => props.onDraft({ ...draft, reviewState: event.target.value as AssetDraft["reviewState"] })}>
-          <option value="unreviewed">Unreviewed</option>
-          <option value="keep">Keep</option>
-          <option value="maybe">Maybe</option>
-          <option value="reject">Reject</option>
-        </select>
-      </label>
-      <label>
-        Note
-        <textarea
-          aria-invalid={Boolean(noteError)}
-          aria-describedby={noteError ? "note-limit-error" : undefined}
-          rows={7}
-          value={draft.note}
-          onChange={(event) => props.onDraft({ ...draft, note: event.target.value })}
-        />
-      </label>
-      {noteError && <p className="field-error" id="note-limit-error" role="alert">{noteError}</p>}
-      <div className="button-row inspector__save-row">
-        <button disabled={!props.dirty || cannotSave} onClick={() => void props.onSave()}>Save</button>
-        <button className="button--secondary" disabled={!props.dirty || props.saving} onClick={props.onDiscard}>Discard</button>
+      <div className="section-heading">
+        <div><p className="eyebrow">Selected Asset</p><h2>{detail.customTitle ?? detail.originalDisplayName}</h2></div>
+        {props.dirty && <span className="draft-mark" role="status">Edited</span>}
       </div>
-      {props.error && <p className="field-error" role="alert">{props.error}</p>}
-      <dl>
-        <dt>Original</dt><dd>{detail.originalDisplayName}</dd>
-        <dt>Source</dt><dd className="relative-path">{safeRelativeDisplayPath(detail.relativeDisplayPath)}</dd>
-        <dt>Availability</dt><dd>{availabilityLabel(detail.availability)}</dd>
-        <dt>Media</dt><dd>{tokenLabel(detail.mediaFamily)}</dd>
-      </dl>
-      <button className="button--secondary" onClick={() => void props.bridge.revealLocation(props.sessionId, detail.locationId).catch((reason) => props.onError(messageFrom(reason)))}>Reveal Source</button>
+
+      <div className="inspector__source-actions">
+        <button disabled={!sourceAvailable} onClick={() => void nativeAction("open")}>Open</button>
+        <button className="button--secondary" disabled={!sourceAvailable} onClick={() => void nativeAction("reveal")}>Reveal</button>
+        <button className="button--secondary" disabled={!sourceAvailable} onClick={() => void nativeAction("copy")}>Copy Path</button>
+        {detail.previewKind !== "none" && detail.availability === "present" && (
+          <button className="button--secondary" onClick={() => props.onPreview(detail)}>Preview</button>
+        )}
+      </div>
+      {actionStatus && <p className="inline-status" role="status">{actionStatus}</p>}
+
+      <section className="inspector__section">
+        <label>
+          Title
+          <input
+            aria-invalid={Boolean(titleError)}
+            aria-describedby={titleError ? "title-limit-error" : undefined}
+            value={draft.title}
+            onChange={(event) => props.onDraft({ ...draft, title: event.target.value })}
+          />
+        </label>
+        {titleError && <p className="field-error" id="title-limit-error" role="alert">{titleError}</p>}
+        <label>
+          Review
+          <select value={draft.reviewState} onChange={(event) => props.onDraft({ ...draft, reviewState: event.target.value as AssetDraft["reviewState"] })}>
+            <option value="unreviewed">Unreviewed</option>
+            <option value="keep">Keep</option>
+            <option value="maybe">Maybe</option>
+            <option value="reject">Reject</option>
+          </select>
+        </label>
+        <label>
+          Note
+          <textarea
+            aria-invalid={Boolean(noteError)}
+            aria-describedby={noteError ? "note-limit-error" : undefined}
+            rows={6}
+            value={draft.note}
+            onChange={(event) => props.onDraft({ ...draft, note: event.target.value })}
+          />
+        </label>
+        {noteError && <p className="field-error" id="note-limit-error" role="alert">{noteError}</p>}
+        <TokenEditor
+          label="Tags"
+          placeholder="Add a tag"
+          values={draft.tags}
+          error={tokenErrors.tags}
+          onChange={(tags) => props.onDraft({ ...draft, tags })}
+        />
+        <TokenEditor
+          label="Used in"
+          placeholder="Deck, slide or version"
+          values={draft.usedIn}
+          error={tokenErrors.usedIn}
+          onChange={(usedIn) => props.onDraft({ ...draft, usedIn })}
+        />
+        <div className="button-row inspector__save-row">
+          <button disabled={!props.dirty || cannotSave} onClick={() => void props.onSave()}>Save Changes</button>
+          <button className="button--secondary" disabled={!props.dirty || props.saving} onClick={props.onDiscard}>Discard</button>
+        </div>
+        {props.error && <p className="field-error" role="alert">{props.error}</p>}
+      </section>
+
+      <section className="inspector__section inspector__facts" aria-label="Asset facts">
+        <h3>File</h3>
+        <dl>
+          <dt>Original</dt><dd>{detail.originalDisplayName}</dd>
+          <dt>Category</dt><dd>{detail.category}</dd>
+          <dt>Type</dt><dd>{detail.extension ? `.${detail.extension}` : detail.mediaFamily}</dd>
+          <dt>Media</dt><dd>{detail.mediaFamily}</dd>
+          <dt>MIME</dt><dd>{detail.mimeType}</dd>
+          <dt>Size</dt><dd>{formatBytes(detail.byteSize)}</dd>
+          <dt>Availability</dt><dd>{detail.availability}</dd>
+          <dt>Source</dt><dd className="relative-path">{safeRelativeDisplayPath(detail.relativeDisplayPath)}</dd>
+        </dl>
+      </section>
+
       <fieldset className="membership" disabled={props.dirty || props.saving}>
         <legend>Collections</legend>
         {props.collections.length === 0 ? <p className="muted">No Collections yet.</p> : props.collections.map((collection) => {
@@ -89,7 +145,7 @@ export function AssetInspector(props: {
             try {
               await props.bridge.setCollectionMembership({ sessionId: props.sessionId, collectionId: collection.collectionId, assetIds: [detail.assetId], member: event.target.checked });
               await props.onReload();
-            } catch (reason) { props.onError(messageFrom(reason)); }
+            } catch (reason) { props.onError(safeErrorMessage(reason, "Collection membership failed.")); }
           }} />{collection.name}</label>;
         })}
       </fieldset>
@@ -97,24 +153,62 @@ export function AssetInspector(props: {
   );
 }
 
-function messageFrom(reason: unknown): string {
-  return safeErrorMessage(reason, "Asset operation failed.");
-}
-
-function availabilityLabel(value: string): string {
-  const labels: Record<string, string> = {
-    present: "Available",
-    needs_permission: "Needs permission",
-    offline_volume: "Volume offline",
-    unreadable: "Unreadable",
-    unavailable: "Unavailable",
-    missing: "Missing",
-    unsupported: "Unsupported",
+function TokenEditor(props: {
+  label: string;
+  placeholder: string;
+  values: string[];
+  error: string | null;
+  onChange(values: string[]): void;
+}) {
+  const [input, setInput] = useState("");
+  const commit = () => {
+    const additions = input.split(/[,\n]/).map((value) => value.trim()).filter(Boolean);
+    if (additions.length === 0) return;
+    props.onChange(normalizeTokens([...props.values, ...additions]));
+    setInput("");
   };
-  return labels[value] ?? tokenLabel(value);
+  const handleKey = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter" || event.key === ",") {
+      event.preventDefault();
+      commit();
+    }
+    if (event.key === "Backspace" && !input && props.values.length > 0) {
+      props.onChange(props.values.slice(0, -1));
+    }
+  };
+  return (
+    <div className="token-field">
+      <span className="token-field__label">{props.label}</span>
+      <div className="token-field__box" data-invalid={Boolean(props.error) || undefined}>
+        {props.values.map((value) => (
+          <span className="token" key={value}>{value}<button aria-label={`Remove ${value}`} type="button" onClick={() => props.onChange(props.values.filter((item) => item !== value))}>×</button></span>
+        ))}
+        <input
+          aria-label={props.label}
+          placeholder={props.values.length === 0 ? props.placeholder : "Add another"}
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          onBlur={commit}
+          onKeyDown={handleKey}
+        />
+      </div>
+      {props.error && <p className="field-error" role="alert">{props.error}</p>}
+    </div>
+  );
 }
 
-function tokenLabel(value: string): string {
-  const words = value.replaceAll("_", " ").trim();
-  return words ? words[0]!.toUpperCase() + words.slice(1) : "Unknown";
+function tokenFieldErrors(draft: AssetDraft): { tags: string | null; usedIn: string | null } {
+  const validate = (values: string[], label: string) => {
+    if (normalizeTokens(values).length > MAX_ASSET_TOKENS) return `${label} supports up to ${MAX_ASSET_TOKENS} entries.`;
+    if (values.some((value) => [...value].length > MAX_ASSET_TOKEN_SCALARS)) return `${label} entries must be ${MAX_ASSET_TOKEN_SCALARS} characters or fewer.`;
+    return null;
+  };
+  return { tags: validate(draft.tags, "Tags"), usedIn: validate(draft.usedIn, "Used in") };
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1_000) return `${bytes} B`;
+  if (bytes < 1_000_000) return `${(bytes / 1_000).toFixed(1)} KB`;
+  if (bytes < 1_000_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
+  return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
 }

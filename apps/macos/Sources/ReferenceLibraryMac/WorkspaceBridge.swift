@@ -38,7 +38,7 @@ final class WorkspaceBridge: NSObject, WKScriptMessageHandlerWithReply {
         return value;
       };
       const bridge = Object.freeze({
-        version: 3,
+        version: 4,
         createLibrary: (name) => call('createLibrary', {name}),
         openLibrary: () => call('openLibrary'),
         completeOpenIntent: (intentId, decision) => call('completeOpenIntent', {
@@ -94,6 +94,12 @@ final class WorkspaceBridge: NSObject, WKScriptMessageHandlerWithReply {
           return `pitchdog-asset://${sessionId}/${assetId}/${profile}`;
         },
         revealLocation: (sessionId, locationId) => call('revealLocation', {
+          sessionId: opaque(sessionId, 'sessionId'), locationId: opaque(locationId, 'locationId')
+        }),
+        openLocation: (sessionId, locationId) => call('openLocation', {
+          sessionId: opaque(sessionId, 'sessionId'), locationId: opaque(locationId, 'locationId')
+        }),
+        copyLocationPath: (sessionId, locationId) => call('copyLocationPath', {
           sessionId: opaque(sessionId, 'sessionId'), locationId: opaque(locationId, 'locationId')
         }),
         readPreferences: () => call('readPreferences'),

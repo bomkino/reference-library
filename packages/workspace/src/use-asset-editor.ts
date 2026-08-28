@@ -2,11 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MAX_ASSET_NOTE_SCALARS,
   MAX_ASSET_TITLE_SCALARS,
+  MAX_ASSET_TOKENS,
+  MAX_ASSET_TOKEN_SCALARS,
   unicodeScalarLength,
   type AssetDetail,
   type AssetSummary,
   type ReferenceWorkspaceBridge,
   type ReviewState,
+  type StringListPatch,
   type TextPatch,
 } from "@pitchdog/reference-bridge";
 import { safeErrorMessage } from "./safe-errors";
@@ -16,6 +19,8 @@ export interface AssetDraft {
   title: string;
   note: string;
   reviewState: ReviewState;
+  tags: string[];
+  usedIn: string[];
 }
 
 export function useAssetEditor(
@@ -82,10 +87,7 @@ export function useAssetEditor(
       handledInvalidation.current = invalidation.revision;
       return;
     }
-    if (
-      invalidation.assetIds !== null &&
-      !invalidation.assetIds.includes(selected.assetId)
-    ) {
+    if (invalidation.assetIds !== null && !invalidation.assetIds.includes(selected.assetId)) {
       handledInvalidation.current = invalidation.revision;
       return;
     }
@@ -113,6 +115,8 @@ export function useAssetEditor(
           customTitle: textPatch(detail.customTitle, draft.title, true),
           note: textPatch(detail.note, draft.note, false),
           reviewState: draft.reviewState,
+          tags: stringListPatch(detail.tags, draft.tags),
+          usedIn: stringListPatch(detail.usedIn, draft.usedIn),
         },
       });
       setDetail(result.asset);
@@ -132,21 +136,52 @@ export function useAssetEditor(
 }
 
 function toDraft(detail: AssetDetail): AssetDraft {
-  return { title: detail.customTitle ?? "", note: detail.note ?? "", reviewState: detail.reviewState };
+  return {
+    title: detail.customTitle ?? "",
+    note: detail.note ?? "",
+    reviewState: detail.reviewState,
+    tags: [...detail.tags],
+    usedIn: [...detail.usedIn],
+  };
 }
 
 function isDirty(detail: AssetDetail | null, draft: AssetDraft | null): boolean {
   return Boolean(detail && draft && (
     (detail.customTitle ?? "") !== draft.title ||
     (detail.note ?? "") !== draft.note ||
-    detail.reviewState !== draft.reviewState
+    detail.reviewState !== draft.reviewState ||
+    !sameList(detail.tags, draft.tags) ||
+    !sameList(detail.usedIn, draft.usedIn)
   ));
+}
+
+function sameList(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 export function textPatch(current: string | null, draft: string, trimBlank: boolean): TextPatch {
   if ((current ?? "") === draft) return { action: "unchanged" };
-  if ((trimBlank ? draft.trim() : draft.trim()).length === 0) return { action: "clear" };
+  if (draft.trim().length === 0) return { action: "clear" };
   return { action: "set", value: trimBlank ? draft.trim() : draft };
+}
+
+export function stringListPatch(current: string[], draft: string[]): StringListPatch {
+  const normalized = normalizeTokens(draft);
+  if (sameList(current, normalized)) return { action: "unchanged" };
+  return { action: "set", value: normalized };
+}
+
+export function normalizeTokens(values: string[]): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const raw of values) {
+    const value = raw.trim().replace(/\s+/g, " ");
+    const key = value.toLocaleLowerCase();
+    if (!value || seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(value);
+  }
+  return normalized;
 }
 
 export function assetDraftErrors(draft: AssetDraft | null): string[] {
@@ -154,6 +189,12 @@ export function assetDraftErrors(draft: AssetDraft | null): string[] {
   const errors: string[] = [];
   if (unicodeScalarLength(draft.title) > MAX_ASSET_TITLE_SCALARS) errors.push("title");
   if (unicodeScalarLength(draft.note) > MAX_ASSET_NOTE_SCALARS) errors.push("note");
+  for (const [field, values] of [["tags", draft.tags], ["usedIn", draft.usedIn]] as const) {
+    const normalized = normalizeTokens(values);
+    if (normalized.length > MAX_ASSET_TOKENS || normalized.some((value) => unicodeScalarLength(value) > MAX_ASSET_TOKEN_SCALARS)) {
+      errors.push(field);
+    }
+  }
   return errors;
 }
 

@@ -682,9 +682,8 @@ impl LibrarySession {
             asset_id,
             expected_revision,
             AssetPatch {
-                custom_title: TextPatch::Unchanged,
                 review_state: Some(review_state),
-                note: TextPatch::Unchanged,
+                ..AssetPatch::default()
             },
         )
     }
@@ -702,8 +701,7 @@ impl LibrarySession {
                 custom_title: title
                     .map(|value| TextPatch::Set(value.to_owned()))
                     .unwrap_or(TextPatch::Clear),
-                review_state: None,
-                note: TextPatch::Unchanged,
+                ..AssetPatch::default()
             },
         )
     }
@@ -718,11 +716,10 @@ impl LibrarySession {
             asset_id,
             expected_revision,
             AssetPatch {
-                custom_title: TextPatch::Unchanged,
-                review_state: None,
                 note: note
                     .map(|value| TextPatch::Set(value.to_owned()))
                     .unwrap_or(TextPatch::Clear),
+                ..AssetPatch::default()
             },
         )
     }
@@ -898,17 +895,15 @@ impl LibrarySession {
             {
                 return Err(CoreError::SourceRevisionChanged);
             }
-            if !matches!(
-                mime_type.as_str(),
-                "image/jpeg" | "image/png" | "image/webp"
-            ) {
+            let supported = match profile {
+                ResourceProfile::GridStandard => rendition::grid_mime_supported(&mime_type),
+                ResourceProfile::Preview => rendition::preview_mime_supported(&mime_type),
+            };
+            if !supported {
                 return Err(CoreError::UnsupportedPreview);
             }
             if source_length > rendition::MAX_SOURCE_BYTES {
                 return Err(CoreError::ResourceTooLarge);
-            }
-            if state == "unreadable" {
-                return Err(CoreError::RenditionInputInvalid);
             }
             if state != "present" {
                 continue;
@@ -959,7 +954,7 @@ impl LibrarySession {
             )
             .optional()?
             .ok_or(CoreError::LocationNotFound)?;
-        if record.2 != "present" {
+        if !matches!(record.2.as_str(), "present" | "unreadable") {
             return Err(CoreError::LocationMissing);
         }
         let authority = self

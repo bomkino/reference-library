@@ -13,7 +13,7 @@ ipcRenderer.on(IPC.event, (_event, payload) => {
 });
 
 const bridge = Object.freeze({
-  version: 3,
+  version: 4,
   createLibrary: (name) => ipcRenderer.invoke(IPC.createLibrary, name),
   openLibrary: () => ipcRenderer.invoke(IPC.openLibrary),
   completeOpenIntent: (intentId, decision) => ipcRenderer.invoke(IPC.completeOpenIntent, intentId, decision),
@@ -35,6 +35,8 @@ const bridge = Object.freeze({
   setCollectionMembership: (input) => ipcRenderer.invoke(IPC.setCollectionMembership, input),
   assetResourceUrl,
   revealLocation: (sessionId, locationId) => ipcRenderer.invoke(IPC.revealLocation, sessionId, locationId),
+  openLocation: (sessionId, locationId) => ipcRenderer.invoke(IPC.openLocation, sessionId, locationId),
+  copyLocationPath: (sessionId, locationId) => ipcRenderer.invoke(IPC.copyLocationPath, sessionId, locationId),
   readPreferences: () => ipcRenderer.invoke(IPC.readPreferences),
   writePreferences: (patch) => ipcRenderer.invoke(IPC.writePreferences, patch),
   queryCapabilities: (sessionId) => ipcRenderer.invoke(IPC.capabilities, sessionId),

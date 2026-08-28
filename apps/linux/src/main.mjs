@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain, protocol, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, protocol, shell } from "electron";
 
 import {
   IPC,
@@ -157,7 +157,7 @@ function registerProtocols() {
       return new Response(await readFile(filePath), { headers: {
         "Content-Type": mimeForUiPath(filePath),
         "Cache-Control": "no-store",
-        "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src pitchdog-asset: data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+        "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src pitchdog-asset: data:; font-src 'self' pitchdog-asset:; media-src pitchdog-asset:; frame-src pitchdog-asset:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
         "X-Content-Type-Options": "nosniff",
       } });
     } catch { return new Response("Not found", { status: 404 }); }
@@ -184,6 +184,7 @@ function registerProtocols() {
         }
         const response = await authorizedResourceResponse(descriptor, {
           signal: lease.signal,
+          rangeHeader: request.headers.get("range"),
           onHandleClosed: lease.release,
         });
         streamOwnsLease = true;
@@ -194,7 +195,7 @@ function registerProtocols() {
     } catch (error) {
       if (error?.name === "AbortError") return new Response(null, { status: 499 });
       return new Response(error?.code === "SessionClosed" ? "Session closed" : "Resource denied", {
-        status: error?.code === "SessionClosed" ? 410 : error?.code === "RenditionQueueFull" ? 503 : 403,
+        status: error?.code === "SessionClosed" ? 410 : error?.code === "RangeNotSatisfiable" ? 416 : error?.code === "RenditionQueueFull" ? 503 : 403,
       });
     }
   });
@@ -343,9 +344,19 @@ function registerNamedOperations() {
   }));
 
   ipcMain.handle(IPC.revealLocation, trusted(async (_event, sessionId, locationId) => {
-    assertSession(recovery.activeSession, sessionId); assertUuid(locationId, "locationId");
-    const location = expectResult(await core.request({ method: "resolve_location", params: { sessionId, locationId } }), "location_resolved");
-    shell.showItemInFolder(location.nativePathForShell);
+    const nativePath = await resolveNativeLocation(sessionId, locationId);
+    shell.showItemInFolder(nativePath);
+  }));
+
+  ipcMain.handle(IPC.openLocation, trusted(async (_event, sessionId, locationId) => {
+    const nativePath = await resolveNativeLocation(sessionId, locationId);
+    const failure = await shell.openPath(nativePath);
+    if (failure) throw Object.assign(new Error("NativeOpenFailed"), { code: "NativeOpenFailed" });
+  }));
+
+  ipcMain.handle(IPC.copyLocationPath, trusted(async (_event, sessionId, locationId) => {
+    const nativePath = await resolveNativeLocation(sessionId, locationId);
+    clipboard.writeText(nativePath);
   }));
 
   ipcMain.handle(IPC.readPreferences, trusted(async () => readPreferences(preferencePath)));
@@ -361,6 +372,19 @@ function registerNamedOperations() {
   ipcMain.handle(IPC.restartCore, trusted(async () => {
     return performRecovery();
   }));
+}
+
+async function resolveNativeLocation(sessionId, locationId) {
+  assertSession(recovery.activeSession, sessionId);
+  assertUuid(locationId, "locationId");
+  const location = expectResult(await core.request({
+    method: "resolve_location",
+    params: { sessionId, locationId },
+  }), "location_resolved");
+  if (location.locationId !== locationId || typeof location.nativePathForShell !== "string") {
+    throw Object.assign(new Error("InvalidCoreResponse"), { code: "CoreFailure" });
+  }
+  return location.nativePathForShell;
 }
 
 async function performRecovery() {

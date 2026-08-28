@@ -10,6 +10,7 @@ use crate::{SCHEMA_VERSION, error::CoreError, manifest::Manifest};
 const MIGRATION_0001: &str = include_str!("../../../migrations/0001_t01.sql");
 const MIGRATION_0002: &str = include_str!("../../../migrations/0002_v1_domain.sql");
 const MIGRATION_0003: &str = include_str!("../../../migrations/0003_rendition_jobs.sql");
+const MIGRATION_0004: &str = include_str!("../../../migrations/0004_asset_browser_parity.sql");
 const LEDGER: &[(u32, &str, &str)] = &[
     (1, "t01_canonical_slice", "embedded-migration-0001"),
     (
@@ -22,16 +23,23 @@ const LEDGER: &[(u32, &str, &str)] = &[
         "v1_async_rendition_jobs",
         "6670bc4e3fc09b0489f8c1f35611df625f5d5b69c394a8ff7fa7576933132c94",
     ),
+    (
+        4,
+        "asset_browser_feature_parity",
+        "0ea805d7e80ba293de0a86c40ea4a13d67feddcbfe3f725062e49fbce45249cb",
+    ),
 ];
-const MIGRATION_SOURCE_DIGESTS: [&str; 3] = [
+const MIGRATION_SOURCE_DIGESTS: [&str; 4] = [
     "e8302ff0d11a42d0cdbd41abe2194c74dd531ba7174d3da8cd9a2d8bb235f251",
     "f4f14ab8a407870d0aab212f477d80b761a0d30fce72d694c04642e5a5ba5072",
     "1849ba86fb1e97f238db2bc7dfaef8f5e1b3a47f4c50cd1a7ba533fbcc9315b0",
+    "d6f233c1b5c28009a36b2d2d7e9e3609eb4c3def8a1efa96a4231e3e677c4beb",
 ];
-const LEGACY_LEDGER_CHECKSUMS: [&[&str]; 3] = [
+const LEGACY_LEDGER_CHECKSUMS: [&[&str]; 4] = [
     &[],
     &["embedded-migration-0002-v1-domain"],
     &["embedded-migration-0003-rendition-jobs"],
+    &[],
 ];
 
 pub fn create_database(path: &Path, manifest: &Manifest) -> Result<Connection, CoreError> {
@@ -116,7 +124,7 @@ fn canonical_database_path(path: &Path) -> Result<PathBuf, CoreError> {
 fn validate_embedded_migrations() -> Result<(), CoreError> {
     for (index, ((version, _, _), sql)) in LEDGER
         .iter()
-        .zip([MIGRATION_0001, MIGRATION_0002, MIGRATION_0003])
+        .zip([MIGRATION_0001, MIGRATION_0002, MIGRATION_0003, MIGRATION_0004])
         .enumerate()
     {
         if migration_digest(sql) != MIGRATION_SOURCE_DIGESTS[index] {
@@ -299,7 +307,7 @@ fn validate_migration_ledger(connection: &Connection, version: u32) -> Result<()
 
 fn validate_schema_contract(connection: &Connection, version: u32) -> Result<(), CoreError> {
     let expected = Connection::open_in_memory()?;
-    for sql in [MIGRATION_0001, MIGRATION_0002, MIGRATION_0003]
+    for sql in [MIGRATION_0001, MIGRATION_0002, MIGRATION_0003, MIGRATION_0004]
         .into_iter()
         .take(version as usize)
     {
@@ -337,6 +345,7 @@ fn apply_pending_migrations(
         let sql = match version {
             2 => MIGRATION_0002,
             3 => MIGRATION_0003,
+            4 => MIGRATION_0004,
             _ => {
                 return Err(CoreError::InvalidManifest(format!(
                     "no embedded migration for schema {version}"

@@ -6,13 +6,26 @@ struct WorkspacePreferences: Codable, Equatable, Sendable {
     var interfaceScale: Double = 1
     var thumbnailDensity: Int = 220
     var previewZoom: Double = 1
+    var viewMode: String = "grid"
+    var multiThumbnailPreviews: Bool = false
+    var autoRescan: Bool = false
 
     func dictionary() -> [String: Any] {
-        ["interfaceScale": interfaceScale, "thumbnailDensity": thumbnailDensity, "previewZoom": previewZoom]
+        [
+            "interfaceScale": interfaceScale,
+            "thumbnailDensity": thumbnailDensity,
+            "previewZoom": previewZoom,
+            "viewMode": viewMode,
+            "multiThumbnailPreviews": multiThumbnailPreviews,
+            "autoRescan": autoRescan
+        ]
     }
 
     static func applying(_ patch: [String: Any], to current: Self) throws -> Self {
-        let allowed = Set(["interfaceScale", "thumbnailDensity", "previewZoom"])
+        let allowed = Set([
+            "interfaceScale", "thumbnailDensity", "previewZoom", "viewMode",
+            "multiThumbnailPreviews", "autoRescan"
+        ])
         guard patch.keys.allSatisfy(allowed.contains) else { throw Failure.invalid }
         var value = current
         if let scale = Self.finiteNumber(patch["interfaceScale"]) {
@@ -30,6 +43,16 @@ struct WorkspacePreferences: Codable, Equatable, Sendable {
             guard zoom >= 0.25, zoom <= 4 else { throw Failure.invalid }
             value.previewZoom = zoom
         } else if patch["previewZoom"] != nil { throw Failure.invalid }
+        if let viewMode = patch["viewMode"] as? String {
+            guard ["grid", "compact", "list"].contains(viewMode) else { throw Failure.invalid }
+            value.viewMode = viewMode
+        } else if patch["viewMode"] != nil { throw Failure.invalid }
+        if let enabled = patch["multiThumbnailPreviews"] as? Bool {
+            value.multiThumbnailPreviews = enabled
+        } else if patch["multiThumbnailPreviews"] != nil { throw Failure.invalid }
+        if let enabled = patch["autoRescan"] as? Bool {
+            value.autoRescan = enabled
+        } else if patch["autoRescan"] != nil { throw Failure.invalid }
         return value
     }
 

@@ -85,7 +85,7 @@ enum CoreResultValidator {
     static func assetPage(_ value: Any) throws -> [String: Any] {
         let source = try object(
             value,
-            keys: ["offset", "limit", "total", "items", "nextOffset", "libraryRevision"]
+            keys: ["offset", "limit", "total", "items", "nextOffset", "libraryRevision", "facets"]
         )
         let offset = try integer(source["offset"])
         let limit = try integer(source["limit"], minimum: 1, maximum: 250)
@@ -107,7 +107,8 @@ enum CoreResultValidator {
             "total": total,
             "items": items,
             "nextOffset": nextOffset,
-            "libraryRevision": try integer(source["libraryRevision"])
+            "libraryRevision": try integer(source["libraryRevision"]),
+            "facets": try assetFacets(source["facets"])
         ]
     }
 
@@ -218,7 +219,13 @@ enum CoreResultValidator {
             throw Failure.invalid
         }
         let nativePath = try absoluteNativePath(source["nativePathForHandler"])
-        let mime = try enumerated(source["mimeType"], allowed: ["image/png", "image/jpeg", "image/webp"])
+        let mime = try enumerated(source["mimeType"], allowed: [
+            "image/png", "image/jpeg", "image/webp", "image/gif", "image/svg+xml",
+            "image/bmp", "image/avif", "image/x-icon", "application/pdf", "video/mp4",
+            "video/quicktime", "video/webm", "audio/mpeg", "audio/wav", "audio/ogg",
+            "audio/flac", "audio/mp4", "audio/aiff", "font/otf", "font/ttf",
+            "font/woff", "font/woff2", "text/plain", "text/markdown"
+        ])
         return [
             "resourceToken": try opaque(source["resourceToken"]),
             "sessionId": sessionID,
@@ -445,7 +452,9 @@ enum CoreResultValidator {
             value,
             keys: [
                 "assetId", "locationId", "displayName", "relativeDisplayPath", "mediaFamily",
-                "availability", "reviewState", "customTitle", "revision"
+                "mimeType", "extension", "byteSize", "category", "previewKind", "availability",
+                "reviewState", "customTitle", "tags", "usedIn", "previewAssetIds", "createdAtMs",
+                "revision"
             ]
         )
         return [
@@ -454,9 +463,20 @@ enum CoreResultValidator {
             "displayName": try display(source["displayName"], maximum: 255),
             "relativeDisplayPath": try relativePath(source["relativeDisplayPath"]),
             "mediaFamily": try token(source["mediaFamily"], maximum: 40),
+            "mimeType": try text(source["mimeType"], maximum: 160),
+            "extension": try nullableToken(source["extension"], maximum: 24),
+            "byteSize": try integer(source["byteSize"]),
+            "category": try text(source["category"], maximum: 255),
+            "previewKind": try enumerated(
+                source["previewKind"], allowed: ["image", "video", "audio", "pdf", "font", "text", "none"]
+            ),
             "availability": try enumerated(source["availability"], allowed: availability),
             "reviewState": try enumerated(source["reviewState"], allowed: reviewStates),
             "customTitle": try nullableText(source["customTitle"], maximum: 500),
+            "tags": try stringList(source["tags"]),
+            "usedIn": try stringList(source["usedIn"]),
+            "previewAssetIds": try array(source["previewAssetIds"], maximum: 3).map(opaque),
+            "createdAtMs": try integer(source["createdAtMs"]),
             "revision": try integer(source["revision"])
         ]
     }
@@ -466,7 +486,8 @@ enum CoreResultValidator {
             value,
             keys: [
                 "assetId", "locationId", "originalDisplayName", "relativeDisplayPath", "mediaFamily",
-                "availability", "reviewState", "customTitle", "note", "revision", "collectionIds"
+                "mimeType", "extension", "byteSize", "category", "previewKind", "availability",
+                "reviewState", "customTitle", "note", "tags", "usedIn", "revision", "collectionIds"
             ]
         )
         return [
@@ -475,13 +496,40 @@ enum CoreResultValidator {
             "originalDisplayName": try display(source["originalDisplayName"], maximum: 255),
             "relativeDisplayPath": try relativePath(source["relativeDisplayPath"]),
             "mediaFamily": try token(source["mediaFamily"], maximum: 40),
+            "mimeType": try text(source["mimeType"], maximum: 160),
+            "extension": try nullableToken(source["extension"], maximum: 24),
+            "byteSize": try integer(source["byteSize"]),
+            "category": try text(source["category"], maximum: 255),
+            "previewKind": try enumerated(
+                source["previewKind"], allowed: ["image", "video", "audio", "pdf", "font", "text", "none"]
+            ),
             "availability": try enumerated(source["availability"], allowed: availability),
             "reviewState": try enumerated(source["reviewState"], allowed: reviewStates),
             "customTitle": try nullableText(source["customTitle"], maximum: 500),
             "note": try nullableText(source["note"], maximum: 5_000),
+            "tags": try stringList(source["tags"]),
+            "usedIn": try stringList(source["usedIn"]),
             "revision": try integer(source["revision"]),
             "collectionIds": try array(source["collectionIds"], maximum: 10_000).map(opaque)
         ]
+    }
+
+    private static func assetFacets(_ value: Any?) throws -> [String: Any] {
+        let source = try object(
+            value,
+            keys: ["categories", "extensions", "mediaFamilies", "tags", "usedIn"]
+        )
+        var result: [String: Any] = [:]
+        for key in ["categories", "extensions", "mediaFamilies", "tags", "usedIn"] {
+            result[key] = try array(source[key], maximum: 256).map { item in
+                let facet = try object(item, keys: ["value", "count"])
+                return [
+                    "value": try text(facet["value"], maximum: 255),
+                    "count": try integer(facet["count"])
+                ]
+            }
+        }
+        return result
     }
 
     private static func job(_ value: Any) throws -> [String: Any] {
@@ -514,6 +562,16 @@ enum CoreResultValidator {
             "assetCount": try integer(source["assetCount"]),
             "revision": try integer(source["revision"])
         ]
+    }
+
+    private static func stringList(_ value: Any?) throws -> [String] {
+        let items = try array(value, maximum: 64)
+        let strings = try items.map { try text($0, maximum: 100) }
+        guard Set(strings).count == strings.count,
+              strings.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+            throw Failure.invalid
+        }
+        return strings
     }
 
     private static func object(_ value: Any?, keys: Set<String>) throws -> [String: Any] {

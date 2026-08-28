@@ -198,17 +198,22 @@ final class AppModel: ObservableObject {
             guard !writesFrozen else { throw ModelFailure.restartRequired }
             value = try await setCollectionMembership(payload)
         case "revealLocation":
-            let sessionID = try requireActiveSession(payload)
-            let epoch = transitionEpoch
-            let locationID = try Self.opaqueID(payload, "locationId")
-            let location = try await requestValue(
-                method: "resolve_location",
-                params: ["sessionId": sessionID, "locationId": locationID],
-                expected: "location_resolved"
-            )
-            try requireCurrentTransition(epoch, sessionID: sessionID)
-            let nativePath = try CoreResultValidator.location(location, expectedLocationID: locationID)
+            let nativePath = try await resolveNativeLocation(payload)
             NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: nativePath)])
+            value = NSNull()
+        case "openLocation":
+            let nativePath = try await resolveNativeLocation(payload)
+            guard NSWorkspace.shared.open(URL(fileURLWithPath: nativePath)) else {
+                throw ModelFailure.nativeOpenFailed
+            }
+            value = NSNull()
+        case "copyLocationPath":
+            let nativePath = try await resolveNativeLocation(payload)
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            guard pasteboard.setString(nativePath, forType: .string) else {
+                throw ModelFailure.copyFailed
+            }
             value = NSNull()
         case "readPreferences":
             value = try preferences.read().dictionary()
@@ -240,6 +245,19 @@ final class AppModel: ObservableObject {
             throw ModelFailure.unknownCommand
         }
         return try Self.jsonString(value)
+    }
+
+    private func resolveNativeLocation(_ payload: [String: Any]) async throws -> String {
+        let sessionID = try requireActiveSession(payload)
+        let epoch = transitionEpoch
+        let locationID = try Self.opaqueID(payload, "locationId")
+        let location = try await requestValue(
+            method: "resolve_location",
+            params: ["sessionId": sessionID, "locationId": locationID],
+            expected: "location_resolved"
+        )
+        try requireCurrentTransition(epoch, sessionID: sessionID)
+        return try CoreResultValidator.location(location, expectedLocationID: locationID)
     }
 
     func canonicalDumpForHarness(sessionID: String) async throws -> [String: Any] {
@@ -662,6 +680,9 @@ final class AppModel: ObservableObject {
             query["availability"], allowed: Self.availability,
             maximum: Self.availability.count, name: "availability"
         )
+        for key in ["categories", "extensions", "mediaFamilies", "tags", "usedIn"] {
+            _ = try Self.boundedStringSet(query[key], maximum: 128, scalarLimit: 100)
+        }
         guard let sort = query["sort"] as? String, Self.sorts.contains(sort) else {
             throw ModelFailure.invalidArgument
         }
@@ -685,6 +706,8 @@ final class AppModel: ObservableObject {
         let patch = try Self.dictionary(payload["patch"], "patch")
         try Self.validateTextPatch(patch["customTitle"], maximum: 500)
         try Self.validateTextPatch(patch["note"], maximum: 5_000)
+        try Self.validateStringListPatch(patch["tags"])
+        try Self.validateStringListPatch(patch["usedIn"])
         if let review = patch["reviewState"] {
             guard let review = review as? String, Self.reviewStates.contains(review) else {
                 throw ModelFailure.invalidArgument
@@ -1157,6 +1180,33 @@ final class AppModel: ObservableObject {
         return values
     }
 
+    private static func boundedStringSet(
+        _ value: Any?, maximum: Int, scalarLimit: Int
+    ) throws -> [String] {
+        guard let values = value as? [String], values.count <= maximum,
+              Set(values).count == values.count,
+              values.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                                  $0.unicodeScalars.count <= scalarLimit &&
+                                  !$0.unicodeScalars.contains(where: { $0.value == 0 }) }) else {
+            throw ModelFailure.invalidArgument
+        }
+        return values
+    }
+
+    private static func validateStringListPatch(_ value: Any?) throws {
+        let patch = try dictionary(value, "string list patch")
+        guard let action = patch["action"] as? String else { throw ModelFailure.invalidArgument }
+        switch action {
+        case "unchanged":
+            guard Set(patch.keys) == ["action"] else { throw ModelFailure.invalidArgument }
+        case "set":
+            guard Set(patch.keys) == ["action", "value"] else { throw ModelFailure.invalidArgument }
+            _ = try boundedStringSet(patch["value"], maximum: 64, scalarLimit: 100)
+        default:
+            throw ModelFailure.invalidArgument
+        }
+    }
+
     private static func validateTextPatch(_ value: Any?, maximum: Int) throws {
         let patch = try dictionary(value, "patch")
         guard let action = patch["action"] as? String,
@@ -1306,6 +1356,8 @@ final class AppModel: ObservableObject {
         case rootAuthorizationNeedsRepair
         case coreRequestFailed
         case invalidArgument
+        case nativeOpenFailed
+        case copyFailed
         case requestCapacityExceeded
         case querySnapshotChanged
         case core(String)
@@ -1324,6 +1376,8 @@ final class AppModel: ObservableObject {
                 "The Root was added, but its authorization must be chosen again."
             case .coreRequestFailed: "Reference Core could not complete the request."
             case .invalidArgument: "The native operation received an invalid argument."
+            case .nativeOpenFailed: "The original file could not be opened."
+            case .copyFailed: "The original file path could not be copied."
             case .requestCapacityExceeded: "Too many Reference Library operations are active. Try again shortly."
             case .querySnapshotChanged:
                 RendererErrorPolicy.message(code: "QuerySnapshotChanged")

@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AssetDetail, AssetPage, AssetQuery, AssetSummary, ReferenceWorkspaceBridge } from "@pitchdog/reference-bridge";
+import type {
+  AssetDetail,
+  AssetFacets,
+  AssetPage,
+  AssetProjection,
+  AssetQuery,
+  AssetSummary,
+  ReferenceWorkspaceBridge,
+} from "@pitchdog/reference-bridge";
 import { safeErrorMessage } from "./safe-errors";
 
 const PAGE_SIZE = 100;
@@ -10,6 +18,7 @@ export interface AssetPager {
   items: ReadonlyMap<number, AssetSummary>;
   loading: boolean;
   error: string | null;
+  facets: AssetFacets;
   ensureWindow(startIndex: number, endIndexExclusive: number): void;
   refresh(): void;
   refreshSummary(detail: AssetDetail): void;
@@ -20,11 +29,13 @@ export function useAssetPager(
   sessionId: string,
   query: AssetQuery,
   invalidationRevision: number,
+  projection: AssetProjection = "contact_sheet_standard",
 ): AssetPager {
   const [items, setItems] = useState<ReadonlyMap<number, AssetSummary>>(new Map());
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [facets, setFacets] = useState<AssetFacets>({ categories: [], extensions: [], mediaFamilies: [], tags: [], usedIn: [] });
   const inFlight = useRef(new Map<number, Promise<void>>());
   const pageAccess = useRef(new Map<number, number>());
   const loadedPages = useRef(new Set<number>());
@@ -64,10 +75,13 @@ export function useAssetPager(
         });
       };
       const request = bridge
-        .queryAssets({ sessionId, offset: normalizedOffset, limit: PAGE_SIZE, projection: "contact_sheet_standard", query, expectedLibraryRevision })
+        .queryAssets({ sessionId, offset: normalizedOffset, limit: PAGE_SIZE, projection, query, expectedLibraryRevision })
         .then((page: AssetPage) => {
           if (currentGeneration !== generation.current) return;
-          if (normalizedOffset === 0) snapshotRevision.current = page.libraryRevision;
+          if (normalizedOffset === 0) {
+            snapshotRevision.current = page.libraryRevision;
+            setFacets(page.facets);
+          }
           else if (page.libraryRevision !== expectedLibraryRevision) {
             restartSnapshot();
             return;
@@ -103,7 +117,7 @@ export function useAssetPager(
       inFlight.current.set(normalizedOffset, request);
       return request;
     },
-    [bridge, query, sessionId],
+    [bridge, projection, query, sessionId],
   );
 
   const ensureWindow = useCallback((startIndex: number, endIndexExclusive: number) => {
@@ -120,6 +134,7 @@ export function useAssetPager(
     loadedPages.current.clear();
     snapshotRevision.current = null;
     setLoading(true);
+    setFacets({ categories: [], extensions: [], mediaFamilies: [], tags: [], usedIn: [] });
     void loadPage(0, true);
   }, [loadPage]);
 
@@ -152,6 +167,7 @@ export function useAssetPager(
     setTotal(0);
     setLoading(true);
     setError(null);
+    setFacets({ categories: [], extensions: [], mediaFamilies: [], tags: [], usedIn: [] });
     void loadPage(0, true);
     return () => {
       generation.current += 1;
@@ -163,7 +179,7 @@ export function useAssetPager(
     if (invalidationRevision > 0) refresh();
   }, [invalidationRevision, refresh]);
 
-  return { total, items, loading, error, ensureWindow, refresh, refreshSummary };
+  return { total, items, loading, error, facets, ensureWindow, refresh, refreshSummary };
 }
 
 function messageFrom(reason: unknown): string {

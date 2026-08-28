@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { assertWorkspacePreferences, assertWorkspacePreferencesPatch } from "./bridge-contract.mjs";
 
-const DEFAULTS = Object.freeze({ interfaceScale: 1, thumbnailDensity: 220, previewZoom: 1 });
+const DEFAULTS = Object.freeze({ interfaceScale: 1, thumbnailDensity: 220, previewZoom: 1, viewMode: "grid", multiThumbnailPreviews: false, autoRescan: false });
 const MAXIMUM_PREFERENCES_BYTES = 8 * 1024;
 const writeTails = new Map();
 

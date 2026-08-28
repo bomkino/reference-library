@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BRIDGE_VERSION,
   DEFAULT_ASSET_QUERY,
+  type AssetDetail,
   type AssetQuery,
   type AssetSummary,
+  type AssetViewMode,
   type CollectionSummary,
   type InterfaceScale,
   type ReferenceWorkspaceBridge,
@@ -173,6 +175,9 @@ function OpenWorkspace(props: {
   const [interfaceScale, setInterfaceScale] = useState<InterfaceScale>(1);
   const [thumbnailSize, setThumbnailSize] = useState(220);
   const [previewZoom, setPreviewZoom] = useState(1);
+  const [viewMode, setViewMode] = useState<AssetViewMode>("grid");
+  const [multiThumbnailPreviews, setMultiThumbnailPreviews] = useState(false);
+  const [autoRescan, setAutoRescan] = useState(false);
   const [query, setQuery] = useState<AssetQuery>({ ...DEFAULT_ASSET_QUERY });
   const [selected, setSelected] = useState<AssetSummary | null>(null);
   const [preview, setPreview] = useState<AssetSummary | null>(null);
@@ -188,6 +193,7 @@ function OpenWorkspace(props: {
     props.session.sessionId,
     query,
     props.invalidations.assets,
+    multiThumbnailPreviews ? "contact_sheet_detailed" : "contact_sheet_standard",
   );
   const refreshSummary = pager.refreshSummary;
   const editor = useAssetEditor(props.bridge, props.session.sessionId, selected, props.invalidations.detail, useCallback((detail) => {
@@ -196,9 +202,17 @@ function OpenWorkspace(props: {
       ...current,
       displayName: detail.customTitle ?? detail.originalDisplayName,
       relativeDisplayPath: detail.relativeDisplayPath,
+      mediaFamily: detail.mediaFamily,
+      mimeType: detail.mimeType,
+      extension: detail.extension,
+      byteSize: detail.byteSize,
+      category: detail.category,
+      previewKind: detail.previewKind,
       availability: detail.availability,
       reviewState: detail.reviewState,
       customTitle: detail.customTitle,
+      tags: detail.tags,
+      usedIn: detail.usedIn,
       revision: detail.revision,
     } : current);
   }, [refreshSummary]));
@@ -210,6 +224,9 @@ function OpenWorkspace(props: {
       setInterfaceScale(preferences.interfaceScale);
       setThumbnailSize(preferences.thumbnailDensity);
       setPreviewZoom(preferences.previewZoom);
+      setViewMode(preferences.viewMode);
+      setMultiThumbnailPreviews(preferences.multiThumbnailPreviews);
+      setAutoRescan(preferences.autoRescan);
     }).catch((reason) => {
       if (active) props.setShellError(messageFrom(reason));
     });
@@ -227,6 +244,20 @@ function OpenWorkspace(props: {
     const refreshedPreview = refreshSelectedAsset(preview, pager.items.values());
     if (refreshedPreview !== preview) setPreview(refreshedPreview);
   }, [pager.items, preview, selected]);
+
+  useEffect(() => {
+    if (!autoRescan || props.needsRestart || roots.length === 0) return;
+    let cursor = 0;
+    const tick = () => {
+      const candidates = roots.filter((root) => root.authorized && !root.activeJobId && root.state !== "scanning");
+      if (candidates.length === 0) return;
+      const root = candidates[cursor % candidates.length]!;
+      cursor += 1;
+      void props.bridge.scanRoot(props.session.sessionId, root.rootId).catch((reason) => props.setShellError(messageFrom(reason)));
+    };
+    const timer = window.setInterval(tick, 60_000);
+    return () => window.clearInterval(timer);
+  }, [autoRescan, props.bridge, props.needsRestart, props.session.sessionId, roots]);
 
   const requestTransition = useCallback((label: string, proceed: PendingTransition["proceed"], cancel?: PendingTransition["cancel"]) => {
     const focus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -303,10 +334,17 @@ function OpenWorkspace(props: {
         </div>
         <div className="topbar__controls">
           <label>Interface<select value={interfaceScale} onChange={(event) => { const value = Number(event.target.value) as InterfaceScale; setInterfaceScale(value); writePreferences({ interfaceScale: value }); }}>{INTERFACE_SCALES.map((scale) => <option key={scale} value={scale}>{Math.round(scale * 100)}%</option>)}</select></label>
-          <label>Thumbnail density<input aria-label="Thumbnail density" max="340" min="140" step="20" type="range" value={thumbnailSize} onChange={(event) => { const value = Number(event.target.value); setThumbnailSize(value); writePreferences({ thumbnailDensity: value }); }} /></label>
+          <label>Thumbnail size<input aria-label="Thumbnail size" max="340" min="140" step="20" type="range" value={thumbnailSize} onChange={(event) => { const value = Number(event.target.value); setThumbnailSize(value); writePreferences({ thumbnailDensity: value }); }} /></label>
+          <div className="view-switcher" role="group" aria-label="Asset view">
+            {(["grid", "compact", "list"] as AssetViewMode[]).map((mode) => (
+              <button className="button--secondary" aria-pressed={viewMode === mode} key={mode} onClick={() => { setViewMode(mode); writePreferences({ viewMode: mode }); }}>{mode}</button>
+            ))}
+          </div>
+          <label className="toggle-control"><input type="checkbox" checked={multiThumbnailPreviews} onChange={(event) => { setMultiThumbnailPreviews(event.target.checked); writePreferences({ multiThumbnailPreviews: event.target.checked }); }} /><span>Multiple thumbnails</span></label>
+          <label className="toggle-control"><input type="checkbox" checked={autoRescan} onChange={(event) => { setAutoRescan(event.target.checked); writePreferences({ autoRescan: event.target.checked }); }} /><span>Auto-rescan · 60 s</span></label>
           <button className="button--secondary" disabled={busy} onClick={closeLibrary}>Close Library</button>
         </div>
-        <QueryToolbar query={query} roots={roots} disabled={busy || props.needsRestart} onChange={applyQuery} />
+        <QueryToolbar query={query} roots={roots} facets={pager.facets} disabled={busy || props.needsRestart} onChange={applyQuery} />
       </header>
       <LibrarySidebar
         bridge={props.bridge}
@@ -333,10 +371,23 @@ function OpenWorkspace(props: {
         {pager.error ? <WorkspaceState kind="error" title="Library query failed" detail={pager.error} action="Retry" onAction={pager.refresh} />
           : pager.loading && pager.total === 0 ? <WorkspaceState kind="status" title="Opening contact sheet" detail="Reading the first bounded Asset window…" />
           : pager.total === 0 ? <WorkspaceState
-              title={query.search || query.rootId || query.collectionId || query.reviewStates.length || query.availability.length ? "No Assets match this view" : "This Library has no Assets yet"}
-              detail={query.search || query.rootId || query.collectionId || query.reviewStates.length || query.availability.length ? "Clear or change the current filters, or rescan an authorized Root." : "Add one Root containing supported images. Assets appear progressively."}
+              title={hasActiveQuery(query) ? "No Assets match this view" : "This Library has no Assets yet"}
+              detail={hasActiveQuery(query) ? "Clear or change the current filters, or rescan an authorized Root." : "Add a Root containing project material. Assets appear progressively."}
             />
-          : <ContactSheet bridge={props.bridge} sessionId={props.session.sessionId} total={pager.total} items={pager.items} thumbnailSize={thumbnailSize} selectedAssetId={selected?.assetId ?? null} ensureWindow={pager.ensureWindow} onSelect={chooseAsset} onPreview={setPreview} />}
+          : <ContactSheet
+              bridge={props.bridge}
+              sessionId={props.session.sessionId}
+              total={pager.total}
+              items={pager.items}
+              thumbnailSize={thumbnailSize}
+              viewMode={viewMode}
+              multiThumbnailPreviews={multiThumbnailPreviews}
+              selectedAssetId={selected?.assetId ?? null}
+              ensureWindow={pager.ensureWindow}
+              onSelect={chooseAsset}
+              onPreview={setPreview}
+              onOpen={(asset) => void props.bridge.openLocation(props.session.sessionId, asset.locationId).catch((reason) => props.setShellError(messageFrom(reason)))}
+            />}
       </section>
       <AssetInspector
         bridge={props.bridge}
@@ -352,10 +403,20 @@ function OpenWorkspace(props: {
         onSave={editor.save}
         onDiscard={editor.discard}
         onReload={editor.reload}
+        onPreview={(detail) => setPreview(summaryFromDetail(detail))}
         onError={props.setShellError}
       />
       <div className="selection-announcer" aria-live="polite">{selected ? `Selected ${selected.displayName}` : "No Asset selected"}</div>
-      {preview && <AssetPreview asset={preview} source={props.bridge.assetResourceUrl({ sessionId: props.session.sessionId, assetId: preview.assetId, profile: "preview" })} initialZoom={previewZoom} onZoomChange={(value) => { setPreviewZoom(value); writePreferences({ previewZoom: value }); }} onClose={() => { const assetId = preview.assetId; setPreview(null); requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-asset-id="${assetId}"]`)?.focus()); }} />}
+      {preview && <AssetPreview
+        asset={preview}
+        source={props.bridge.assetResourceUrl({ sessionId: props.session.sessionId, assetId: preview.assetId, profile: "preview" })}
+        bridge={props.bridge}
+        sessionId={props.session.sessionId}
+        initialZoom={previewZoom}
+        onZoomChange={(value) => { setPreviewZoom(value); writePreferences({ previewZoom: value }); }}
+        onError={props.setShellError}
+        onClose={() => { const assetId = preview.assetId; setPreview(null); requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-asset-id="${assetId}"]`)?.focus()); }}
+      />}
       {pending && <TransitionDialog label={pending.label} dirty={pending.dirty} canSave={assetDraftErrors(editor.draft).length === 0} onChoice={(choice) => void resolveTransition(choice)} />}
     </main>
   );
@@ -378,6 +439,35 @@ function WorkspaceState(props: { title: string; detail: string; kind?: "status" 
 
 function FatalState({ message }: { message: string }) {
   return <main className="document-empty"><p className="error-state" role="alert">{message}</p></main>;
+}
+
+function hasActiveQuery(query: AssetQuery): boolean {
+  return Boolean(query.search || query.rootId || query.collectionId || query.reviewStates.length ||
+    query.availability.length || query.categories.length || query.extensions.length ||
+    query.mediaFamilies.length || query.tags.length || query.usedIn.length);
+}
+
+function summaryFromDetail(detail: AssetDetail): AssetSummary {
+  return {
+    assetId: detail.assetId,
+    locationId: detail.locationId,
+    displayName: detail.customTitle ?? detail.originalDisplayName,
+    relativeDisplayPath: detail.relativeDisplayPath,
+    mediaFamily: detail.mediaFamily,
+    mimeType: detail.mimeType,
+    extension: detail.extension,
+    byteSize: detail.byteSize,
+    category: detail.category,
+    previewKind: detail.previewKind,
+    availability: detail.availability,
+    reviewState: detail.reviewState,
+    customTitle: detail.customTitle,
+    tags: detail.tags,
+    usedIn: detail.usedIn,
+    previewAssetIds: [],
+    createdAtMs: 0,
+    revision: detail.revision,
+  };
 }
 
 function messageFrom(reason: unknown): string {

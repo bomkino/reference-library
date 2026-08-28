@@ -414,13 +414,16 @@ fn visit_records(
             }
         ),
         CanonicalEntity::Assets => visit_query!(
-            "SELECT id, custom_title, review_state, note FROM assets ORDER BY id",
+            "SELECT id, custom_title, review_state, note, tags_json, used_in_json
+             FROM assets ORDER BY id",
             |row: &Row<'_>| -> rusqlite::Result<CanonicalRecord> {
                 Ok(CanonicalRecord::Asset(CanonicalAssetRecord {
                     id: row.get(0)?,
                     custom_title: row.get(1)?,
                     review_state: row.get(2)?,
                     note: row.get(3)?,
+                    tags: string_list_column(row, 4)?,
+                    used_in: string_list_column(row, 5)?,
                 }))
             }
         ),
@@ -459,6 +462,17 @@ fn json_column(row: &Row<'_>, index: usize) -> rusqlite::Result<Value> {
         )
     })?;
     Ok(normalize_json(value))
+}
+
+fn string_list_column(row: &Row<'_>, index: usize) -> rusqlite::Result<Vec<String>> {
+    let text: String = row.get(index)?;
+    serde_json::from_str(&text).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            index,
+            rusqlite::types::Type::Text,
+            Box::new(error),
+        )
+    })
 }
 
 fn normalize_json(value: Value) -> Value {
@@ -540,9 +554,10 @@ pub fn generate(connection: &Connection) -> Result<Value, CoreError> {
             }))?,
         "locations": location_rows(connection)?,
         "assets": rows(connection,
-            "SELECT id, custom_title, review_state FROM assets ORDER BY id", 3,
+            "SELECT id, custom_title, review_state, note, tags_json, used_in_json FROM assets ORDER BY id", 6,
             |values| json!({
-                "id": values[0], "customTitle": values[1], "reviewState": values[2]
+                "id": values[0], "customTitle": values[1], "reviewState": values[2],
+                "note": values[3], "tags": parse_json(&values[4]), "usedIn": parse_json(&values[5])
             }))?,
         "assetOrigins": rows(connection,
             "SELECT id, asset_id, source_id, origin_kind, origin_spec_json,
@@ -609,7 +624,9 @@ fn legacy_dump_preflight(connection: &Connection) -> Result<(), CoreError> {
                     length(CAST(state AS BLOB)) FROM locations
              UNION ALL SELECT length(CAST(id AS BLOB))+
                     COALESCE(length(CAST(custom_title AS BLOB)),0)+
-                    length(CAST(review_state AS BLOB)) FROM assets
+                    length(CAST(review_state AS BLOB))+
+                    COALESCE(length(CAST(note AS BLOB)),0)+
+                    length(CAST(tags_json AS BLOB))+length(CAST(used_in_json AS BLOB)) FROM assets
              UNION ALL SELECT length(CAST(id AS BLOB))+length(CAST(asset_id AS BLOB))+
                     length(CAST(source_id AS BLOB))+length(CAST(origin_kind AS BLOB))+
                     length(CAST(origin_spec_json AS BLOB))+

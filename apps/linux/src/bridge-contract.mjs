@@ -1,4 +1,4 @@
-export const BRIDGE_VERSION = 3;
+export const BRIDGE_VERSION = 4;
 export const IPC = Object.freeze({
   createLibrary: "reference-library:create",
   openLibrary: "reference-library:open",
@@ -19,6 +19,8 @@ export const IPC = Object.freeze({
   deleteCollection: "reference-library:delete-collection",
   setCollectionMembership: "reference-library:set-collection-membership",
   revealLocation: "reference-library:reveal-location",
+  openLocation: "reference-library:open-location",
+  copyLocationPath: "reference-library:copy-location-path",
   readPreferences: "reference-library:read-preferences",
   writePreferences: "reference-library:write-preferences",
   capabilities: "reference-library:capabilities",
@@ -28,7 +30,10 @@ export const IPC = Object.freeze({
 
 const REVIEW_STATES = Object.freeze(["unreviewed", "keep", "maybe", "reject"]);
 const AVAILABILITY = Object.freeze(["present", "missing", "needs_permission", "offline_volume", "unreadable", "unavailable", "unsupported"]);
-const SORTS = Object.freeze(["created_ascending", "created_descending", "name_ascending", "name_descending", "review_state"]);
+const SORTS = Object.freeze([
+  "created_ascending", "created_descending", "name_ascending", "name_descending",
+  "size_ascending", "size_descending", "review_state",
+]);
 const JOB_STATES = Object.freeze(["queued", "running", "cancelled", "completed", "failed"]);
 
 export function assertUuid(value, label) {
@@ -67,6 +72,11 @@ export function assertAssetQuery(input) {
   if (query.collectionId !== null) assertUuid(query.collectionId, "collectionId");
   assertStringSet(query.reviewStates, REVIEW_STATES, "reviewStates");
   assertStringSet(query.availability, AVAILABILITY, "availability");
+  assertBoundedStringSet(query.categories, "categories");
+  assertBoundedStringSet(query.extensions, "extensions");
+  assertBoundedStringSet(query.mediaFamilies, "mediaFamilies");
+  assertBoundedStringSet(query.tags, "tags");
+  assertBoundedStringSet(query.usedIn, "usedIn");
   if (!SORTS.includes(query.sort)) throw new TypeError("Unknown Asset sort");
   return input;
 }
@@ -94,6 +104,8 @@ export function assertAssetUpdate(input) {
   if (!Number.isSafeInteger(input?.expectedRevision) || input.expectedRevision < 0) throw new TypeError("Invalid revision");
   assertTextPatch(input?.patch?.customTitle, "customTitle", 500);
   assertTextPatch(input?.patch?.note, "note", 5_000);
+  assertStringListPatch(input?.patch?.tags, "tags");
+  assertStringListPatch(input?.patch?.usedIn, "usedIn");
   if (input?.patch?.reviewState !== undefined && !REVIEW_STATES.includes(input.patch.reviewState)) {
     throw new TypeError("Unknown reviewState");
   }
@@ -137,16 +149,25 @@ export function assertWorkspacePreferences(preferences) {
   if (!Number.isFinite(preferences.previewZoom) || preferences.previewZoom < 0.25 || preferences.previewZoom > 4) {
     throw new TypeError("previewZoom must be between 0.25 and 4");
   }
+  if (!["grid", "compact", "list"].includes(preferences.viewMode)) throw new TypeError("Unknown viewMode");
+  if (typeof preferences.multiThumbnailPreviews !== "boolean") throw new TypeError("multiThumbnailPreviews must be boolean");
+  if (typeof preferences.autoRescan !== "boolean") throw new TypeError("autoRescan must be boolean");
   return {
     interfaceScale: preferences.interfaceScale,
     thumbnailDensity: preferences.thumbnailDensity,
     previewZoom: preferences.previewZoom,
+    viewMode: preferences.viewMode,
+    multiThumbnailPreviews: preferences.multiThumbnailPreviews,
+    autoRescan: preferences.autoRescan,
   };
 }
 
 export function assertWorkspacePreferencesPatch(patch) {
   if (!patch || typeof patch !== "object" || Array.isArray(patch)) throw new TypeError("Preferences patch must be an object");
-  const allowed = new Set(["interfaceScale", "thumbnailDensity", "previewZoom"]);
+  const allowed = new Set([
+    "interfaceScale", "thumbnailDensity", "previewZoom", "viewMode",
+    "multiThumbnailPreviews", "autoRescan",
+  ]);
   if (Object.keys(patch).some((key) => !allowed.has(key))) throw new TypeError("Unknown Preferences field");
   if (patch.interfaceScale !== undefined && ![0.8, 1, 1.25, 1.5].includes(patch.interfaceScale)) {
     throw new TypeError("Unsupported Interface Scale");
@@ -159,9 +180,33 @@ export function assertWorkspacePreferencesPatch(patch) {
       (!Number.isFinite(patch.previewZoom) || patch.previewZoom < 0.25 || patch.previewZoom > 4)) {
     throw new TypeError("previewZoom must be between 0.25 and 4");
   }
+  if (patch.viewMode !== undefined && !["grid", "compact", "list"].includes(patch.viewMode)) {
+    throw new TypeError("Unknown viewMode");
+  }
+  if (patch.multiThumbnailPreviews !== undefined && typeof patch.multiThumbnailPreviews !== "boolean") {
+    throw new TypeError("multiThumbnailPreviews must be boolean");
+  }
+  if (patch.autoRescan !== undefined && typeof patch.autoRescan !== "boolean") {
+    throw new TypeError("autoRescan must be boolean");
+  }
   return { ...patch };
 }
 
+function assertBoundedStringSet(value, label) {
+  if (!Array.isArray(value) || value.length > 128 || new Set(value).size !== value.length) {
+    throw new TypeError(`${label} must contain at most 128 unique values`);
+  }
+  for (const item of value) {
+    if (typeof item !== "string" || !item.trim() || scalarLength(item) > 100) {
+      throw new TypeError(`${label} contains an invalid value`);
+    }
+  }
+}
+function assertStringListPatch(value, label) {
+  if (!value || !["unchanged", "set"].includes(value.action)) throw new TypeError(`${label} patch is invalid`);
+  if (value.action === "set") assertBoundedStringSet(value.value, label);
+  else if (Object.hasOwn(value, "value")) throw new TypeError(`${label} patch is invalid`);
+}
 function assertPage(input, maximum) {
   assertUuid(input?.sessionId, "sessionId");
   if (!Number.isSafeInteger(input?.offset) || input.offset < 0) throw new TypeError("offset must be a non-negative integer");

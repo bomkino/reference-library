@@ -25,6 +25,10 @@ pub const MAX_ROOT_NAME_CHARS: usize = 200;
 pub const MAX_ROOTS: usize = 64;
 pub const MAX_COLLECTIONS: usize = 512;
 pub const MAX_ASSET_COLLECTIONS: usize = MAX_COLLECTIONS;
+pub const MAX_ASSET_TOKENS: usize = 64;
+pub const MAX_ASSET_TOKEN_CHARS: usize = 100;
+pub const MAX_ASSET_QUERY_VALUES: usize = 128;
+pub const MAX_FACET_VALUES: usize = 256;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -188,13 +192,18 @@ pub enum AssetProjection {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase")]
 pub struct AssetQuery {
     pub search: Option<String>,
     pub review_states: Vec<ReviewState>,
     pub availability: Vec<AvailabilityFilter>,
     pub collection_id: Option<String>,
     pub root_id: Option<String>,
+    pub categories: Vec<String>,
+    pub extensions: Vec<String>,
+    pub media_families: Vec<String>,
+    pub tags: Vec<String>,
+    pub used_in: Vec<String>,
     pub sort: AssetSort,
 }
 
@@ -235,6 +244,8 @@ pub enum AssetSort {
     CreatedDescending,
     NameAscending,
     NameDescending,
+    SizeAscending,
+    SizeDescending,
     ReviewState,
 }
 
@@ -271,11 +282,25 @@ pub enum AvailabilityFilter {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase")]
 pub struct AssetPatch {
     pub custom_title: TextPatch,
     pub review_state: Option<ReviewState>,
     pub note: TextPatch,
+    pub tags: StringListPatch,
+    pub used_in: StringListPatch,
+}
+
+impl Default for AssetPatch {
+    fn default() -> Self {
+        Self {
+            custom_title: TextPatch::Unchanged,
+            review_state: None,
+            note: TextPatch::Unchanged,
+            tags: StringListPatch::Unchanged,
+            used_in: StringListPatch::Unchanged,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -285,6 +310,14 @@ pub enum TextPatch {
     Unchanged,
     Clear,
     Set(String),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(tag = "action", content = "value", rename_all = "snake_case")]
+pub enum StringListPatch {
+    #[default]
+    Unchanged,
+    Set(Vec<String>),
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -410,6 +443,25 @@ pub struct AssetPage {
     pub items: Vec<AssetSummary>,
     pub next_offset: Option<u64>,
     pub library_revision: u64,
+    #[serde(default)]
+    pub facets: AssetFacets,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetFacets {
+    pub categories: Vec<FacetCount>,
+    pub extensions: Vec<FacetCount>,
+    pub media_families: Vec<FacetCount>,
+    pub tags: Vec<FacetCount>,
+    pub used_in: Vec<FacetCount>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FacetCount {
+    pub value: String,
+    pub count: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -420,9 +472,19 @@ pub struct AssetSummary {
     pub display_name: String,
     pub relative_display_path: String,
     pub media_family: String,
+    pub mime_type: String,
+    pub extension: Option<String>,
+    pub byte_size: u64,
+    pub category: String,
+    pub preview_kind: String,
     pub availability: String,
     pub review_state: String,
     pub custom_title: Option<String>,
+    pub tags: Vec<String>,
+    pub used_in: Vec<String>,
+    #[serde(default)]
+    pub preview_asset_ids: Vec<String>,
+    pub created_at_ms: u64,
     pub revision: u64,
 }
 
@@ -434,10 +496,17 @@ pub struct AssetDetail {
     pub original_display_name: String,
     pub relative_display_path: String,
     pub media_family: String,
+    pub mime_type: String,
+    pub extension: Option<String>,
+    pub byte_size: u64,
+    pub category: String,
+    pub preview_kind: String,
     pub availability: String,
     pub review_state: String,
     pub custom_title: Option<String>,
     pub note: Option<String>,
+    pub tags: Vec<String>,
+    pub used_in: Vec<String>,
     pub revision: u64,
     pub collection_ids: Vec<String>,
 }
@@ -609,6 +678,8 @@ pub struct CanonicalAssetRecord {
     pub custom_title: Option<String>,
     pub review_state: String,
     pub note: Option<String>,
+    pub tags: Vec<String>,
+    pub used_in: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

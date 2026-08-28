@@ -10,7 +10,7 @@ pub mod session;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub const SCHEMA_VERSION: u32 = 3;
+pub const SCHEMA_VERSION: u32 = 4;
 
 pub fn now_ms() -> u64 {
     SystemTime::now()

@@ -3,7 +3,14 @@ const JOB_STATES = new Set(["queued", "running", "completed", "failed", "cancell
 const REVIEW_STATES = new Set(["unreviewed", "keep", "maybe", "reject"]);
 const AVAILABILITY = new Set(["present", "missing", "needs_permission", "offline_volume", "unreadable", "unavailable", "unsupported"]);
 const PROFILES = new Set(["grid_standard", "preview"]);
-const MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+const MIME_TYPES = new Set([
+  "image/png", "image/jpeg", "image/webp", "image/gif", "image/svg+xml", "image/bmp",
+  "image/avif", "image/x-icon", "application/pdf", "video/mp4", "video/quicktime",
+  "video/webm", "audio/mpeg", "audio/wav", "audio/ogg", "audio/flac", "audio/mp4",
+  "audio/aiff", "font/otf", "font/ttf", "font/woff", "font/woff2", "text/plain",
+  "text/markdown",
+]);
+const PREVIEW_KINDS = new Set(["image", "video", "audio", "pdf", "font", "text", "none"]);
 const CANCELLATION_STATES = new Set(["cancellation_requested", "already_terminal", "unknown_job"]);
 
 const EXPECTED_RESULTS = Object.freeze({
@@ -124,31 +131,47 @@ function rootSummary(value) {
   count(value.observedCount); count(value.unsupportedCount);
 }
 function assetPage(value) {
-  record(value); exact(value, ["offset", "limit", "total", "items", "nextOffset", "libraryRevision"]);
+  record(value); exact(value, ["offset", "limit", "total", "items", "nextOffset", "libraryRevision", "facets"]);
   count(value.offset); integer(value.limit, 1, 250); count(value.total);
   const items = array(value.items, value.limit);
   items.forEach(assetSummary);
-  optionalCount(value.nextOffset); count(value.libraryRevision);
+  optionalCount(value.nextOffset); count(value.libraryRevision); assetFacets(value.facets);
 }
 function assetSummary(value) {
   record(value); exact(value, [
-    "assetId", "locationId", "displayName", "relativeDisplayPath", "mediaFamily", "availability",
-    "reviewState", "customTitle", "revision",
+    "assetId", "locationId", "displayName", "relativeDisplayPath", "mediaFamily", "mimeType",
+    "extension", "byteSize", "category", "previewKind", "availability", "reviewState",
+    "customTitle", "tags", "usedIn", "previewAssetIds", "createdAtMs", "revision",
   ]);
   uuid(value.assetId); uuid(value.locationId); text(value.displayName, 1_000);
-  text(value.mediaFamily, 80); member(value.availability, AVAILABILITY); member(value.reviewState, REVIEW_STATES);
-  text(value.relativeDisplayPath, 4_096); optionalText(value.customTitle, 500); count(value.revision);
+  text(value.mediaFamily, 80); text(value.mimeType, 160); optionalText(value.extension, 24);
+  count(value.byteSize); text(value.category, 1_000); member(value.previewKind, PREVIEW_KINDS);
+  member(value.availability, AVAILABILITY); member(value.reviewState, REVIEW_STATES);
+  text(value.relativeDisplayPath, 4_096); optionalText(value.customTitle, 500);
+  stringSet(value.tags, 64, 100); stringSet(value.usedIn, 64, 100);
+  array(value.previewAssetIds, 3).forEach(uuid); count(value.createdAtMs); count(value.revision);
 }
 function assetDetail(value) {
   record(value); exact(value, [
-    "assetId", "locationId", "originalDisplayName", "relativeDisplayPath", "mediaFamily", "availability",
-    "reviewState", "customTitle", "note", "revision", "collectionIds",
+    "assetId", "locationId", "originalDisplayName", "relativeDisplayPath", "mediaFamily", "mimeType",
+    "extension", "byteSize", "category", "previewKind", "availability", "reviewState",
+    "customTitle", "note", "tags", "usedIn", "revision", "collectionIds",
   ]);
   uuid(value.assetId); uuid(value.locationId); text(value.originalDisplayName, 1_000);
-  text(value.relativeDisplayPath, 4_096); text(value.mediaFamily, 80);
-  member(value.availability, AVAILABILITY); member(value.reviewState, REVIEW_STATES);
-  optionalText(value.customTitle, 500); optionalText(value.note, 5_000); count(value.revision);
-  array(value.collectionIds, 10_000).forEach(uuid);
+  text(value.relativeDisplayPath, 4_096); text(value.mediaFamily, 80); text(value.mimeType, 160);
+  optionalText(value.extension, 24); count(value.byteSize); text(value.category, 1_000);
+  member(value.previewKind, PREVIEW_KINDS); member(value.availability, AVAILABILITY);
+  member(value.reviewState, REVIEW_STATES); optionalText(value.customTitle, 500);
+  optionalText(value.note, 5_000); stringSet(value.tags, 64, 100); stringSet(value.usedIn, 64, 100);
+  count(value.revision); array(value.collectionIds, 10_000).forEach(uuid);
+}
+function assetFacets(value) {
+  record(value); exact(value, ["categories", "extensions", "mediaFamilies", "tags", "usedIn"]);
+  for (const key of ["categories", "extensions", "mediaFamilies", "tags", "usedIn"]) {
+    array(value[key], 256).forEach((facet) => {
+      record(facet); exact(facet, ["value", "count"]); text(facet.value, 1_000); count(facet.count);
+    });
+  }
 }
 function jobPage(value) {
   record(value); exact(value, ["offset", "limit", "total", "items", "nextOffset"]);
@@ -214,6 +237,10 @@ function optionalCount(value) { if (value !== null && value !== undefined) count
 function boolean(value) { if (typeof value !== "boolean") fail("invalid boolean"); }
 function member(value, values) { if (!values.has(value)) fail("invalid enum value"); }
 function stringArray(value, maximumItems, maximumLength) { array(value, maximumItems).forEach((item) => text(item, maximumLength)); }
+function stringSet(value, maximumItems, maximumLength) {
+  stringArray(value, maximumItems, maximumLength);
+  if (new Set(value).size !== value.length || value.some((item) => !item.trim())) fail("invalid string set");
+}
 function exact(value, keys) {
   const actual = Object.keys(value).sort(); const expected = [...keys].sort();
   if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) fail("unexpected event fields");

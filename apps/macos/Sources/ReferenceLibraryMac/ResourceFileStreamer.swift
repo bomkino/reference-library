@@ -43,6 +43,8 @@ enum ResourceFileStreamer {
         path: String,
         expectedSize: Int,
         byteLimit: Int = maximumPreviewBytes,
+        startOffset: Int = 0,
+        endOffsetExclusive: Int? = nil,
         cacheRoot: URL = privateCacheRoot(),
         capacity: ResourceStreamCapacity = .shared,
         pacingNanoseconds: UInt64 = defaultPacingNanoseconds,
@@ -55,6 +57,9 @@ enum ResourceFileStreamer {
               byteLimit <= maximumPreviewBytes,
               expectedSize >= 0,
               expectedSize <= byteLimit else { throw Failure.denied }
+        let endOffsetExclusive = endOffsetExclusive ?? expectedSize
+        guard startOffset >= 0, startOffset <= endOffsetExclusive,
+              endOffsetExclusive <= expectedSize else { throw Failure.denied }
         try Task.checkCancellation()
         guard await capacity.acquire() else { throw Failure.denied }
         do {
@@ -63,6 +68,8 @@ enum ResourceFileStreamer {
                 path: path,
                 expectedSize: expectedSize,
                 cacheRoot: cacheRoot,
+                startOffset: startOffset,
+                endOffsetExclusive: endOffsetExclusive,
                 pacingNanoseconds: pacingNanoseconds,
                 afterValidation: afterValidation,
                 onClose: onClose,
@@ -88,6 +95,8 @@ enum ResourceFileStreamer {
         path: String,
         expectedSize: Int,
         cacheRoot: URL,
+        startOffset: Int,
+        endOffsetExclusive: Int,
         pacingNanoseconds: UInt64,
         afterValidation: (@Sendable () async throws -> Void)?,
         onClose: (@Sendable () -> Void)?,
@@ -103,10 +112,10 @@ enum ResourceFileStreamer {
         try await afterValidation?()
         try Task.checkCancellation()
 
-        var position = 0
-        while position < expectedSize {
+        var position = startOffset
+        while position < endOffsetExclusive {
             try Task.checkCancellation()
-            let count = min(chunkBytes, expectedSize - position)
+            let count = min(chunkBytes, endOffsetExclusive - position)
             onInFlightBytesChanged?(count)
             do {
                 try await readAndConsume(
@@ -121,7 +130,7 @@ enum ResourceFileStreamer {
             }
             onInFlightBytesChanged?(0)
             position += count
-            if position < expectedSize {
+            if position < endOffsetExclusive {
                 await Task.yield()
                 if pacingNanoseconds > 0 {
                     try await Task.sleep(nanoseconds: pacingNanoseconds)

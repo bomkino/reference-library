@@ -1,9 +1,11 @@
-export const BRIDGE_VERSION = 3 as const;
+export const BRIDGE_VERSION = 4 as const;
 export const MAX_ASSET_PAGE_SIZE = 250 as const;
 export const MAX_JOB_PAGE_SIZE = 100 as const;
 export const MAX_SEARCH_SCALARS = 200 as const;
 export const MAX_ASSET_TITLE_SCALARS = 500 as const;
 export const MAX_ASSET_NOTE_SCALARS = 5_000 as const;
+export const MAX_ASSET_TOKENS = 64 as const;
+export const MAX_ASSET_TOKEN_SCALARS = 100 as const;
 export const MAX_COLLECTION_NAME_SCALARS = 200 as const;
 export const MAX_COLLECTION_MEMBERSHIP_BATCH = 250 as const;
 export const MIN_THUMBNAIL_DENSITY = 140 as const;
@@ -14,7 +16,14 @@ export type ResourceProfile = "grid_standard" | "preview";
 export type AssetProjection = "contact_sheet_tiny" | "contact_sheet_standard" | "contact_sheet_detailed";
 export type ReviewState = "unreviewed" | "keep" | "maybe" | "reject";
 export type Availability = "present" | "missing" | "needs_permission" | "offline_volume" | "unreadable" | "unavailable" | "unsupported";
-export type AssetSort = "created_ascending" | "created_descending" | "name_ascending" | "name_descending" | "review_state";
+export type AssetSort =
+  | "created_ascending"
+  | "created_descending"
+  | "name_ascending"
+  | "name_descending"
+  | "size_ascending"
+  | "size_descending"
+  | "review_state";
 export type JobState = "queued" | "running" | "cancelled" | "completed" | "failed";
 
 export interface SessionOpened {
@@ -30,9 +39,18 @@ export interface AssetSummary {
   displayName: string;
   relativeDisplayPath: string;
   mediaFamily: string;
+  mimeType: string;
+  extension: string | null;
+  byteSize: number;
+  category: string;
+  previewKind: "image" | "video" | "audio" | "pdf" | "font" | "text" | "none";
   availability: Availability;
   reviewState: ReviewState;
   customTitle: string | null;
+  tags: string[];
+  usedIn: string[];
+  previewAssetIds: string[];
+  createdAtMs: number;
   revision: number;
 }
 
@@ -42,10 +60,17 @@ export interface AssetDetail {
   originalDisplayName: string;
   relativeDisplayPath: string;
   mediaFamily: string;
+  mimeType: string;
+  extension: string | null;
+  byteSize: number;
+  category: string;
+  previewKind: AssetSummary["previewKind"];
   availability: Availability;
   reviewState: ReviewState;
   customTitle: string | null;
   note: string | null;
+  tags: string[];
+  usedIn: string[];
   revision: number;
   collectionIds: string[];
 }
@@ -56,6 +81,11 @@ export interface AssetQuery {
   reviewStates: ReviewState[];
   availability: Availability[];
   collectionId: string | null;
+  categories: string[];
+  extensions: string[];
+  mediaFamilies: string[];
+  tags: string[];
+  usedIn: string[];
   sort: AssetSort;
 }
 
@@ -65,8 +95,26 @@ export const DEFAULT_ASSET_QUERY: Readonly<AssetQuery> = Object.freeze({
   reviewStates: [],
   availability: [],
   collectionId: null,
+  categories: [],
+  extensions: [],
+  mediaFamilies: [],
+  tags: [],
+  usedIn: [],
   sort: "created_ascending",
 });
+
+export interface FacetCount {
+  value: string;
+  count: number;
+}
+
+export interface AssetFacets {
+  categories: FacetCount[];
+  extensions: FacetCount[];
+  mediaFamilies: FacetCount[];
+  tags: FacetCount[];
+  usedIn: FacetCount[];
+}
 
 export interface AssetPage {
   offset: number;
@@ -75,6 +123,7 @@ export interface AssetPage {
   items: AssetSummary[];
   nextOffset: number | null;
   libraryRevision: number;
+  facets: AssetFacets;
 }
 
 export interface RootSummary {
@@ -116,18 +165,27 @@ export interface CollectionSummary {
   revision: number;
 }
 
+export type AssetViewMode = "grid" | "compact" | "list";
+
 export interface WorkspacePreferences {
   interfaceScale: InterfaceScale;
   thumbnailDensity: number;
   previewZoom: number;
+  viewMode: AssetViewMode;
+  multiThumbnailPreviews: boolean;
+  autoRescan: boolean;
 }
 
 export type TextPatch = { action: "unchanged" } | { action: "clear" } | { action: "set"; value: string };
+
+export type StringListPatch = { action: "unchanged" } | { action: "set"; value: string[] };
 
 export interface AssetPatch {
   customTitle: TextPatch;
   reviewState?: ReviewState;
   note: TextPatch;
+  tags: StringListPatch;
+  usedIn: StringListPatch;
 }
 
 export interface BridgeCapability {
@@ -173,6 +231,8 @@ export interface ReferenceWorkspaceBridge {
   setCollectionMembership(input: { sessionId: string; collectionId: string; assetIds: string[]; member: boolean }): Promise<{ collectionId: string; affected: number; libraryRevision: number }>;
   assetResourceUrl(input: { sessionId: string; assetId: string; profile: ResourceProfile }): string;
   revealLocation(sessionId: string, locationId: string): Promise<void>;
+  openLocation(sessionId: string, locationId: string): Promise<void>;
+  copyLocationPath(sessionId: string, locationId: string): Promise<void>;
   queryCapabilities(sessionId?: string): Promise<BridgeCapability[]>;
   restartCore(): Promise<SessionOpened | null>;
   subscribe(listener: (event: WorkspaceEvent) => void): () => void;

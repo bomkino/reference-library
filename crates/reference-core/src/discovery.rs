@@ -432,7 +432,7 @@ fn flush_batch(
             inserted_asset_ids.push(insert_new(&transaction, plan, &candidate, timestamp)?);
         }
         *observed_count += 1;
-        if !candidate.servable {
+        if candidate.preview_kind == "none" {
             *unsupported_count += 1;
         }
     }
@@ -607,10 +607,10 @@ fn refresh_existing(
     candidate: &FileCandidate,
     timestamp: i64,
 ) -> Result<(), CoreError> {
-    let location_state = if candidate.servable {
-        "present"
-    } else {
+    let location_state = if candidate.preview_kind == "none" {
         "unreadable"
+    } else {
+        "present"
     };
     transaction.execute(
         "UPDATE locations SET state = ?1, relative_path_display = ?2,
@@ -638,14 +638,30 @@ fn refresh_existing(
             timestamp,
         )?;
         transaction.execute(
-            "UPDATE sources SET current_revision_id = ?1, lineage_state = 'active',
-                                updated_at_ms = ?2 WHERE id = ?3",
-            params![revision_id, timestamp, existing.source_id],
+            "UPDATE sources SET current_revision_id = ?1, media_family = ?2,
+                                lineage_state = 'active', updated_at_ms = ?3 WHERE id = ?4",
+            params![revision_id, candidate.media_family, timestamp, existing.source_id],
         )?;
     } else {
         transaction.execute(
-            "UPDATE sources SET lineage_state = 'active', updated_at_ms = ?1 WHERE id = ?2",
-            params![timestamp, existing.source_id],
+            "UPDATE sources SET media_family = ?1, lineage_state = 'active', updated_at_ms = ?2 WHERE id = ?3",
+            params![candidate.media_family, timestamp, existing.source_id],
+        )?;
+        transaction.execute(
+            "UPDATE source_revisions
+             SET mime_detected = ?1, extension_observed = ?2, media_metadata_json = ?3
+             WHERE id = (SELECT current_revision_id FROM sources WHERE id = ?4)",
+            params![
+                candidate.mime_type,
+                candidate.extension,
+                serde_json::json!({
+                    "pixelWidth": candidate.pixel_width,
+                    "pixelHeight": candidate.pixel_height,
+                    "previewKind": candidate.preview_kind,
+                    "gridPreview": candidate.grid_servable
+                }).to_string(),
+                existing.source_id
+            ],
         )?;
     }
     Ok(())
@@ -666,14 +682,14 @@ fn insert_new(
         "INSERT INTO sources (
             id, library_id, media_family, current_revision_id, lineage_state,
             created_at_ms, updated_at_ms
-         ) VALUES (?1, ?2, 'still', ?3, 'active', ?4, ?4)",
-        params![source_id, plan.library_id, revision_id, timestamp],
+         ) VALUES (?1, ?2, ?3, ?4, 'active', ?5, ?5)",
+        params![source_id, plan.library_id, candidate.media_family, revision_id, timestamp],
     )?;
     insert_revision(transaction, &revision_id, &source_id, candidate, timestamp)?;
-    let location_state = if candidate.servable {
-        "present"
-    } else {
+    let location_state = if candidate.preview_kind == "none" {
         "unreadable"
+    } else {
+        "present"
     };
     transaction.execute(
         "INSERT INTO locations (
@@ -733,7 +749,9 @@ fn insert_revision(
             candidate.extension,
             serde_json::json!({
                 "pixelWidth": candidate.pixel_width,
-                "pixelHeight": candidate.pixel_height
+                "pixelHeight": candidate.pixel_height,
+                "previewKind": candidate.preview_kind,
+                "gridPreview": candidate.grid_servable
             })
             .to_string(),
             timestamp,
@@ -931,10 +949,12 @@ struct FileCandidate {
     platform_file_id_kind: Option<String>,
     platform_link_count: Option<u64>,
     mime_type: String,
+    media_family: String,
+    preview_kind: String,
     extension: Option<String>,
     pixel_width: usize,
     pixel_height: usize,
-    servable: bool,
+    grid_servable: bool,
 }
 
 impl FileCandidate {
@@ -949,24 +969,23 @@ impl FileCandidate {
             .and_then(|value| value.to_str())
             .map(|value| value.to_ascii_lowercase());
         let before = file.metadata()?;
-        let mut prefix = [0_u8; 64];
+        let mut prefix = [0_u8; 512];
         let prefix_len = file.read(&mut prefix)?;
         file.seek(SeekFrom::Start(0))?;
-        let kind = classify_still(&prefix[..prefix_len], extension.as_deref());
-        let Some((mime_type, potentially_servable)) = kind else {
+        let Some(kind) = classify_media(&prefix[..prefix_len], extension.as_deref()) else {
             return Ok(None);
         };
         let eligible_size = before.len() <= MAX_SOURCE_BYTES;
-        let dimensions = if potentially_servable && eligible_size {
+        let dimensions = if kind.dimension_probe && eligible_size {
             read_dimensions(file.try_clone()?, cancelled)
         } else {
             None
         };
-        let servable = dimensions
-            .is_some_and(|dimensions| valid_dimensions(dimensions.width, dimensions.height));
+        let grid_servable = kind.grid_candidate
+            && dimensions.is_some_and(|value| valid_dimensions(value.width, value.height));
         let (pixel_width, pixel_height) = dimensions
-            .filter(|dimensions| valid_dimensions(dimensions.width, dimensions.height))
-            .map(|dimensions| (dimensions.width, dimensions.height))
+            .filter(|value| valid_dimensions(value.width, value.height))
+            .map(|value| (value.width, value.height))
             .unwrap_or_default();
         let fingerprint = if eligible_size {
             full_fingerprint_cancellable(&mut file, before.len(), Some(cancelled), None)?
@@ -989,11 +1008,13 @@ impl FileCandidate {
             platform_file_id,
             platform_file_id_kind,
             platform_link_count,
-            mime_type: mime_type.into(),
+            mime_type: kind.mime_type.into(),
+            media_family: kind.media_family.into(),
+            preview_kind: kind.preview_kind.into(),
             extension,
             pixel_width,
             pixel_height,
-            servable,
+            grid_servable,
         }))
     }
 
@@ -1008,27 +1029,25 @@ impl FileCandidate {
             .map_err(|_| CoreError::LocationMissing)?;
         let mut file = File::open(path)?;
         let before = file.metadata()?;
-        let mut prefix = [0_u8; 64];
+        let mut prefix = [0_u8; 512];
         let prefix_len = file.read(&mut prefix)?;
         file.seek(SeekFrom::Start(0))?;
         let extension = path
             .extension()
             .and_then(|value| value.to_str())
             .map(|value| value.to_ascii_lowercase());
-        let Some((mime_type, potentially_servable)) =
-            classify_still(&prefix[..prefix_len], extension.as_deref())
-        else {
+        let Some(kind) = classify_media(&prefix[..prefix_len], extension.as_deref()) else {
             return Ok(None);
         };
         let eligible_size = before.len() <= MAX_SOURCE_BYTES;
-        let dimensions = (potentially_servable && eligible_size)
+        let dimensions = (kind.dimension_probe && eligible_size)
             .then(|| read_dimensions(file.try_clone().ok()?, cancelled))
             .flatten();
-        let servable = dimensions
-            .is_some_and(|dimensions| valid_dimensions(dimensions.width, dimensions.height));
+        let grid_servable = kind.grid_candidate
+            && dimensions.is_some_and(|value| valid_dimensions(value.width, value.height));
         let (pixel_width, pixel_height) = dimensions
-            .filter(|dimensions| valid_dimensions(dimensions.width, dimensions.height))
-            .map(|dimensions| (dimensions.width, dimensions.height))
+            .filter(|value| valid_dimensions(value.width, value.height))
+            .map(|value| (value.width, value.height))
             .unwrap_or_default();
         let fingerprint = if eligible_size {
             full_fingerprint_cancellable(&mut file, before.len(), Some(cancelled), None)?
@@ -1051,11 +1070,13 @@ impl FileCandidate {
             platform_file_id,
             platform_file_id_kind,
             platform_link_count,
-            mime_type: mime_type.into(),
+            mime_type: kind.mime_type.into(),
+            media_family: kind.media_family.into(),
+            preview_kind: kind.preview_kind.into(),
             extension,
             pixel_width,
             pixel_height,
-            servable,
+            grid_servable,
         }))
     }
 }
@@ -1291,52 +1312,172 @@ fn platform_identity(_metadata: &fs::Metadata) -> (Option<Vec<u8>>, Option<Strin
     (None, None, None)
 }
 
-fn classify_still(bytes: &[u8], extension: Option<&str>) -> Option<(&'static str, bool)> {
+#[derive(Clone, Copy)]
+struct MediaClassification {
+    mime_type: &'static str,
+    media_family: &'static str,
+    preview_kind: &'static str,
+    dimension_probe: bool,
+    grid_candidate: bool,
+}
+
+const fn media(
+    mime_type: &'static str,
+    media_family: &'static str,
+    preview_kind: &'static str,
+    dimension_probe: bool,
+    grid_candidate: bool,
+) -> MediaClassification {
+    MediaClassification {
+        mime_type,
+        media_family,
+        preview_kind,
+        dimension_probe,
+        grid_candidate,
+    }
+}
+
+fn classify_media(bytes: &[u8], extension: Option<&str>) -> Option<MediaClassification> {
     if bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]) {
-        Some(("image/png", true))
-    } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
-        Some(("image/jpeg", true))
-    } else if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
-        Some(("image/webp", true))
-    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
-        Some(("image/gif", false))
-    } else if bytes.starts_with(b"BM") {
-        Some(("image/bmp", false))
-    } else if bytes.starts_with(b"II*\0") || bytes.starts_with(b"MM\0*") {
-        Some(("image/tiff", false))
-    } else if bytes.starts_with(b"8BPS") {
-        Some(("image/vnd.adobe.photoshop", false))
-    } else if bytes.len() >= 12
-        && &bytes[4..8] == b"ftyp"
-        && matches!(&bytes[8..12], b"avif" | b"avis")
-    {
-        Some(("image/avif", false))
-    } else if bytes.len() >= 12 && &bytes[4..8] == b"ftyp" {
-        Some(("image/heic", false))
-    } else if bytes
+        return Some(media("image/png", "still", "image", true, true));
+    }
+    if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
+        return Some(media("image/jpeg", "still", "image", true, true));
+    }
+    if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        return Some(media("image/webp", "still", "image", true, true));
+    }
+    if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        return Some(media("image/gif", "animation", "image", false, false));
+    }
+    if bytes.starts_with(b"%PDF-") {
+        return Some(media("application/pdf", "document", "pdf", false, false));
+    }
+    if bytes.starts_with(b"PK\x03\x04") {
+        return Some(match extension {
+            Some("pptx") => media("application/vnd.openxmlformats-officedocument.presentationml.presentation", "presentation", "none", false, false),
+            Some("docx") => media("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "document", "none", false, false),
+            Some("zip") | None => media("application/zip", "archive", "none", false, false),
+            _ => media("application/zip", "archive", "none", false, false),
+        });
+    }
+    if bytes.starts_with(b"OTTO") {
+        return Some(media("font/otf", "font", "font", false, false));
+    }
+    if bytes.starts_with(&[0x00, 0x01, 0x00, 0x00]) {
+        return Some(media("font/ttf", "font", "font", false, false));
+    }
+    if bytes.starts_with(b"wOFF") {
+        return Some(media("font/woff", "font", "font", false, false));
+    }
+    if bytes.starts_with(b"wOF2") {
+        return Some(media("font/woff2", "font", "font", false, false));
+    }
+    if bytes.starts_with(b"8BPS") {
+        return Some(media("image/vnd.adobe.photoshop", "design", "none", false, false));
+    }
+    if bytes.starts_with(b"BM") {
+        return Some(media("image/bmp", "still", "image", false, false));
+    }
+    if bytes.starts_with(b"II*\0") || bytes.starts_with(b"MM\0*") {
+        return Some(media("image/tiff", "still", "none", false, false));
+    }
+    if bytes.len() >= 12 && &bytes[4..8] == b"ftyp" {
+        let brand = &bytes[8..12];
+        if matches!(brand, b"avif" | b"avis") {
+            return Some(media("image/avif", "still", "image", false, false));
+        }
+        if matches!(brand, b"heic" | b"heix" | b"hevc" | b"hevx" | b"mif1" | b"msf1") {
+            return Some(media("image/heic", "still", "none", false, false));
+        }
+        if matches!(brand, b"M4A " | b"M4B ") {
+            return Some(media("audio/mp4", "audio", "audio", false, false));
+        }
+        if matches!(brand, b"qt  ") {
+            return Some(media("video/quicktime", "video", "video", false, false));
+        }
+        return Some(media("video/mp4", "video", "video", false, false));
+    }
+    if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WAVE" {
+        return Some(media("audio/wav", "audio", "audio", false, false));
+    }
+    if bytes.starts_with(b"OggS") {
+        return Some(media("audio/ogg", "audio", "audio", false, false));
+    }
+    if bytes.starts_with(b"fLaC") {
+        return Some(media("audio/flac", "audio", "audio", false, false));
+    }
+    if bytes.starts_with(b"ID3") || bytes.starts_with(&[0xff, 0xfb]) {
+        return Some(media("audio/mpeg", "audio", "audio", false, false));
+    }
+    if bytes.starts_with(&[0x1a, 0x45, 0xdf, 0xa3]) {
+        return Some(match extension {
+            Some("webm") => media("video/webm", "video", "video", false, false),
+            _ => media("video/x-matroska", "video", "none", false, false),
+        });
+    }
+    if bytes
         .iter()
-        .take(64)
+        .take(512)
         .copied()
         .collect::<Vec<_>>()
         .windows(4)
         .any(|window| window.eq_ignore_ascii_case(b"<svg"))
     {
-        Some(("image/svg+xml", false))
-    } else {
-        match extension {
-            Some("png") => Some(("image/png", false)),
-            Some("jpg" | "jpeg") => Some(("image/jpeg", false)),
-            Some("webp") => Some(("image/webp", false)),
-            Some("gif") => Some(("image/gif", false)),
-            Some("bmp") => Some(("image/bmp", false)),
-            Some("tif" | "tiff") => Some(("image/tiff", false)),
-            Some("psd") => Some(("image/vnd.adobe.photoshop", false)),
-            Some("avif") => Some(("image/avif", false)),
-            Some("heic" | "heif") => Some(("image/heic", false)),
-            Some("svg") => Some(("image/svg+xml", false)),
-            _ => None,
-        }
+        return Some(media("image/svg+xml", "vector", "image", false, false));
     }
+
+    Some(match extension? {
+        "png" => media("image/png", "still", "image", true, true),
+        "jpg" | "jpeg" => media("image/jpeg", "still", "image", true, true),
+        "webp" => media("image/webp", "still", "image", true, true),
+        "gif" => media("image/gif", "animation", "image", false, false),
+        "svg" => media("image/svg+xml", "vector", "image", false, false),
+        "bmp" => media("image/bmp", "still", "image", false, false),
+        "tif" | "tiff" => media("image/tiff", "still", "none", false, false),
+        "avif" => media("image/avif", "still", "image", false, false),
+        "heic" | "heif" => media("image/heic", "still", "none", false, false),
+        "ico" => media("image/x-icon", "still", "image", false, false),
+        "psd" | "psb" => media("image/vnd.adobe.photoshop", "design", "none", false, false),
+        "ai" => media("application/vnd.adobe.illustrator", "design", "none", false, false),
+        "eps" => media("application/postscript", "design", "none", false, false),
+        "indd" | "indl" | "indt" => media("application/x-indesign", "design", "none", false, false),
+        "sketch" => media("application/x-sketch", "design", "none", false, false),
+        "fig" => media("application/x-figma", "design", "none", false, false),
+        "xd" => media("application/x-adobe-xd", "design", "none", false, false),
+        "afdesign" | "afphoto" | "afpub" => media("application/x-affinity", "design", "none", false, false),
+        "pdf" => media("application/pdf", "document", "pdf", false, false),
+        "txt" | "md" => media("text/plain", "document", "text", false, false),
+        "rtf" => media("application/rtf", "document", "none", false, false),
+        "doc" => media("application/msword", "document", "none", false, false),
+        "docx" => media("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "document", "none", false, false),
+        "ppt" => media("application/vnd.ms-powerpoint", "presentation", "none", false, false),
+        "pptx" => media("application/vnd.openxmlformats-officedocument.presentationml.presentation", "presentation", "none", false, false),
+        "key" => media("application/x-iwork-keynote-sffkey", "presentation", "none", false, false),
+        "mp4" | "m4v" => media("video/mp4", "video", "video", false, false),
+        "mov" => media("video/quicktime", "video", "video", false, false),
+        "webm" => media("video/webm", "video", "video", false, false),
+        "mkv" => media("video/x-matroska", "video", "none", false, false),
+        "avi" => media("video/x-msvideo", "video", "none", false, false),
+        "mxf" => media("application/mxf", "video", "none", false, false),
+        "mp3" => media("audio/mpeg", "audio", "audio", false, false),
+        "wav" => media("audio/wav", "audio", "audio", false, false),
+        "aif" | "aiff" => media("audio/aiff", "audio", "audio", false, false),
+        "m4a" => media("audio/mp4", "audio", "audio", false, false),
+        "ogg" => media("audio/ogg", "audio", "audio", false, false),
+        "flac" => media("audio/flac", "audio", "audio", false, false),
+        "otf" => media("font/otf", "font", "font", false, false),
+        "ttf" | "ttc" => media("font/ttf", "font", "font", false, false),
+        "woff" => media("font/woff", "font", "font", false, false),
+        "woff2" => media("font/woff2", "font", "font", false, false),
+        "zip" => media("application/zip", "archive", "none", false, false),
+        "rar" => media("application/vnd.rar", "archive", "none", false, false),
+        "7z" => media("application/x-7z-compressed", "archive", "none", false, false),
+        "tar" => media("application/x-tar", "archive", "none", false, false),
+        "gz" | "tgz" => media("application/gzip", "archive", "none", false, false),
+        "xz" => media("application/x-xz", "archive", "none", false, false),
+        _ => return None,
+    })
 }
 
 fn valid_dimensions(width: usize, height: usize) -> bool {
