@@ -1,0 +1,39 @@
+name: Brutalist UI cleanup
+
+on:
+  workflow_run:
+    workflows:
+      - Brutalist interface rebuild
+    types:
+      - completed
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'codex/reference-library-brutalist-ui'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: codex/reference-library-brutalist-ui
+          fetch-depth: 0
+      - name: Remove staging-only files
+        run: python3 .github/brutalist-ui-clean.py
+      - name: Commit cleanup when needed
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A -- .github/brutalist-ui-repair.py .github/brutalist-ui-clean.py docs/evidence/BRUTALIST_UI_*.md
+          if git diff --cached --quiet; then
+            echo 'cleanup already complete'
+            exit 0
+          fi
+          git diff --cached --check
+          git commit -m 'chore: remove brutalist UI staging files'
+          git push origin "HEAD:codex/reference-library-brutalist-ui"
