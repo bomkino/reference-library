@@ -104,6 +104,8 @@ describe("V1 keyboard daily-use seams", () => {
     expect(host.querySelector(".selection-announcer")?.textContent).toContain("B-frame.jpg");
     await press("Enter");
     expect(host.querySelector('[role="dialog"]')).not.toBeNull();
+    await waitFor(() => expect(host.querySelector(".topbar")?.hasAttribute("inert")).toBe(true));
+    expect(host.querySelector(".topbar")?.getAttribute("aria-hidden")).toBe("true");
     expect(host.querySelector(".preview__stage")?.getAttribute("aria-busy")).toBe("true");
     expect(host.querySelector(".preview__loading")?.textContent).toBe("Loading Preview…");
     await act(async () => {
@@ -115,11 +117,13 @@ describe("V1 keyboard daily-use seams", () => {
     expect(button("Fit").getAttribute("aria-pressed")).toBe("true");
     await focusAndPress(button("Zoom in"), " ");
     expect(text()).toContain("200%");
+    expect(document.activeElement).toBe(button("Zoom in"));
     expect(harness.calls.writePreferences).toContainEqual({ previewZoom: 2 });
     expect(select("Interface").value).toBe("1.25");
     expect(input("Thumbnail density").value).toBe("240");
     await press("Escape");
     expect(host.querySelector('[role="dialog"]')).toBeNull();
+    await waitFor(() => expect(host.querySelector(".topbar")?.hasAttribute("inert")).toBe(false));
     expect(document.activeElement?.getAttribute("data-asset-id")).toBe("asset-2");
 
     await waitFor(() => expect(input("Title")).not.toBeNull());
@@ -225,6 +229,23 @@ describe("V1 keyboard daily-use seams", () => {
     expect(host.querySelector(".selection-announcer")?.textContent).toContain("Selected A-frame.jpg");
   });
 
+  it("clears stale Inspector data and offers recovery when the next Asset fails to load", async () => {
+    await focusAndPress(button("New Library"), "Enter");
+    await waitFor(() => expect(host.querySelector('[data-asset-id="asset-1"]')).not.toBeNull());
+    await focusAndPress(host.querySelector<HTMLElement>('[data-asset-id="asset-1"]')!, " ");
+    await waitFor(() => expect(host.querySelector(".inspector")?.textContent).toContain("A-frame.jpg"));
+
+    harness.getAssetFailures.add("asset-2");
+    await focusAndPress(host.querySelector<HTMLElement>('[data-asset-id="asset-2"]')!, " ");
+    await waitFor(() => expect(host.querySelector('.inspector [role="alert"]')?.textContent).toContain("Asset update failed"));
+    expect(host.querySelector(".inspector")?.textContent).not.toContain("A-frame.jpg");
+    expect(button("Retry Asset", host.querySelector(".inspector")!)).not.toBeNull();
+
+    harness.getAssetFailures.delete("asset-2");
+    await focusAndPress(button("Retry Asset", host.querySelector(".inspector")!), "Enter");
+    await waitFor(() => expect(host.querySelector(".inspector")?.textContent).toContain("B-frame.jpg"));
+  });
+
   it("announces bounded query loading and failure without conflating their urgency", async () => {
     let releaseQuery!: () => void;
     harness.queryGate = new Promise<void>((resolve) => { releaseQuery = resolve; });
@@ -252,13 +273,15 @@ describe("V1 keyboard daily-use seams", () => {
 
     const second = host.querySelector<HTMLElement>('[data-asset-id="asset-2"]')!;
     await focusAndPress(second, " ");
-    expect(host.querySelector('[role="alertdialog"]')).not.toBeNull();
+    expect(document.querySelector('[role="alertdialog"]')).not.toBeNull();
+    await waitFor(() => expect(host.querySelector(".topbar")?.hasAttribute("inert")).toBe(true));
     expect(document.activeElement).toBe(button("Cancel"));
     await press("Tab");
     expect(document.activeElement).toBe(button("Save and Continue"));
     await press("Tab", true);
     expect(document.activeElement).toBe(button("Cancel"));
     await press("Escape");
+    await waitFor(() => expect(host.querySelector(".topbar")?.hasAttribute("inert")).toBe(false));
     expect(document.activeElement).toBe(second);
     expect(input("Title").value).toContain("draft");
 
@@ -408,10 +431,12 @@ describe("V1 keyboard daily-use seams", () => {
     expect(harness.calls.renameCollection).toBe(1);
     await waitFor(() => expect(button("Delete Final Selects")).not.toBeNull());
     await focusAndPress(button("Delete Final Selects"), " ");
-    expect(host.querySelector('[role="alertdialog"]')).not.toBeNull();
+    expect(document.querySelector('[role="alertdialog"]')).not.toBeNull();
+    await waitFor(() => expect(host.querySelector(".topbar")?.hasAttribute("inert")).toBe(true));
     expect(document.activeElement).toBe(button("Delete Collection"));
     await press("Escape");
-    expect(host.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+    await waitFor(() => expect(host.querySelector(".topbar")?.hasAttribute("inert")).toBe(false));
     await focusAndPress(button("Delete Final Selects"), "Enter");
     await focusAndPress(button("Delete Collection"), "Enter");
     expect(harness.calls.deleteCollection).toBe(1);
@@ -426,6 +451,7 @@ class BridgeHarness {
   assets = [...ASSETS];
   assetTotal: number | null = null;
   preferenceReads: Array<Promise<WorkspacePreferences>> = [];
+  getAssetFailures = new Set<string>();
   queryGate: Promise<void> | null = null;
   queryError: Error | null = null;
   authoritySession = SESSION;
@@ -469,6 +495,7 @@ class BridgeHarness {
     getAsset: async (sessionId, assetId) => {
       this.calls.getAsset += 1;
       this.recordFollowUp(sessionId);
+      if (this.getAssetFailures.has(assetId)) throw new Error("fixture Asset load failed");
       return this.details.get(assetId) ?? detail(asset(assetId, assetId === "asset-1" ? "A-frame.jpg" : `${assetId}.jpg`));
     },
     updateAsset: async (input) => {

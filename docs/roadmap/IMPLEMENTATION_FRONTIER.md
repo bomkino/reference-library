@@ -2,9 +2,9 @@
 
 ## Canonical status
 
-The V1 daily-use still-image Library is source-ready and canonical on `main`. Canonical implementation commit `2158fbb99260697ba158afcb048bef621f087c82` passed all five exact-`main` jobs in GitHub Actions run `33120794811`. Compatible CI packages Apple arm64 and Linux x86_64 artifacts and exercises the extracted Linux application under X11 and a real headless Wayland compositor.
+The V1 daily-use still-image Library is source-ready and canonical on `main`. The latest successful exact-`main` workflow is the current source authority. Compatible CI packages Apple arm64 and Linux x86_64 artifacts and exercises the extracted Linux application under X11 and a real headless Wayland compositor.
 
-This is source and compatible-runner evidence only. It is not installed Apple-Silicon or Garuda integration and is not a public release.
+That evidence does not by itself prove installed Apple-Silicon or Garuda integration. Public release, compatible-runner packaging and target integration remain separate states.
 
 ## Completed source increments
 
@@ -27,7 +27,7 @@ Safe editorial/Collection schema evolution, Root lifecycle, bounded real renditi
 3. **X1:** complete the same real Library Mac → Garuda → Mac with bounded zero-diff proof.
 4. **C1:** accept or replace ADR-004 and ADR-006 from the installed-target evidence.
 
-A public GitHub release additionally requires explicit release authority. Target evidence—not more compatible CI—is the next causal frontier.
+The maintainer explicitly authorized GitHub publication of 0.1.0 with the installed Apple-Silicon release journey and Ubuntu X11/Wayland rehearsal as release gates. This does not close M1, L1, X1 or C1; deeper target evidence remains the next causal frontier.
 
 ## Explicitly deferred
 

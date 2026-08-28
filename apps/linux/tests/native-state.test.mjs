@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -58,10 +58,10 @@ test("package-open validates real package children and canonicalizes parent alia
     await writeFile(path.join(library, "manifest.json"), "{}\n");
     await writeFile(path.join(library, "library.sqlite"), "sqlite");
     await symlink(realParent, aliasParent);
-    assert.equal(await assertPitchLibraryPackage(path.join(aliasParent, "Project.pitchlibrary")), library);
+    assert.equal(await assertPitchLibraryPackage(path.join(aliasParent, "Project.pitchlibrary")), await realpath(library));
     assert.equal(
       await canonicalLibraryCreationPath(path.join(aliasParent, "New.pitchlibrary")),
-      path.join(realParent, "New.pitchlibrary"),
+      path.join(await realpath(realParent), "New.pitchlibrary"),
     );
     await symlink(library, path.join(directory, "Linked.pitchlibrary"));
     await assert.rejects(assertPitchLibraryPackage(path.join(directory, "Linked.pitchlibrary")), /real package directory/);

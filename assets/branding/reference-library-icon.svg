@@ -1,13 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <!-- Proposed v1 product-local mark: bounded editorial contact sheet. -->
-  <rect x="48" y="48" width="928" height="928" rx="220" fill="#3b3933"/>
-  <rect x="62" y="62" width="900" height="900" rx="207" fill="#191917"/>
-  <rect x="198" y="238" width="514" height="584" rx="72" fill="#373732"/>
-  <rect x="252" y="186" width="574" height="652" rx="82" fill="#ede6d9"/>
-  <rect x="276" y="210" width="526" height="604" rx="61" fill="#282824"/>
-  <rect x="318" y="264" width="192" height="174" rx="28" fill="#ce8d5b"/>
-  <rect x="546" y="264" width="214" height="174" rx="28" fill="#55564f"/>
-  <rect x="318" y="474" width="442" height="242" rx="34" fill="#41423c"/>
-  <rect x="318" y="746" width="166" height="18" rx="9" fill="#77776d"/>
-  <rect x="504" y="746" width="104" height="18" rx="9" fill="#56574f"/>
+  <rect width="1024" height="1024" fill="#eef2ff"/>
+  <rect x="168" y="152" width="608" height="656" fill="none" stroke="#171717" stroke-width="44"/>
+  <path d="M368 536C304 512 264 448 248 392C240 376 224 368 208 368" fill="none" stroke="#171717" stroke-width="48" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="M352 488 L416 440 L600 448 L672 408 L784 416 L848 472 L904 488 L888 552 L808 568 L784 624 L728 624 L704 560 L632 576 L608 728 L544 728 L544 592 L440 592 L424 728 L360 728 L368 576 L320 544Z" fill="#171717"/>
+  <path d="M672 416 L752 440 L728 536 L672 488Z" fill="#171717"/>
+  <circle cx="800" cy="472" r="18" fill="#eef2ff"/>
+  <circle cx="184" cy="176" r="56" fill="#ff5a36"/>
 </svg>

@@ -97,12 +97,14 @@ export async function verifyReleaseMetadata(repository) {
     "utf8",
   );
   assertPlistTrue(appEntitlements, "com.apple.security.app-sandbox");
+  assertPlistTrue(appEntitlements, "com.apple.security.network.client");
   assertPlistTrue(appEntitlements, "com.apple.security.files.user-selected.read-write");
   assertPlistTrue(appEntitlements, "com.apple.security.files.bookmarks.app-scope");
   assertExactSecurityEntitlements(appEntitlements, [
     "com.apple.security.app-sandbox",
     "com.apple.security.files.bookmarks.app-scope",
     "com.apple.security.files.user-selected.read-write",
+    "com.apple.security.network.client",
   ]);
   const helperEntitlements = await readFile(
     path.join(repository, "apps/macos/ReferenceCore.entitlements"),

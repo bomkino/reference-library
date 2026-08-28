@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -6,7 +7,11 @@ const execFileAsync = promisify(execFile);
 
 export async function inspectCleanSource(repository, expectedCommit) {
   const root = await git(repository, ["rev-parse", "--show-toplevel"]);
-  if (path.resolve(root) !== path.resolve(repository)) {
+  const [canonicalRoot, canonicalRepository] = await Promise.all([
+    realpath(path.resolve(root)),
+    realpath(path.resolve(repository)),
+  ]);
+  if (canonicalRoot !== canonicalRepository) {
     throw new Error(`source repository must be its Git root: ${repository}`);
   }
   const commit = await git(root, ["rev-parse", "HEAD"]);

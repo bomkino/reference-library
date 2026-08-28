@@ -32,19 +32,42 @@ export function useAssetEditor(
   const [error, setError] = useState<string | null>(null);
   const request = useRef(0);
   const handledInvalidation = useRef(0);
+  const loadedAssetId = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     const current = ++request.current;
-    if (!selected) { setDetail(null); setDraft(null); setError(null); setLoading(false); return; }
+    if (!selected) {
+      loadedAssetId.current = null;
+      setDetail(null);
+      setDraft(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+    const changingAsset = loadedAssetId.current !== selected.assetId;
+    if (changingAsset) {
+      loadedAssetId.current = null;
+      setDetail(null);
+      setDraft(null);
+      setError(null);
+    }
     setLoading(true);
     try {
       const next = await bridge.getAsset(sessionId, selected.assetId);
       if (current !== request.current) return;
+      loadedAssetId.current = next.assetId;
       setDetail(next);
       setDraft(toDraft(next));
       setError(null);
     } catch (reason) {
-      if (current === request.current) setError(messageFrom(reason));
+      if (current === request.current) {
+        if (changingAsset) {
+          loadedAssetId.current = null;
+          setDetail(null);
+          setDraft(null);
+        }
+        setError(messageFrom(reason));
+      }
     } finally {
       if (current === request.current) setLoading(false);
     }
