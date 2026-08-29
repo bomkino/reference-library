@@ -1,0 +1,40 @@
+name: Export current feature-parity head
+
+on:
+  push:
+    branches:
+      - codex/reference-library-feature-parity
+    paths:
+      - .github/workflows/export-current-head.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact branch head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - name: Package clean source
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$GITHUB_SHA" > "$RUNNER_TEMP/HEAD_SHA"
+          tar --exclude=.git --exclude=.github/workflows/export-current-head.yml -czf "$RUNNER_TEMP/reference-library-current-head.tar.gz" .
+          cd "$RUNNER_TEMP"
+          sha256sum reference-library-current-head.tar.gz > reference-library-current-head.tar.gz.sha256
+      - name: Upload exact source
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: reference-library-current-head
+          path: |
+            ${{ runner.temp }}/reference-library-current-head.tar.gz
+            ${{ runner.temp }}/reference-library-current-head.tar.gz.sha256
+            ${{ runner.temp }}/HEAD_SHA
+          if-no-files-found: error
+          retention-days: 1
