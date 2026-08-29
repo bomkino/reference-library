@@ -1,0 +1,101 @@
+name: Apply UIUX polish
+
+on:
+  push:
+    branches:
+      - codex/reference-library-feature-parity
+    paths:
+      - .github/uiux-polish/uiux-polish.patch.gz.b64
+      - .github/workflows/apply-uiux-polish.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: reference-library-uiux-polish
+  cancel-in-progress: false
+
+jobs:
+  apply-verify-capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          ref: codex/reference-library-feature-parity
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Apply reviewed UIUX delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 --decode .github/uiux-polish/uiux-polish.patch.gz.b64 \
+            > "$RUNNER_TEMP/uiux-polish.patch.gz"
+          echo "cac02bde6a8160268877f3afa1e34ac0c39a6349cdf24acbfe659d3230156c48  $RUNNER_TEMP/uiux-polish.patch.gz" \
+            | sha256sum --check --strict
+          gzip --decompress --stdout "$RUNNER_TEMP/uiux-polish.patch.gz" \
+            > "$RUNNER_TEMP/uiux-polish.patch"
+          echo "77efa2fc91cb8546066bae0ae414550c6afc424168bbd674f64d3d7dd2a1e358  $RUNNER_TEMP/uiux-polish.patch" \
+            | sha256sum --check --strict
+          git apply --check "$RUNNER_TEMP/uiux-polish.patch"
+          git apply "$RUNNER_TEMP/uiux-polish.patch"
+          git diff --check
+
+      - name: Verify workspace source
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm run typecheck
+          npm test
+          npm run build
+          python3 scripts/check_repository.py
+
+      - name: Capture polished journey
+        shell: bash
+        env:
+          PRELOAD: ${{ github.workspace }}/.github/uiux-audit/preload.cjs
+          INDEX_HTML: ${{ github.workspace }}/packages/workspace/dist/index.html
+          SCREENSHOT_DIR: ${{ runner.temp }}/reference-uiux-polish/screenshots
+        run: |
+          set -euo pipefail
+          mkdir -p "$SCREENSHOT_DIR"
+          xvfb-run -a ./node_modules/.bin/electron .github/uiux-audit/capture.cjs --no-sandbox
+
+      - name: Remove temporary audit machinery
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .github/uiux-polish
+          rm -rf .github/uiux-audit
+          rm -f .github/workflows/apply-uiux-polish.yml
+          rm -f .github/workflows/export-uiux-audit-head.yml
+          rm -f .github/workflows/capture-uiux-audit.yml
+          git diff --check
+
+      - name: Commit verified product source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "pitch.dog"
+          git config user.email "111725271+bomkino@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "feat(workspace): make visual research the primary surface"
+          git push origin HEAD:codex/reference-library-feature-parity
+
+      - name: Upload polished screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: reference-library-uiux-polish-screenshots
+          path: ${{ runner.temp }}/reference-uiux-polish/screenshots/*.png
+          if-no-files-found: warn
+          retention-days: 1
