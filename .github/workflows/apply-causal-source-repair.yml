@@ -103,6 +103,31 @@ jobs:
           oversized = oversized.replace(old, new, 1)
           source = source[:oversized_start] + oversized + source[oversized_end:]
           scanner.write_text(source)
+
+          integrity = Path('crates/reference-core/tests/v1_schema_integrity.rs')
+          integrity_source = integrity.read_text()
+          old_ledger_tail = '''            (
+                      3,
+                      "v1_async_rendition_jobs".into(),
+                      "6670bc4e3fc09b0489f8c1f35611df625f5d5b69c394a8ff7fa7576933132c94".into()
+                  )
+              ]'''
+          new_ledger_tail = '''            (
+                      3,
+                      "v1_async_rendition_jobs".into(),
+                      "6670bc4e3fc09b0489f8c1f35611df625f5d5b69c394a8ff7fa7576933132c94".into()
+                  ),
+                  (
+                      4,
+                      "asset_browser_feature_parity".into(),
+                      "0ea805d7e80ba293de0a86c40ea4a13d67feddcbfe3f725062e49fbce45249cb".into()
+                  )
+              ]'''
+          if integrity_source.count(old_ledger_tail) != 1:
+              raise SystemExit(
+                  f'expected one schema ledger tail, found {integrity_source.count(old_ledger_tail)}'
+              )
+          integrity.write_text(integrity_source.replace(old_ledger_tail, new_ledger_tail, 1))
           PY
           cargo fmt --all
           git diff --check
