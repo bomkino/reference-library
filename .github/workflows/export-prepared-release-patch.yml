@@ -1,0 +1,54 @@
+name: Export prepared 0.2.0 patch
+
+on:
+  push:
+    branches:
+      - codex/reference-library-feature-parity
+    paths:
+      - .github/workflows/export-prepared-release-patch.yml
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact release branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          ref: codex/reference-library-feature-parity
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Apply the already-verified transformation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/release-prep/prepare.py
+          python3 .github/release-prep/update-fixtures.py
+          npm install --package-lock-only --ignore-scripts
+          cargo check --workspace
+          rm -rf .github/release-prep
+          rm -f .github/workflows/prepare-v0.2.0-release.yml
+          rm -f .github/workflows/export-prepared-release-patch.yml
+          git diff --check
+          git diff --binary > "$RUNNER_TEMP/release-0.2.0.patch"
+          cd "$RUNNER_TEMP"
+          sha256sum release-0.2.0.patch > SHA256SUMS
+
+      - name: Upload exact patch
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: reference-library-0.2.0-patch
+          path: |
+            ${{ runner.temp }}/release-0.2.0.patch
+            ${{ runner.temp }}/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 1
