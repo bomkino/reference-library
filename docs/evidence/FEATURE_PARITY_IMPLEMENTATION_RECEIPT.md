@@ -2,17 +2,31 @@
 
 ## Status
 
-**Draft pull-request source. Not merged. Not released. Not target-integrated.**
+**Draft pull-request candidate. Compatible source and package verification passed. Not merged. Not released. Not target-integrated.**
 
 This receipt covers `codex/reference-library-feature-parity` and draft pull request #4. It does not authorize a merge or release.
 
-The clean editorial decision-loop source commit is:
+Exact product source after the editorial decision-loop and source-truth repairs:
 
 ```text
-92f673cdc2c81075fc1141302b9e1a2bfaa03c6d
+9e821c18815b0381e310de7806cd227a8bd18b49
 ```
 
-Before that commit was written, the exact source passed its focused gate: patch integrity, TypeScript typechecking, Rust Core build, 46 workspace tests, 35 Linux/native source-contract tests, source builds, Rust formatting, and repository-boundary validation. The ordinary five-job matrix for this receipt-bearing head remains the authoritative compatible-package evidence.
+Clean automation-free verification head:
+
+```text
+bcb52571fe79bc7bbc7a767c9487dcbf4b2de149
+```
+
+Authoritative pull-request workflow:
+
+```text
+run: 33233311053
+head: bcb52571fe79bc7bbc7a767c9487dcbf4b2de149
+result: five of five jobs passed
+```
+
+The cleanup commit changes no product, protocol, schema, test or package source. It removes the one-shot transformation workflows so only the ordinary repository CI remains.
 
 ## Product result
 
@@ -57,6 +71,19 @@ The parity build could find and inspect material, but a deck researcher also nee
 
 The Shortlist is intentionally session-local. It is a working comparison surface, not hidden canonical project meaning. Durable decisions belong in review state, Tags, Used In, notes, titles, and Collections.
 
+## Corrected source truth
+
+The deep pass found a conceptual defect in the parity model: source availability and preview capability had been conflated.
+
+The corrected contract is:
+
+- **present** — the source is physically readable;
+- **unreadable** — the source cannot be safely read or decoded where decoding is required to establish source truth;
+- **unsupported** — the source is readable and catalogued, but Reference Library has no trusted in-app renderer for it;
+- preview capability is recorded separately from filesystem availability.
+
+This prevents a readable PSD, archive, font or other catalogue-only source from being falsely reported as damaged. It also keeps oversized but readable sources present while still bounding thumbnail and preview work.
+
 ## Security and product boundaries
 
 - Absolute paths remain confined to the native host.
@@ -66,19 +93,57 @@ The Shortlist is intentionally session-local. It is a working comparison surface
 - Catalogue breadth is not described as universal preview breadth.
 - Automatic rescanning is explicit and opt-in.
 - Compare is capped at four visible candidates and Shortlist work is bounded at 32.
+- Expanded query payloads remain indirectly stored so the framed protocol command remains bounded.
 - Font consolidation remains outside Reference Library because it belongs to the standalone font product and would introduce a source-copy workflow into a currently non-mutating application.
 
-## Exact-head verification requirement
+## Fresh exact-head verification
 
-The receipt-bearing head must freshly pass:
+Workflow run `33233311053` passed all five ordinary jobs against `bcb52571fe79bc7bbc7a767c9487dcbf4b2de149`:
 
-- repository boundary, generated icon, release metadata, dependency-licence, and legal-bundle checks;
-- TypeScript typechecking, Linux/native contract tests, workspace tests, and source builds;
-- Rust formatting, Clippy with warnings denied, complete Rust tests, and T01/V1 semantic round trips;
-- extracted Linux packages under X11 and headless Wayland;
-- Swift tests and Apple-Silicon application build, extraction, checksums, and source-bound receipt validation.
+### `repository-boundary`
 
-The final workflow run ID and exact receipt-bearing SHA will be recorded only after that matrix completes.
+- repository boundary check;
+- generated product-icon check;
+- release-metadata check.
+
+### `rust-core`
+
+- pinned Rust dependency audit;
+- Rust formatting;
+- Clippy with warnings denied;
+- complete Rust workspace test suite;
+- T01 semantic round trip;
+- V1 semantic round trip.
+
+### `workspace-and-linux-source`
+
+- locked Node install;
+- high-severity dependency audit;
+- release Core build;
+- TypeScript typecheck;
+- complete Node/workspace tests;
+- source builds;
+- generated dependency-licence check;
+- legal-bundle contract.
+
+### `linux-package-directory`
+
+- release Core and shared workspace builds;
+- pacman, AppImage and tar package generation;
+- exact extracted artifact validation;
+- packaged renderer-boundary validation;
+- Chromium sandbox ownership rehearsal;
+- deterministic packaged journey under X11;
+- packaged application journey under headless Wayland;
+- extracted helper reopen;
+- checksums and source-bound build-receipt verification.
+
+### `macos-arm64-package`
+
+- Swift tests;
+- Apple-Silicon application build;
+- extracted application validation;
+- checksums and source-bound build-receipt verification.
 
 ## Remaining proof boundary
 
@@ -91,4 +156,4 @@ Compatible CI is not representative target integration. Before promotion, comple
 
 ## Deliberate non-claim
 
-This branch is a source and compatible-package candidate. It is not yet evidence that every broad catalogue format has a high-fidelity preview, that comparison ergonomics are proven in daily pitch.dog work, that the app is integrated on the target machines, or that a public release is ready.
+This branch is a strong source and compatible-package candidate. It is not yet evidence that every broad catalogue format has a high-fidelity preview, that comparison ergonomics are proven in daily pitch.dog work, that the app is integrated on the target machines, or that a public release is ready.
