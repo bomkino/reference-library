@@ -109,24 +109,10 @@ jobs:
 
           app = Path("packages/workspace/src/app.tsx")
           app_source = app.read_text()
-          old_query_state = '  const [query, setQuery] = useState<AssetQuery>({ ...DEFAULT_ASSET_QUERY });\n'
-          new_query_state = '''  const [query, setQuery] = useState<AssetQuery>({ ...DEFAULT_ASSET_QUERY });
-          const queryRef = useRef(query);
-          useEffect(() => { queryRef.current = query; }, [query]);
-          '''
-          if app_source.count(old_query_state) != 1:
-              raise SystemExit(f"expected one query state seam, found {app_source.count(old_query_state)}")
-          app_source = app_source.replace(old_query_state, new_query_state, 1)
-
           old_apply = '  const applyQuery = (next: AssetQuery) => requestTransition("Change the Asset view", () => { setQuery(next); setPreview(null); });\n'
           new_apply = '''  const applyQuery = (update: (query: AssetQuery) => AssetQuery) => requestTransition(
             "Change the Asset view",
-            () => {
-              const next = update(queryRef.current);
-              queryRef.current = next;
-              setQuery(next);
-              setPreview(null);
-            },
+            () => { setQuery((current) => update(current)); setPreview(null); },
           );
           '''
           if app_source.count(old_apply) != 1:
@@ -155,7 +141,28 @@ jobs:
               if tests.count(old_text) != 1:
                   raise SystemExit(f"expected one stale copy assertion, found {tests.count(old_text)} for {old_text}")
               tests = tests.replace(old_text, new_text, 1)
-          test.write_text(tests)
+
+          old_select_helper = 'function select(name: string, scope: ParentNode = hostNode()): HTMLSelectElement { const found = [...scope.querySelectorAll<HTMLSelectElement>("select")].find((element) => element.closest("label")?.textContent?.includes(name)); if (!found) throw new Error(`select not found: ${name}`); return found; }'
+          new_select_helper = '''function select(name: string, scope: ParentNode = hostNode()): HTMLSelectElement {
+            const controls = [...scope.querySelectorAll<HTMLSelectElement>("select")];
+            const found = controls.find((element) => {
+              const accessibleName = element.getAttribute("aria-label");
+              if (accessibleName === name || accessibleName?.startsWith(`${name} `)) return true;
+              const label = element.closest("label");
+              if (!label) return false;
+              const labelText = [...label.childNodes]
+                .filter((node) => node !== element)
+                .map((node) => node.textContent ?? "")
+                .join(" ")
+                .trim();
+              return labelText.includes(name);
+            });
+            if (!found) throw new Error(`select not found: ${name}`);
+            return found;
+          }'''
+          if tests.count(old_select_helper) != 1:
+              raise SystemExit(f"expected one ambiguous select helper, found {tests.count(old_select_helper)}")
+          test.write_text(tests.replace(old_select_helper, new_select_helper, 1))
           PY
 
           rm -rf .github/uiux-final
