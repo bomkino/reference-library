@@ -6,6 +6,7 @@ on:
       - codex/reference-library-feature-parity
     paths:
       - .github/uiux-final/final-uiux.patch.gz.b64.part-*
+      - .github/uiux-final/final-uiux-followup.patch.gz.b64
       - .github/workflows/apply-final-uiux.yml
 
 permissions:
@@ -45,6 +46,16 @@ jobs:
           echo "dbce231180f7aa58d8df6b79e43bb6eee4758c5b90c0b5c619a5ed2d151583e0  $RUNNER_TEMP/final-uiux.patch" | sha256sum --check --strict
           git apply --check "$RUNNER_TEMP/final-uiux.patch"
           git apply "$RUNNER_TEMP/final-uiux.patch"
+
+          tr -d '\n' < .github/uiux-final/final-uiux-followup.patch.gz.b64 \
+            | base64 --decode \
+            > "$RUNNER_TEMP/final-uiux-followup.patch.gz"
+          echo "884b874aa6a4eb1072b2d7331f566c1955af681b1aeda5dc795a2d6e714ec4aa  $RUNNER_TEMP/final-uiux-followup.patch.gz" | sha256sum --check --strict
+          gzip --decompress --stdout "$RUNNER_TEMP/final-uiux-followup.patch.gz" > "$RUNNER_TEMP/final-uiux-followup.patch"
+          echo "02e780782749738801ebb63dc32613ee9d87bef15f153e53eb504686c0c0faf5  $RUNNER_TEMP/final-uiux-followup.patch" | sha256sum --check --strict
+          git apply --check "$RUNNER_TEMP/final-uiux-followup.patch"
+          git apply "$RUNNER_TEMP/final-uiux-followup.patch"
+
           rm -rf .github/uiux-final
           rm -f .github/workflows/apply-final-uiux.yml
           rm -f .github/workflows/export-current-uiux-source.yml
