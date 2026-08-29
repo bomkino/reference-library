@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/prepare-v0.2.0-release.yml
       - .github/release-prep/prepare.py
+      - .github/release-prep/update-fixtures.py
 
 permissions:
   contents: write
@@ -38,8 +39,12 @@ jobs:
           toolchain: 1.90.0
           components: rustfmt,clippy
 
-      - name: Align version, documentation and release automation
-        run: python3 .github/release-prep/prepare.py
+      - name: Align version, documentation, tests and release automation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/release-prep/prepare.py
+          python3 .github/release-prep/update-fixtures.py
 
       - name: Refresh lockfiles
         shell: bash
