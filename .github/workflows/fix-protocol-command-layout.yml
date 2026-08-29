@@ -41,34 +41,20 @@ jobs:
 
           protocol = Path("crates/reference-protocol/src/lib.rs")
           text = protocol.read_text()
-          old = '''    QueryAssetIndex {
-              session_id: String,
-              offset: u64,
-              limit: u32,
-              projection: AssetProjection,
-              query: AssetQuery,
-              #[serde(default)]
-              expected_library_revision: Option<u64>,
-          },'''
-          new = '''    QueryAssetIndex {
-              session_id: String,
-              offset: u64,
-              limit: u32,
-              projection: AssetProjection,
-              query: Box<AssetQuery>,
-              #[serde(default)]
-              expected_library_revision: Option<u64>,
-          },'''
-          if text.count(old) != 1:
-              raise SystemExit(f"expected one QueryAssetIndex layout, found {text.count(old)}")
-          text = text.replace(old, new, 1)
+          needle = "        query: AssetQuery,\n        #[serde(default)]\n        expected_library_revision: Option<u64>,"
+          replacement = "        query: Box<AssetQuery>,\n        #[serde(default)]\n        expected_library_revision: Option<u64>,"
+          if text.count(needle) != 1:
+              raise SystemExit(f"expected one inline QueryAssetIndex payload, found {text.count(needle)}")
+          text = text.replace(needle, replacement, 1)
 
-          assertion = '        assert!(size_of::<Command>() <= 520);'
-          diagnostic = '''        let command_size = size_of::<Command>();
-                  assert!(
-                      command_size <= 520,
-                      "Command occupies {command_size} bytes; keep large request payloads indirect"
-                  );'''
+          assertion = "        assert!(size_of::<Command>() <= 520);"
+          diagnostic = (
+              "        let command_size = size_of::<Command>();\n"
+              "        assert!(\n"
+              "            command_size <= 520,\n"
+              "            \"Command occupies {command_size} bytes; keep large request payloads indirect\"\n"
+              "        );"
+          )
           if assertion in text:
               text = text.replace(assertion, diagnostic, 1)
           protocol.write_text(text)
