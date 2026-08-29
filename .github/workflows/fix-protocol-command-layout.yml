@@ -32,7 +32,7 @@ jobs:
           toolchain: 1.90.0
           components: rustfmt,clippy
 
-      - name: Box the expanded query payload
+      - name: Bound the expanded query and refresh historical fixtures
         shell: bash
         run: |
           set -euo pipefail
@@ -58,6 +58,32 @@ jobs:
           if assertion in text:
               text = text.replace(assertion, diagnostic, 1)
           protocol.write_text(text)
+
+          fixture = Path("crates/reference-core/tests/v1_editorial_public_seams.rs")
+          tests = fixture.read_text()
+          replacements = [
+              (
+                  "                note: TextPatch::Set(\" \\n \".into()),\n            },",
+                  "                note: TextPatch::Set(\" \\n \".into()),\n                ..AssetPatch::default()\n            },",
+              ),
+              (
+                  "                sort: AssetSort::NameDescending,\n            },",
+                  "                sort: AssetSort::NameDescending,\n                ..AssetQuery::default()\n            },",
+              ),
+              (
+                  "        sort: AssetSort::NameDescending,\n    };",
+                  "        sort: AssetSort::NameDescending,\n        ..AssetQuery::default()\n    };",
+              ),
+              (
+                  "        library_revision: 1,\n    };",
+                  "        library_revision: 1,\n        facets: Default::default(),\n    };",
+              ),
+          ]
+          for old, new in replacements:
+              if tests.count(old) != 1:
+                  raise SystemExit(f"expected one historical fixture seam, found {tests.count(old)} for {old!r}")
+              tests = tests.replace(old, new, 1)
+          fixture.write_text(tests)
           PY
           rm -f .github/workflows/fix-protocol-command-layout.yml
           cargo fmt --all
