@@ -15,11 +15,13 @@ export function LibrarySidebar(props: {
   bridge: ReferenceWorkspaceBridge;
   sessionId: string;
   total: number;
+  drawerOpen: boolean;
   selectedCollectionId: string | null;
   rootRevision: number;
   collectionRevision: number;
   disabled?: boolean;
   onCollectionChange(collectionId: string | null): void;
+  onClose(): void;
   onDeleteActiveCollection(label: string, action: () => Promise<void>): void;
   onError(message: string): void;
   onCollectionInventory(collections: CollectionSummary[]): void;
@@ -139,7 +141,8 @@ export function LibrarySidebar(props: {
 
   return (
     <aside
-      className="sidebar"
+      className={`sidebar${props.drawerOpen ? " sidebar--drawer-open" : ""}`}
+      id="library-navigation"
       aria-label="Library navigation"
       onKeyDownCapture={(event) => {
         if (deleting && event.key === "Escape") {
@@ -149,10 +152,13 @@ export function LibrarySidebar(props: {
         }
       }}
     >
-      <div>
-        <p className="eyebrow">Library</p>
-        <p className="sidebar__count">{props.total.toLocaleString()} {props.total === 1 ? "Asset" : "Assets"}</p>
-      </div>
+      <header className="sidebar__header">
+        <div>
+          <p className="eyebrow">Library</p>
+          <p className="sidebar__count">{props.total.toLocaleString()} {props.total === 1 ? "Asset" : "Assets"}</p>
+        </div>
+        <button className="button--quiet sidebar__close" onClick={props.onClose}>Close</button>
+      </header>
 
       <section aria-labelledby="roots-heading">
         <div className="section-heading">
@@ -196,7 +202,7 @@ export function LibrarySidebar(props: {
 
       <section aria-labelledby="collections-heading">
         <h2 id="collections-heading">Collections</h2>
-        <button ref={allAssets} className={props.selectedCollectionId === null ? "nav-choice nav-choice--active" : "nav-choice"} disabled={props.disabled} onClick={() => props.onCollectionChange(null)}>All Assets</button>
+        <button ref={allAssets} className={props.selectedCollectionId === null ? "nav-choice nav-choice--active" : "nav-choice"} disabled={props.disabled} onClick={() => { props.onCollectionChange(null); props.onClose(); }}>All Assets</button>
         <ul className="plain-list">
           {collections.map((collection) => (
             <li className="collection-row" key={collection.collectionId}>
@@ -209,7 +215,7 @@ export function LibrarySidebar(props: {
                 </form>
               ) : (
                 <>
-                  <button className={props.selectedCollectionId === collection.collectionId ? "nav-choice nav-choice--active" : "nav-choice"} disabled={props.disabled} onClick={() => props.onCollectionChange(collection.collectionId)}>{collection.name}<span>{collection.assetCount}</span></button>
+                  <button className={props.selectedCollectionId === collection.collectionId ? "nav-choice nav-choice--active" : "nav-choice"} disabled={props.disabled} onClick={() => { props.onCollectionChange(collection.collectionId); props.onClose(); }}>{collection.name}<span>{collection.assetCount}</span></button>
                   <button className="icon-button" aria-label={`Rename ${collection.name}`} title={`Rename ${collection.name}`} disabled={props.disabled} onClick={(event) => { returnFocus.current = event.currentTarget; setEditing(collection); setRename(collection.name); }}><span className="ui-icon ui-icon--edit" aria-hidden="true" /></button>
                   <button className="icon-button" aria-label={`Delete ${collection.name}`} title={`Delete ${collection.name}`} disabled={props.disabled} onClick={(event) => { returnFocus.current = event.currentTarget; setDeleting(collection); }}><span className="ui-icon ui-icon--trash" aria-hidden="true" /></button>
                 </>

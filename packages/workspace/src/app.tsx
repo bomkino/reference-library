@@ -209,6 +209,8 @@ function OpenWorkspace(props: {
   const [roots, setRoots] = useState<RootSummary[]>([]);
   const [pending, setPending] = useState<PendingTransition | null>(null);
   const [sidebarModalOpen, setSidebarModalOpen] = useState(false);
+  const [libraryDrawerOpen, setLibraryDrawerOpen] = useState(false);
+  const [inspectorDrawerOpen, setInspectorDrawerOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const workspace = useRef<HTMLElement>(null);
@@ -269,6 +271,21 @@ function OpenWorkspace(props: {
   useEffect(() => {
     if (compareOpen && comparedAssets.length < 2) setCompareOpen(false);
   }, [compareOpen, comparedAssets.length]);
+
+  useEffect(() => {
+    if (!selected) setInspectorDrawerOpen(false);
+  }, [selected]);
+
+  useEffect(() => {
+    if (!libraryDrawerOpen && !inspectorDrawerOpen) return;
+    const closeDrawer = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (inspectorDrawerOpen) setInspectorDrawerOpen(false);
+      else setLibraryDrawerOpen(false);
+    };
+    window.addEventListener("keydown", closeDrawer);
+    return () => window.removeEventListener("keydown", closeDrawer);
+  }, [inspectorDrawerOpen, libraryDrawerOpen]);
 
   useEffect(() => {
     if (!autoRescan || props.needsRestart || roots.length === 0) return;
@@ -361,6 +378,8 @@ function OpenWorkspace(props: {
         return;
       }
       setPreview(null);
+      setLibraryDrawerOpen(false);
+      setInspectorDrawerOpen(false);
       setCompareOpen(true);
     });
   };
@@ -548,6 +567,12 @@ function OpenWorkspace(props: {
     finally { setBusy(false); }
   };
   const clearAssetView = () => applyQuery({ ...DEFAULT_ASSET_QUERY });
+  const openPreview = (asset: AssetSummary) => {
+    setLibraryDrawerOpen(false);
+    setInspectorDrawerOpen(false);
+    setPreview(asset);
+  };
+  const closeInspector = () => setInspectorDrawerOpen(false);
 
   return (
     <main ref={workspace} className="workspace-shell">
@@ -560,7 +585,20 @@ function OpenWorkspace(props: {
           <strong>{pager.total.toLocaleString()}</strong><span>{pager.total === 1 ? "Asset" : "Assets"}</span>
         </div>
         <div className="topbar__actions">
-          <button className="button--quiet" aria-label="Keyboard shortcuts" onClick={() => setShortcutsOpen(true)}>Shortcuts</button>
+          <button
+            className="button--quiet topbar__drawer-toggle topbar__library-toggle"
+            aria-controls="library-navigation"
+            aria-expanded={libraryDrawerOpen}
+            onClick={() => { setInspectorDrawerOpen(false); setLibraryDrawerOpen((open) => !open); }}
+          >Library</button>
+          <button
+            className="button--quiet topbar__drawer-toggle topbar__inspector-toggle"
+            aria-controls="asset-inspector"
+            aria-expanded={inspectorDrawerOpen}
+            disabled={!selected}
+            onClick={() => { setLibraryDrawerOpen(false); setInspectorDrawerOpen((open) => !open); }}
+          >Inspector</button>
+          <button className="button--quiet topbar__shortcuts" aria-label="Keyboard shortcuts" onClick={() => setShortcutsOpen(true)}>Shortcuts</button>
           <details className="workspace-menu">
             <summary>View & Library</summary>
             <div className="workspace-menu__panel">
@@ -579,15 +617,24 @@ function OpenWorkspace(props: {
         </div>
         <QueryToolbar query={query} roots={roots} facets={pager.facets} disabled={busy || props.needsRestart} onChange={applyQuery} />
       </header>
+      {(libraryDrawerOpen || inspectorDrawerOpen) && (
+        <button
+          className="workspace-drawer-backdrop"
+          aria-label="Close open panel"
+          onClick={() => { setLibraryDrawerOpen(false); setInspectorDrawerOpen(false); }}
+        />
+      )}
       <LibrarySidebar
         bridge={props.bridge}
         sessionId={props.session.sessionId}
         total={pager.total}
+        drawerOpen={libraryDrawerOpen}
         selectedCollectionId={query.collectionId}
         rootRevision={props.invalidations.roots}
         collectionRevision={props.invalidations.collections}
         disabled={busy || props.needsRestart}
-        onCollectionChange={(collectionId) => applyQuery({ ...query, collectionId })}
+        onCollectionChange={(collectionId) => { applyQuery({ ...query, collectionId }); setLibraryDrawerOpen(false); }}
+        onClose={() => setLibraryDrawerOpen(false)}
         onDeleteActiveCollection={(label, action) => requestTransition(label, async () => {
           await action();
           setQuery((current) => ({ ...current, collectionId: null }));
@@ -624,7 +671,7 @@ function OpenWorkspace(props: {
               onToggleShortlist={toggleShortlist}
               onRequestCompare={requestCompare}
               onReview={requestReview}
-              onPreview={setPreview}
+              onPreview={openPreview}
               onOpen={(asset) => void props.bridge.openLocation(props.session.sessionId, asset.locationId).catch((reason) => props.setShellError(messageFrom(reason)))}
             />}
         {shortlisted.length > 0 && <SelectionTray
@@ -650,6 +697,7 @@ function OpenWorkspace(props: {
         sessionId={props.session.sessionId}
         detail={editor.detail}
         draft={editor.draft}
+        drawerOpen={inspectorDrawerOpen}
         collections={collections}
         loading={editor.loading}
         saving={editor.saving}
@@ -659,7 +707,8 @@ function OpenWorkspace(props: {
         onSave={editor.save}
         onDiscard={editor.discard}
         onReload={editor.reload}
-        onPreview={(detail) => setPreview(summaryFromDetail(detail))}
+        onPreview={(detail) => openPreview(summaryFromDetail(detail))}
+        onClose={closeInspector}
         onError={props.setShellError}
       />
       <div className="selection-announcer" aria-live="polite">{selected ? `Selected ${selected.displayName}. ${shortlisted.length} Assets shortlisted.` : `${shortlisted.length} Assets shortlisted.`}</div>

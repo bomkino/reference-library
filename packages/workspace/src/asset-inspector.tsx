@@ -18,6 +18,7 @@ export function AssetInspector(props: {
   sessionId: string;
   detail: AssetDetail | null;
   draft: AssetDraft | null;
+  drawerOpen: boolean;
   collections: CollectionSummary[];
   loading: boolean;
   saving: boolean;
@@ -28,6 +29,7 @@ export function AssetInspector(props: {
   onDiscard(): void;
   onReload(): Promise<void>;
   onPreview(detail: AssetDetail): void;
+  onClose(): void;
   onError(message: string): void;
 }) {
   const [actionStatus, setActionStatus] = useState<string | null>(null);
@@ -36,19 +38,29 @@ export function AssetInspector(props: {
   const tokenErrors = props.draft ? tokenFieldErrors(props.draft) : { tags: null, usedIn: null };
   const cannotSave = Boolean(titleError || noteError || tokenErrors.tags || tokenErrors.usedIn || props.saving);
 
-  if (props.loading) return <aside className="inspector" aria-label="Inspector" aria-busy="true"><h2>Inspector</h2><p role="status">Loading Asset…</p></aside>;
+  if (props.loading) return <aside className={`inspector inspector--active${props.drawerOpen ? " inspector--drawer-open" : ""}`} id="asset-inspector" aria-label="Inspector" aria-busy="true"><div className="section-heading"><h2>Inspector</h2><button className="button--quiet inspector__close" onClick={props.onClose}>Close</button></div><p role="status">Loading Asset…</p></aside>;
   if (!props.detail || !props.draft) {
     return (
-      <aside className="inspector" aria-label="Inspector">
-        <h2>Inspector</h2>
-        {props.error ? (
-          <>
-            <p className="field-error" role="alert">{props.error}</p>
-            <button className="button--secondary" onClick={() => void props.onReload()}>Retry Asset</button>
-          </>
-        ) : (
-          <p className="muted">Select an Asset. Inspector geometry stays put.</p>
-        )}
+      <aside className="inspector inspector--empty" id="asset-inspector" aria-label="Inspector">
+        <div className="inspector-empty">
+          <p className="eyebrow">Inspector</p>
+          <h2>Choose a reference.</h2>
+          {props.error ? (
+            <>
+              <p className="field-error" role="alert">{props.error}</p>
+              <button className="button--secondary" onClick={() => void props.onReload()}>Retry Asset</button>
+            </>
+          ) : (
+            <>
+              <p className="muted">Select an Asset to preview it, record the decision, and keep its place in the deck.</p>
+              <dl className="inspector-empty__keys">
+                <div><dt><kbd>1 / 2 / 3</kbd></dt><dd>Keep, Maybe, Reject</dd></div>
+                <div><dt><kbd>X</kbd></dt><dd>Add to Shortlist</dd></div>
+                <div><dt><kbd>C</kbd></dt><dd>Compare shortlisted work</dd></div>
+              </dl>
+            </>
+          )}
+        </div>
       </aside>
     );
   }
@@ -69,10 +81,13 @@ export function AssetInspector(props: {
   };
 
   return (
-    <aside className="inspector" aria-label="Inspector">
-      <div className="section-heading">
+    <aside className={`inspector inspector--active${props.drawerOpen ? " inspector--drawer-open" : ""}`} id="asset-inspector" aria-label="Inspector">
+      <div className="section-heading inspector__heading">
         <div><p className="eyebrow">Selected Asset</p><h2>{detail.customTitle ?? detail.originalDisplayName}</h2></div>
-        {props.dirty && <span className="draft-mark" role="status">Edited</span>}
+        <div className="inspector__heading-actions">
+          {props.dirty && <span className="draft-mark" role="status">Edited</span>}
+          <button className="button--quiet inspector__close" onClick={props.onClose}>Close</button>
+        </div>
       </div>
 
       <InspectorVisual
