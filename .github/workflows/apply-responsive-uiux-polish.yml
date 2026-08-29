@@ -65,8 +65,10 @@ jobs:
           test.write_text(source.replace(old, new, 1))
           PY
 
-          rm -rf .github/uiux-responsive
-          rm -f .github/workflows/apply-responsive-uiux-polish.yml
+          # The Actions token cannot update workflow files. Keep the current
+          # capture workflow in this product commit; the connector updates it
+          # separately after the verified source lands.
+          git checkout HEAD -- .github/workflows/capture-final-uiux.yml
           git diff --check
 
       - name: Verify source and journeys
@@ -86,7 +88,12 @@ jobs:
           set -euo pipefail
           git config user.name "pitch.dog"
           git config user.email "111725271+bomkino@users.noreply.github.com"
-          git add -A
+          git add \
+            .github/uiux-audit/capture.cjs \
+            packages/workspace/src/app.tsx \
+            packages/workspace/src/styles.css \
+            scripts/linux-packaged-runtime-smoke.mjs \
+            scripts/tests/linux-runtime-smoke.test.mjs
           git diff --cached --check
           git commit -m "fix(workspace): settle responsive editorial chrome"
           git push origin HEAD:codex/reference-library-feature-parity
