@@ -16,6 +16,8 @@
 
 ## Current scope
 
-V1 supports whole-file Origins for common still images, Root reconnect/rescan, real bounded renditions, manual review/title/note curation, lexical query/filter/sort, flat Collections, opaque Preview, native reveal and bounded cross-host canonical proof.
+The stable 0.1 release supports whole-file Origins for common still images, Root reconnect/rescan, real bounded renditions, manual review/title/note curation, lexical query/filter/sort, flat Collections, opaque Preview, native reveal and bounded cross-host canonical proof.
 
-Excerpts, similarity, exact-duplicate review, source move/copy/Trash, broad professional formats, nested/smart Collections, tags, ratings, saved searches, MCP and automatic update systems remain intentionally deferred.
+The unmerged 0.2 candidate adds broad honest cataloguing, Grid/Compact/List modes, optional related-thumbnail mosaics, Tags, Used In, category/file/media facets, file-size sorting, native Open/Reveal/Copy Path, opt-in Root rescanning, an ordered bounded Shortlist, a synchronized four-up Compare Board, rapid review shortcuts and conflict-aware batch curation.
+
+Excerpts, similarity, exact-duplicate review, source move/copy/Trash, nested/smart Collections, ratings, saved searches, MCP and automatic application updates remain intentionally deferred.

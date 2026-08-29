@@ -5,7 +5,7 @@ import type {
   ReferenceWorkspaceBridge,
   ReviewState,
 } from "@pitchdog/reference-bridge";
-import { MAX_COMPARE_ASSETS } from "./selection";
+import { MAX_COMPARE_ASSETS, type ShortlistMove } from "./selection";
 
 export function SelectionTray(props: {
   bridge: ReferenceWorkspaceBridge;
@@ -16,6 +16,7 @@ export function SelectionTray(props: {
   status: string | null;
   onInspect(asset: AssetSummary): void;
   onRemove(assetId: string): void;
+  onMove(assetId: string, direction: ShortlistMove): void;
   onClear(): void;
   onCompare(): void;
   onReview(reviewState: ReviewState): void;
@@ -56,30 +57,52 @@ export function SelectionTray(props: {
       </header>
 
       <div className="selection-tray__assets" role="list" aria-label="Shortlisted assets">
-        {props.assets.map((asset, index) => (
-          <div className="selection-chip" role="listitem" key={asset.assetId}>
-            <button
-              className="selection-chip__asset"
-              disabled={props.busy}
-              title={`Inspect ${asset.displayName}`}
-              onClick={() => props.onInspect(asset)}
-            >
-              <TrayVisual bridge={props.bridge} sessionId={props.sessionId} asset={asset} />
-              <span>
-                <strong>{index + 1}. {asset.displayName}</strong>
-                <small>{asset.reviewState} · {asset.extension ? `.${asset.extension}` : asset.mediaFamily}</small>
-              </span>
-            </button>
-            <button
-              className="selection-chip__remove"
-              aria-label={`Remove ${asset.displayName} from shortlist`}
-              disabled={props.busy}
-              onClick={() => props.onRemove(asset.assetId)}
-            >
-              ×
-            </button>
-          </div>
-        ))}
+        {props.assets.map((asset, index) => {
+          const compared = index < MAX_COMPARE_ASSETS;
+          return (
+            <div className={`selection-chip${compared ? " selection-chip--compare-slot" : ""}`} role="listitem" key={asset.assetId}>
+              <span className="selection-chip__slot">{compared ? `Compare ${index + 1}` : `Queue ${index + 1}`}</span>
+              <button
+                className="selection-chip__asset"
+                disabled={props.busy}
+                title={`Inspect ${asset.displayName}`}
+                onClick={() => props.onInspect(asset)}
+              >
+                <TrayVisual bridge={props.bridge} sessionId={props.sessionId} asset={asset} />
+                <span>
+                  <strong>{asset.displayName}</strong>
+                  <small>{asset.reviewState} · {asset.extension ? `.${asset.extension}` : asset.mediaFamily}</small>
+                </span>
+              </button>
+              <div className="selection-chip__order" role="group" aria-label={`Comparison priority for ${asset.displayName}`}>
+                <button
+                  aria-label={`Move ${asset.displayName} earlier`}
+                  disabled={props.busy || index === 0}
+                  title="Move earlier"
+                  onClick={() => props.onMove(asset.assetId, "earlier")}
+                >
+                  ←
+                </button>
+                <button
+                  aria-label={`Move ${asset.displayName} later`}
+                  disabled={props.busy || index === props.assets.length - 1}
+                  title="Move later"
+                  onClick={() => props.onMove(asset.assetId, "later")}
+                >
+                  →
+                </button>
+              </div>
+              <button
+                className="selection-chip__remove"
+                aria-label={`Remove ${asset.displayName} from shortlist`}
+                disabled={props.busy}
+                onClick={() => props.onRemove(asset.assetId)}
+              >
+                ×
+              </button>
+            </div>
+          );
+        })}
       </div>
 
       <div className="selection-tray__actions">
@@ -134,7 +157,7 @@ export function SelectionTray(props: {
       </div>
 
       <footer className="selection-tray__footer">
-        <span>X adds/removes the focused Asset · Shift-click adds a visible range · 1/2/3/0 reviews quickly</span>
+        <span>X shortlists · Shift-click adds a visible range · reorder decides the four Compare slots · 1/2/3/0 reviews</span>
         {props.status && <strong role="status">{props.status}</strong>}
       </footer>
     </aside>

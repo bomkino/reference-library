@@ -26,6 +26,19 @@ Reference Library is the durable successor to the original Pitch Deck Tools Asse
 | Broad formats | Catalogue recognition for common images, design files, documents, video, audio, fonts, and archives |
 | Preview broad media | PDF, browser-native images, video, audio, fonts, and text use private bounded delivery; unsupported renderers remain visible as catalogue-only assets |
 
+
+## Editorial decision loop
+
+Feature parity is not complete when the app merely finds and previews material. Pitch-deck research requires a repeatable decision loop:
+
+```text
+find → shortlist → order → compare → decide → annotate → collect
+```
+
+The candidate therefore adds a bounded, session-local Shortlist of up to 32 Assets. The first four ordered positions are explicit Compare slots. A side-by-side Compare Board mirrors normalized pan between differently sized images at 100% or 200%, exposes review context, and keeps Open, Reveal, and Copy Path available at the point of judgment. Batch review, Tags, Used In, and Collection membership apply to the exact Shortlist with fresh-revision checks and honest partial-failure reporting.
+
+The Shortlist is intentionally transient: it is working attention, not canonical Library meaning. A deliberate selection becomes durable when the user adds it to a Collection or writes curation metadata.
+
 ## Deliberate improvements
 
 - Generated Asset identity replaces path-hash identity.

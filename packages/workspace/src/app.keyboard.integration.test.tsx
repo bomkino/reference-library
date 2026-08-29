@@ -186,10 +186,18 @@ describe("V1 keyboard daily-use seams", () => {
     expect(host.querySelector('[data-asset-id="asset-2"]')?.getAttribute("aria-pressed")).toBe("true");
     expect(host.querySelector(".selection-announcer")?.textContent).toContain("2 Assets shortlisted");
 
-    await press("c");
-    expect(host.querySelector(".compare-board")?.getAttribute("role")).toBe("dialog");
-    expect(host.querySelectorAll(".compare-card")).toHaveLength(2);
-    await focusAndPress(button("Close", host.querySelector(".compare-board")!), "Escape");
+    const tray = host.querySelector(".selection-tray")!;
+    await focusAndPress(button("Move B-frame.jpg earlier", tray), "Enter");
+    expect(tray.querySelector(".selection-chip strong")?.textContent).toBe("B-frame.jpg");
+
+    await focusAndPress(button("Compare", tray), "Enter");
+    const board = host.querySelector(".compare-board")!;
+    expect(board.getAttribute("role")).toBe("dialog");
+    expect(board.querySelectorAll(".compare-card")).toHaveLength(2);
+    expect(board.querySelector(".compare-card h3")?.textContent).toBe("B-frame.jpg");
+    await focusAndPress(button("Copy path", board.querySelector(".compare-card")!), "Enter");
+    expect(harness.calls.copyLocationPath).toBe(1);
+    await focusAndPress(button("Close", board), "Escape");
     expect(host.querySelector(".compare-board")).toBeNull();
 
     await focusAndPress(button("Maybe", host.querySelector(".selection-tray")!), "Enter");

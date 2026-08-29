@@ -416,12 +416,27 @@ progress { width: 100%; accent-color: var(--signal); }
 }
 .selection-chip {
   position: relative;
-  flex: 0 0 min(16rem, 70vw);
+  flex: 0 0 min(18rem, 76vw);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  padding-top: 1.35rem;
   border: 1px solid var(--ink);
   background: var(--paper-cool);
 }
+.selection-chip--compare-slot { box-shadow: inset 0 4px 0 var(--signal); }
+.selection-chip__slot {
+  position: absolute;
+  inset: 0 auto auto 0;
+  padding: 0.22rem 0.45rem;
+  background: var(--ink);
+  color: #fff;
+  font-size: 0.58rem;
+  font-weight: 930;
+  letter-spacing: 0.09em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.selection-chip--compare-slot .selection-chip__slot { background: var(--signal); color: var(--ink); }
 .selection-chip__asset {
   min-width: 0;
   display: grid;
@@ -444,7 +459,26 @@ progress { width: 100%; accent-color: var(--signal); }
 .selection-chip__asset small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .selection-chip__asset strong { font-size: 0.82rem; }
 .selection-chip__asset small { color: var(--ink-muted); font-size: 0.68rem; text-transform: capitalize; }
-.selection-chip__remove { width: 2.35rem; min-width: 2.35rem; height: 100%; padding: 0; border-width: 0 0 0 1px; background: #fff; color: var(--ink); box-shadow: none; font-size: 1.25rem; }
+.selection-chip__order {
+  display: grid;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  border-left: 1px solid var(--ink);
+}
+.selection-chip__order button {
+  width: 2.35rem;
+  min-width: 2.35rem;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: #fff;
+  color: var(--ink);
+  box-shadow: none;
+}
+.selection-chip__order button + button { border-top: 1px solid var(--ink); }
+.selection-chip__order button:hover:not(:disabled) { background: var(--signal-soft); transform: none; box-shadow: none; }
+.selection-chip__order button:disabled { cursor: not-allowed; opacity: 0.25; }
+.selection-chip__remove { width: 2.35rem; min-width: 2.35rem; height: 100%; padding: 0; border-width: 0 0 0 1px; border-radius: 0; background: #fff; color: var(--ink); box-shadow: none; font-size: 1.25rem; }
 .selection-tray__actions { display: grid; grid-template-columns: auto repeat(3, minmax(11rem, 1fr)); align-items: end; gap: 0.8rem; }
 .selection-tray__actions fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .selection-tray__actions legend,
@@ -471,12 +505,14 @@ progress { width: 100%; accent-color: var(--signal); }
 .compare-board__header { display: flex; align-items: end; justify-content: space-between; gap: 1rem; padding-bottom: 1rem; border-bottom: var(--line-heavy) solid var(--ink); }
 .compare-board__header h2 { margin: 0; font-size: clamp(1.8rem, 3vw, 3.5rem); letter-spacing: -0.055em; line-height: 0.95; }
 .compare-board__header p:not(.eyebrow) { margin: 0.45rem 0 0; color: var(--ink-muted); }
+.compare-board__header .compare-board__status { color: var(--ink); font-weight: 820; }
 .compare-board__controls,
 .compare-board__zoom { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.55rem; }
 .compare-board__controls button { min-width: 0; box-shadow: none; }
+.compare-board__controls button[aria-pressed="true"] { background: var(--signal); color: var(--ink); }
 .compare-board__grid { min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; overflow: auto; }
 .compare-board__grid[data-count="2"] { grid-template-rows: minmax(0, 1fr); }
-.compare-card { min-width: 0; min-height: 22rem; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; border: var(--line-heavy) solid var(--ink); background: #fff; }
+.compare-card { min-width: 0; min-height: 22rem; display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; border: var(--line-heavy) solid var(--ink); background: #fff; }
 .compare-card__header,
 .compare-card__footer { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.75rem; }
 .compare-card__header { align-items: flex-start; border-bottom: 1px solid var(--ink); }
@@ -485,7 +521,7 @@ progress { width: 100%; accent-color: var(--signal); }
 .compare-card h3 { min-width: 0; margin: 0; overflow: hidden; font-size: 1rem; text-overflow: ellipsis; white-space: nowrap; }
 .compare-card__header p { grid-column: 2; margin: 0; color: var(--ink-muted); font-size: 0.72rem; }
 .compare-card__remove { min-width: 0; padding-inline: 0.5rem; box-shadow: none; }
-.compare-card__stage { position: relative; min-height: 0; overflow: auto; display: grid; align-items: center; justify-items: center; padding: 0.8rem; background: var(--paper-cool); }
+.compare-card__stage { position: relative; min-height: 0; overflow: auto; overscroll-behavior: contain; display: grid; align-items: center; justify-items: center; padding: 0.8rem; background: var(--paper-cool); }
 .compare-card__stage > span { position: absolute; z-index: 1; padding: 0.5rem 0.75rem; border: 1px solid var(--ink); background: #fff; }
 .compare-card__stage img { display: block; max-width: none; height: auto; }
 .compare-card__stage--fit { overflow: hidden; }
@@ -493,6 +529,25 @@ progress { width: 100%; accent-color: var(--signal); }
 .compare-card__placeholder { min-height: 0; display: grid; align-content: center; justify-items: center; gap: 0.65rem; padding: 2rem; background: linear-gradient(135deg, #fff 0 49%, var(--paper-cool) 49% 51%, #fff 51%); text-align: center; }
 .compare-card__placeholder strong { font-size: clamp(2rem, 5vw, 5rem); font-weight: 930; letter-spacing: -0.06em; }
 .compare-card__placeholder span { color: var(--ink-muted); }
+.compare-card__context {
+  display: flex;
+  min-height: 2.6rem;
+  align-items: center;
+  gap: 0.35rem;
+  overflow-x: auto;
+  padding: 0.5rem 0.7rem;
+  border-top: 1px solid var(--ink);
+  background: var(--paper-cool);
+  font-size: 0.66rem;
+  white-space: nowrap;
+}
+.compare-card__context > span { padding: 0.22rem 0.38rem; border: 1px solid var(--ink); background: #fff; }
+.compare-card__context .muted { border-color: transparent; background: transparent; }
+.compare-card__review-state { font-weight: 930; text-transform: uppercase; }
+.compare-card__review-state--keep { background: var(--signal) !important; }
+.compare-card__review-state--reject { text-decoration: line-through; }
+.compare-card__tag { font-weight: 760; }
+.compare-card__usage { background: var(--signal-soft) !important; }
 .compare-card__footer { flex-wrap: wrap; border-top: 1px solid var(--ink); }
 .compare-card__review,
 .compare-card__native-actions { display: flex; flex-wrap: wrap; gap: 0.45rem; }

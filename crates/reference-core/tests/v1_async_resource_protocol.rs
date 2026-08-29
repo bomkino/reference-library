@@ -164,13 +164,16 @@ fn authorization_is_correlated_cancellable_and_does_not_block_dispatch() {
                     },
                 );
             }
-            ServerFrame::Response { request_id, result, .. }
-                if request_id == "capabilities"
-                    && matches!(result.as_ref(), CommandResult::Capabilities(_)) =>
+            ServerFrame::Response {
+                request_id, result, ..
+            } if request_id == "capabilities"
+                && matches!(result.as_ref(), CommandResult::Capabilities(_)) =>
             {
                 capabilities_before_terminal = true
             }
-            ServerFrame::Response { request_id, result, .. } if request_id == "cancel" => {
+            ServerFrame::Response {
+                request_id, result, ..
+            } if request_id == "cancel" => {
                 let CommandResult::JobCancellation { state, .. } = result.as_ref() else {
                     continue;
                 };

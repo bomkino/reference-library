@@ -24,6 +24,7 @@ Shortlist is a transient working set for the current Library session.
 - Persistence: intentionally not canonical. Use a Collection for a durable set.
 - Entry: `X`, modifier-click, the visible `+` control, or Shift-click across a loaded visible range.
 - Removal: `X`, the visible check control, individual tray removal, or Clear.
+- Order: explicit Earlier/Later controls decide which four candidates occupy Compare slots.
 
 The Shortlist holds refreshed summaries rather than duplicating canonical state. When an Asset changes, every visible Shortlist surface receives the new title, review state, category, media information, tags, Used In values and revision.
 
@@ -32,12 +33,14 @@ The Shortlist holds refreshed summaries rather than duplicating canonical state.
 Compare Board displays the first four shortlisted Assets side by side.
 
 - Shared Fit, 100% and 200% zoom.
+- Optional normalized pan synchronization, so the same region stays aligned across differently sized images.
+- Visible review, Tags and Used In context at the point of judgment.
 - Individual Keep, Maybe and Reject actions.
-- Native Open and Reveal actions.
+- Native Open, Reveal and Copy Path actions.
 - Honest catalogue-only placeholders for material without an image comparison surface.
 - Complete modal isolation, focus entry, focus trapping, Escape closure and focus restoration.
 
-Four is an explicit visual and memory bound—not an arbitrary implementation accident. Larger sets belong in the Shortlist or a Collection; direct comparison should remain legible.
+Four is an explicit visual and memory bound—not an arbitrary implementation accident. Larger sets belong in the Shortlist or a Collection; direct comparison should remain legible. The first four Shortlist positions are visibly labelled as Compare slots so truncation is never mysterious.
 
 ## Batch curation
 

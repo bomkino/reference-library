@@ -50,6 +50,13 @@ Schema v4 migrates atomically and rolls back cleanly under injected failure. New
 
 The exact branch must pass repository, Rust, workspace/Linux source, Linux package/runtime, and Apple-Silicon package jobs. Compatible CI does not close Apple-Silicon, Garuda/KDE, cross-platform, or production-architecture target gates.
 
+
+### FP-11 — Editorial shortlist and visual comparison
+
+A person can build an ordered, session-local Shortlist without changing the active query or canonical Library. The Shortlist is bounded to 32 stable Asset IDs; its first four ordered positions feed a side-by-side Compare Board. Reordering is explicit and keyboard-accessible. The Compare Board supports Fit, 100%, and 200% views, optional normalized pan synchronization across differently sized images, review actions, and native Open/Reveal/Copy Path operations.
+
+Batch review, Tags, Used In, and Collection membership operate only on the explicit Shortlist. Each Asset is refreshed before mutation, unchanged Assets are skipped, revision conflicts fail individually, successful mutations remain committed, and the result reports updated, skipped, and failed counts. Filtering, paging, or leaving Preview does not silently discard Shortlisted identities; closing the Library does.
+
 ## Intentional boundary
 
 Font consolidation is not a Reference Library capability. It copies source files and belongs to the standalone font product. Reference Library may catalogue, preview where supported, open, reveal, and copy paths for font assets without becoming a second font manager.

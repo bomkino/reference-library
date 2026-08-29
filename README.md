@@ -45,7 +45,7 @@ The stable release includes AppImage, pacman and tar distributions produced by e
 - opt-in 60-second Root rescanning
 - durable tags and Used In provenance
 - bounded Shortlist across filters and paging
-- side-by-side Compare Board for up to four visual candidates
+- ordered Compare slots and a four-up board with shared zoom, optional synchronized pan, curation context and native source actions
 - batch review, tags, Used In and Collection membership for up to 32 shortlisted Assets
 - rapid review shortcuts: `1` Keep, `2` Maybe, `3` Reject, `0` Clear review, `X` shortlist, `C` compare
 - revision-safe writes that refresh each Asset immediately before rapid or batch curation

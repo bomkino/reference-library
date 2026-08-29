@@ -260,16 +260,21 @@ test("host preferences are independent, partial, atomic, and reject symlink read
     assert.deepEqual(await readPreferences(file), workspacePreferenceDefaults);
     assert.deepEqual(await writePreferences(file, { interfaceScale: 1.25, previewZoom: 2 }), {
       interfaceScale: 1.25, thumbnailDensity: 220, previewZoom: 2,
+      viewMode: "grid", multiThumbnailPreviews: false, autoRescan: false,
     });
     assert.deepEqual(await writePreferences(file, { thumbnailDensity: 300 }), {
       interfaceScale: 1.25, thumbnailDensity: 300, previewZoom: 2,
+      viewMode: "grid", multiThumbnailPreviews: false, autoRescan: false,
     });
     const [scaled, zoomed] = await Promise.all([
       writePreferences(file, { interfaceScale: 1.5 }),
       writePreferences(file, { previewZoom: 3 }),
     ]);
     assert.equal(scaled.interfaceScale, 1.5);
-    assert.deepEqual(zoomed, { interfaceScale: 1.5, thumbnailDensity: 300, previewZoom: 3 });
+    assert.deepEqual(zoomed, {
+      interfaceScale: 1.5, thumbnailDensity: 300, previewZoom: 3,
+      viewMode: "grid", multiThumbnailPreviews: false, autoRescan: false,
+    });
     assert.deepEqual(await readPreferences(file), zoomed);
     await assert.rejects(
       writePreferences(file, { previewZoom: 4 }, { beforeRename: async () => { throw new Error("injected"); } }),

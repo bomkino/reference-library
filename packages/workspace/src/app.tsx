@@ -27,10 +27,12 @@ import {
   addShortlistRange,
   compareAssets,
   mergeAssetDetail,
+  moveShortlistedAsset,
   refreshSelectedAsset,
   refreshShortlistedAssets,
   replaceShortlistedAsset,
   toggleShortlistedAsset,
+  type ShortlistMove,
 } from "./selection";
 import { assetDraftErrors, useAssetEditor } from "./use-asset-editor";
 import { batchOutcomeMessage, parseBatchTokens, runBatchCuration, type BatchCurationAction } from "./batch-curation";
@@ -357,7 +359,7 @@ function OpenWorkspace(props: {
     });
   };
 
-  const updateReview = async (asset: AssetSummary, reviewState: ReviewState) => {
+  const updateReview = async (asset: AssetSummary, reviewState: ReviewState): Promise<boolean> => {
     setBatchBusy(true);
     try {
       const freshDetail = await props.bridge.getAsset(props.session.sessionId, asset.assetId);
@@ -365,7 +367,7 @@ function OpenWorkspace(props: {
       if (freshAsset.reviewState === reviewState) {
         applyAssetDetail(freshDetail);
         setShortlistStatus(`${freshDetail.customTitle ?? freshDetail.originalDisplayName} already marked ${reviewState}.`);
-        return;
+        return true;
       }
       const result = await props.bridge.updateAsset({
         sessionId: props.session.sessionId,
@@ -381,9 +383,11 @@ function OpenWorkspace(props: {
       });
       applyAssetDetail(result.asset);
       setShortlistStatus(`${result.asset.customTitle ?? result.asset.originalDisplayName} marked ${reviewState}.`);
+      return true;
     } catch (reason) {
       pager.refresh();
       props.setShellError(messageFrom(reason));
+      return false;
     } finally {
       setBatchBusy(false);
     }
@@ -393,7 +397,7 @@ function OpenWorkspace(props: {
     if (batchBusy) return;
     requestTransition(
       `Mark ${asset.displayName} ${reviewState}`,
-      () => updateReview(asset, reviewState),
+      async () => { await updateReview(asset, reviewState); },
     );
   };
 
@@ -481,6 +485,16 @@ function OpenWorkspace(props: {
         }
       },
     );
+  };
+
+  const moveShortlist = (assetId: string, direction: ShortlistMove) => {
+    if (batchBusy) return;
+    const next = moveShortlistedAsset(shortlisted, assetId, direction);
+    if (next === shortlisted) return;
+    setShortlisted(next);
+    const asset = next.find((candidate) => candidate.assetId === assetId);
+    const position = next.findIndex((candidate) => candidate.assetId === assetId) + 1;
+    setShortlistStatus(`${asset?.displayName ?? "Asset"} moved to ${position <= 4 ? `Compare slot ${position}` : `queue position ${position}`}.`);
   };
 
   const removeFromShortlist = (assetId: string) => {
@@ -596,6 +610,7 @@ function OpenWorkspace(props: {
           status={shortlistStatus}
           onInspect={chooseAsset}
           onRemove={removeFromShortlist}
+          onMove={moveShortlist}
           onClear={clearShortlist}
           onCompare={() => requestCompare()}
           onReview={(reviewState) => requestBatch(`Mark ${shortlisted.length} shortlisted Assets ${reviewState}`, { reviewState })}

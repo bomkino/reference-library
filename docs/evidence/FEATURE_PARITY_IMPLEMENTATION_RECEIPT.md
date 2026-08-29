@@ -17,6 +17,9 @@ Implemented:
 - native Open Original, Reveal Source, and Copy Path actions;
 - Grid, Compact, and List browsing modes;
 - optional related-thumbnail mosaics;
+- an ordered 32-Asset Shortlist with explicit first-four Compare slots;
+- a four-up Compare Board with shared zoom, optional normalized pan synchronization, curation context, and native Open/Reveal/Copy Path;
+- rapid review shortcuts and conflict-aware batch curation;
 - category, extension/file-type, media-family, tag, Used In, Root, review-state, availability, and Collection facets;
 - name, date-added, review-state, and file-size sorting;
 - durable tags and Used In provenance;
@@ -32,9 +35,12 @@ The parity build could find and inspect material, but a deck researcher also nee
 
 - a transient Shortlist capped at 32 Assets;
 - range extension across the virtual contact sheet;
-- a four-up Compare Board with shared Fit, 100%, and 200% zoom;
+- an ordered four-up Compare Board with shared Fit, 100%, and 200% zoom;
+- optional normalized pan synchronization across differently sized images;
+- visible review, Tags and Used In context;
 - explicit placeholders for catalogue-only and unavailable candidates;
-- per-candidate Keep, Maybe, Reject, Open, and Reveal actions;
+- per-candidate Keep, Maybe, Reject, Open, Reveal, and Copy Path actions;
+- accessible Shortlist reordering that determines the four Compare slots;
 - batch review, tag, Used In, and Collection operations;
 - keyboard shortcuts for shortlist, compare, and rapid review;
 - partial-conflict reporting instead of all-or-nothing concealment;
@@ -55,20 +61,17 @@ The Shortlist is intentionally session-local. It is a working comparison surface
 - Compare is capped and Shortlist work is bounded.
 - Font consolidation remains outside Reference Library because it belongs to the standalone font product and would introduce a source-copy workflow into a currently non-mutating application.
 
-## Fresh focused verification
+## Fresh verification requirement
 
-Before `4ea42637f7aa7ec07784d8a4472d80ccd7594cab` was committed, a clean GitHub runner reconstructed the reviewed source and passed:
+This push repairs stale Linux contract fixtures and Rust formatting exposed by the previous exact-head run, then extends the editorial decision loop. Its exact commit must freshly pass:
 
-- patch checksum and clean application;
-- repository boundary checks;
-- generated product-icon and release-metadata checks;
-- TypeScript typechecking;
-- the complete workspace test suite, including shortlist, compare, batch curation, revision safety, Inspector recovery, and 100,000-Asset virtualization seams;
-- workspace production build;
-- macOS bridge-contract tests;
-- Linux packaged-runtime smoke tests available to the focused runner.
+- repository boundary, generated icon, release metadata, dependency-licence and legal-bundle checks;
+- TypeScript typechecking, Linux/native contract tests, workspace tests and source builds;
+- Rust formatting, Clippy with warnings denied, complete Rust tests and T01/V1 semantic round trips;
+- extracted Linux packages under X11 and headless Wayland;
+- Swift tests and Apple-Silicon application build, extraction, checksums and source-bound receipt validation.
 
-The ordinary full matrix remains responsible for Rust formatting, Clippy, complete Rust tests, dependency audits, semantic round trips, extracted Linux packages, X11 and headless Wayland journeys, Swift tests, Apple-Silicon application packaging, checksums, and source-bound receipts.
+The final exact SHA and workflow results are added only after that run completes.
 
 ## Remaining proof boundary
 
