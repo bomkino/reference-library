@@ -5,7 +5,7 @@ on:
     branches:
       - codex/reference-library-feature-parity
     paths:
-      - .github/uiux-final/final-uiux.patch.gz
+      - .github/uiux-final/final-uiux.patch.gz.b64.part-*
       - .github/workflows/apply-final-uiux.yml
 
 permissions:
@@ -36,8 +36,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "3622c1bda8ce44d22209518ff5b405f4e8f2947b7e74a1ab30c97c7053524412  .github/uiux-final/final-uiux.patch.gz" | sha256sum --check --strict
-          gzip --decompress --stdout .github/uiux-final/final-uiux.patch.gz > "$RUNNER_TEMP/final-uiux.patch"
+          cat .github/uiux-final/final-uiux.patch.gz.b64.part-* \
+            | tr -d '\n' \
+            | base64 --decode \
+            > "$RUNNER_TEMP/final-uiux.patch.gz"
+          echo "3622c1bda8ce44d22209518ff5b405f4e8f2947b7e74a1ab30c97c7053524412  $RUNNER_TEMP/final-uiux.patch.gz" | sha256sum --check --strict
+          gzip --decompress --stdout "$RUNNER_TEMP/final-uiux.patch.gz" > "$RUNNER_TEMP/final-uiux.patch"
           echo "dbce231180f7aa58d8df6b79e43bb6eee4758c5b90c0b5c619a5ed2d151583e0  $RUNNER_TEMP/final-uiux.patch" | sha256sum --check --strict
           git apply --check "$RUNNER_TEMP/final-uiux.patch"
           git apply "$RUNNER_TEMP/final-uiux.patch"
