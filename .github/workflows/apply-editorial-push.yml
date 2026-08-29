@@ -26,7 +26,7 @@ jobs:
           fetch-depth: 0
           ref: codex/reference-library-feature-parity
 
-      - name: Reconstruct and apply reviewed delta
+      - name: Reconstruct and apply reviewed product delta
         shell: bash
         run: |
           set -euo pipefail
@@ -40,6 +40,20 @@ jobs:
             | sha256sum --check --strict
           git apply --check "$RUNNER_TEMP/editorial-push.patch"
           git apply "$RUNNER_TEMP/editorial-push.patch"
+
+      - name: Apply integration-test and Inspector recovery repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 --decode .github/editorial-push/editorial-repair.patch.gz.b64 \
+            | gzip --decompress \
+            > "$RUNNER_TEMP/editorial-repair.patch"
+          printf '%s  %s\n' \
+            'a1bddf7c10a7070cd4b161f4dd355f08c4a13c92008e394450b36bfbe1569692' \
+            "$RUNNER_TEMP/editorial-repair.patch" \
+            | sha256sum --check --strict
+          git apply --check "$RUNNER_TEMP/editorial-repair.patch"
+          git apply "$RUNNER_TEMP/editorial-repair.patch"
           git diff --check
 
       - name: Remove staging machinery
@@ -65,6 +79,7 @@ jobs:
           node scripts/check-release-metadata.mjs
           npm run typecheck
           npm run test -w @pitchdog/reference-workspace
+          npm run build -w @pitchdog/reference-workspace
           node --test apps/macos/contract-tests/*.test.mjs scripts/tests/linux-runtime-smoke.test.mjs
 
       - name: Commit reviewed product source
