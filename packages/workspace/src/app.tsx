@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BRIDGE_VERSION,
   DEFAULT_ASSET_QUERY,
@@ -9,6 +9,7 @@ import {
   type CollectionSummary,
   type InterfaceScale,
   type ReferenceWorkspaceBridge,
+  type ReviewState,
   type SessionOpened,
   type RootSummary,
   type WorkspaceEvent,
@@ -16,12 +17,23 @@ import {
 } from "@pitchdog/reference-bridge";
 import { AssetInspector } from "./asset-inspector";
 import { AssetPreview } from "./asset-preview";
+import { CompareBoard } from "./compare-board";
 import { ContactSheet } from "./contact-sheet";
 import { LibrarySidebar } from "./library-sidebar";
 import { QueryToolbar } from "./query-toolbar";
+import { SelectionTray } from "./selection-tray";
 import { ProductMark } from "./product-mark";
-import { refreshSelectedAsset } from "./selection";
+import {
+  addShortlistRange,
+  compareAssets,
+  mergeAssetDetail,
+  refreshSelectedAsset,
+  refreshShortlistedAssets,
+  replaceShortlistedAsset,
+  toggleShortlistedAsset,
+} from "./selection";
 import { assetDraftErrors, useAssetEditor } from "./use-asset-editor";
+import { batchOutcomeMessage, parseBatchTokens, runBatchCuration, type BatchCurationAction } from "./batch-curation";
 import { useAssetPager } from "./use-asset-pager";
 import { handleDialogKey } from "./dialog-keys";
 import { safeErrorMessage } from "./safe-errors";
@@ -180,14 +192,19 @@ function OpenWorkspace(props: {
   const [autoRescan, setAutoRescan] = useState(false);
   const [query, setQuery] = useState<AssetQuery>({ ...DEFAULT_ASSET_QUERY });
   const [selected, setSelected] = useState<AssetSummary | null>(null);
+  const [shortlisted, setShortlisted] = useState<AssetSummary[]>([]);
+  const [shortlistAnchorIndex, setShortlistAnchorIndex] = useState<number | null>(null);
+  const [shortlistStatus, setShortlistStatus] = useState<string | null>(null);
   const [preview, setPreview] = useState<AssetSummary | null>(null);
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [batchBusy, setBatchBusy] = useState(false);
   const [collections, setCollections] = useState<CollectionSummary[]>([]);
   const [roots, setRoots] = useState<RootSummary[]>([]);
   const [pending, setPending] = useState<PendingTransition | null>(null);
   const [sidebarModalOpen, setSidebarModalOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const workspace = useRef<HTMLElement>(null);
-  useModalIsolation(workspace, Boolean(preview || pending || sidebarModalOpen));
+  useModalIsolation(workspace, Boolean(preview || compareOpen || pending || sidebarModalOpen));
   const pager = useAssetPager(
     props.bridge,
     props.session.sessionId,
@@ -196,26 +213,21 @@ function OpenWorkspace(props: {
     multiThumbnailPreviews ? "contact_sheet_detailed" : "contact_sheet_standard",
   );
   const refreshSummary = pager.refreshSummary;
-  const editor = useAssetEditor(props.bridge, props.session.sessionId, selected, props.invalidations.detail, useCallback((detail) => {
+  const applyAssetDetail = useCallback((detail: AssetDetail) => {
     refreshSummary(detail);
-    setSelected((current) => current?.assetId === detail.assetId ? {
-      ...current,
-      displayName: detail.customTitle ?? detail.originalDisplayName,
-      relativeDisplayPath: detail.relativeDisplayPath,
-      mediaFamily: detail.mediaFamily,
-      mimeType: detail.mimeType,
-      extension: detail.extension,
-      byteSize: detail.byteSize,
-      category: detail.category,
-      previewKind: detail.previewKind,
-      availability: detail.availability,
-      reviewState: detail.reviewState,
-      customTitle: detail.customTitle,
-      tags: detail.tags,
-      usedIn: detail.usedIn,
-      revision: detail.revision,
-    } : current);
-  }, [refreshSummary]));
+    setSelected((current) => current ? mergeAssetDetail(current, detail) : current);
+    setPreview((current) => current ? mergeAssetDetail(current, detail) : current);
+    setShortlisted((current) => replaceShortlistedAsset(current, detail));
+  }, [refreshSummary]);
+  const editor = useAssetEditor(
+    props.bridge,
+    props.session.sessionId,
+    selected,
+    props.invalidations.detail,
+    applyAssetDetail,
+  );
+  const shortlistedIds = useMemo(() => new Set(shortlisted.map((asset) => asset.assetId)), [shortlisted]);
+  const comparedAssets = useMemo(() => compareAssets(shortlisted), [shortlisted]);
 
   useEffect(() => {
     let active = true;
@@ -243,7 +255,12 @@ function OpenWorkspace(props: {
     if (refreshed !== selected) setSelected(refreshed);
     const refreshedPreview = refreshSelectedAsset(preview, pager.items.values());
     if (refreshedPreview !== preview) setPreview(refreshedPreview);
+    setShortlisted((current) => refreshShortlistedAssets(current, pager.items.values()));
   }, [pager.items, preview, selected]);
+
+  useEffect(() => {
+    if (compareOpen && comparedAssets.length < 2) setCompareOpen(false);
+  }, [compareOpen, comparedAssets.length]);
 
   useEffect(() => {
     if (!autoRescan || props.needsRestart || roots.length === 0) return;
@@ -303,6 +320,184 @@ function OpenWorkspace(props: {
     if (editor.dirty) requestTransition(`Open “${intent.displayName}”`, proceed, cancel);
     else setPending({ label: `Open “${intent.displayName}”`, dirty: false, proceed, cancel, focus: document.activeElement instanceof HTMLElement ? document.activeElement : null });
   }, [props.openIntent, pending, requestTransition]);
+
+  const toggleShortlist = (asset: AssetSummary, index: number, extendRange: boolean) => {
+    if (batchBusy) {
+      setShortlistStatus("Finish the current batch update before changing the shortlist.");
+      return;
+    }
+    const mutation = extendRange && shortlistAnchorIndex !== null
+      ? addShortlistRange(shortlisted, pager.items, shortlistAnchorIndex, index)
+      : toggleShortlistedAsset(shortlisted, asset);
+    setShortlisted(mutation.assets);
+    setShortlistAnchorIndex(index);
+    setShortlistStatus(mutation.capped ? "Shortlist limit reached: 32 Assets." : null);
+  };
+
+  const requestCompare = (asset?: AssetSummary, index?: number) => {
+    if (batchBusy) {
+      setShortlistStatus("Finish the current batch update before comparing.");
+      return;
+    }
+    requestTransition("Open the Compare Board", () => {
+      let next = shortlisted;
+      if (asset && !shortlistedIds.has(asset.assetId)) {
+        const mutation = toggleShortlistedAsset(shortlisted, asset);
+        next = mutation.assets;
+        setShortlisted(next);
+        if (index !== undefined) setShortlistAnchorIndex(index);
+        if (mutation.capped) setShortlistStatus("Shortlist limit reached: 32 Assets.");
+      }
+      if (next.length < 2) {
+        setShortlistStatus("Shortlist one more Asset to compare.");
+        return;
+      }
+      setPreview(null);
+      setCompareOpen(true);
+    });
+  };
+
+  const updateReview = async (asset: AssetSummary, reviewState: ReviewState) => {
+    setBatchBusy(true);
+    try {
+      const freshDetail = await props.bridge.getAsset(props.session.sessionId, asset.assetId);
+      const freshAsset = mergeAssetDetail(asset, freshDetail);
+      if (freshAsset.reviewState === reviewState) {
+        applyAssetDetail(freshDetail);
+        setShortlistStatus(`${freshDetail.customTitle ?? freshDetail.originalDisplayName} already marked ${reviewState}.`);
+        return;
+      }
+      const result = await props.bridge.updateAsset({
+        sessionId: props.session.sessionId,
+        assetId: freshAsset.assetId,
+        expectedRevision: freshAsset.revision,
+        patch: {
+          customTitle: { action: "unchanged" },
+          reviewState,
+          note: { action: "unchanged" },
+          tags: { action: "unchanged" },
+          usedIn: { action: "unchanged" },
+        },
+      });
+      applyAssetDetail(result.asset);
+      setShortlistStatus(`${result.asset.customTitle ?? result.asset.originalDisplayName} marked ${reviewState}.`);
+    } catch (reason) {
+      pager.refresh();
+      props.setShellError(messageFrom(reason));
+    } finally {
+      setBatchBusy(false);
+    }
+  };
+
+  const requestReview = (asset: AssetSummary, reviewState: ReviewState) => {
+    if (batchBusy) return;
+    requestTransition(
+      `Mark ${asset.displayName} ${reviewState}`,
+      () => updateReview(asset, reviewState),
+    );
+  };
+
+  const performBatch = async (action: BatchCurationAction) => {
+    setBatchBusy(true);
+    try {
+      const outcome = await runBatchCuration(
+        shortlisted,
+        action,
+        async (asset, patch) => {
+          const result = await props.bridge.updateAsset({
+            sessionId: props.session.sessionId,
+            assetId: asset.assetId,
+            expectedRevision: asset.revision,
+            patch,
+          });
+          applyAssetDetail(result.asset);
+          return result.asset;
+        },
+        async (asset) => mergeAssetDetail(
+          asset,
+          await props.bridge.getAsset(props.session.sessionId, asset.assetId),
+        ),
+      );
+      setShortlistStatus(batchOutcomeMessage(outcome));
+      if (outcome.failed.length) {
+        pager.refresh();
+        props.setShellError(`${outcome.failed.length} shortlisted Assets changed elsewhere or could not be updated. The Library has been refreshed.`);
+      }
+    } finally {
+      setBatchBusy(false);
+    }
+  };
+
+  const requestBatch = (
+    label: string,
+    action: BatchCurationAction,
+    onAccepted?: () => void,
+  ) => {
+    if (batchBusy || shortlisted.length === 0) return;
+    requestTransition(label, () => {
+      onAccepted?.();
+      return performBatch(action);
+    });
+  };
+
+  const addBatchTokens = (
+    kind: "tags" | "usedIn",
+    value: string,
+    onAccepted: () => void,
+  ): boolean => {
+    const tokens = parseBatchTokens(value);
+    if (tokens.length === 0) {
+      setShortlistStatus(`Enter at least one ${kind === "tags" ? "tag" : "Used In value"}.`);
+      return false;
+    }
+    requestBatch(
+      `Update ${shortlisted.length} shortlisted Assets`,
+      kind === "tags" ? { addTags: tokens } : { addUsedIn: tokens },
+      onAccepted,
+    );
+    return true;
+  };
+
+  const addShortlistToCollection = (collectionId: string, onAccepted: () => void) => {
+    if (batchBusy || shortlisted.length === 0) return;
+    requestTransition(
+      `Add ${shortlisted.length} Assets to a Collection`,
+      async () => {
+        onAccepted();
+        setBatchBusy(true);
+        try {
+          const result = await props.bridge.setCollectionMembership({
+            sessionId: props.session.sessionId,
+            collectionId,
+            assetIds: shortlisted.map((asset) => asset.assetId),
+            member: true,
+          });
+          setShortlistStatus(`Added ${result.affected} Assets to the Collection.`);
+          pager.refresh();
+        } catch (reason) {
+          props.setShellError(messageFrom(reason));
+        } finally {
+          setBatchBusy(false);
+        }
+      },
+    );
+  };
+
+  const removeFromShortlist = (assetId: string) => {
+    if (batchBusy) return;
+    const next = shortlisted.filter((asset) => asset.assetId !== assetId);
+    setShortlisted(next);
+    setShortlistStatus(null);
+    if (compareOpen && compareAssets(next).length < 2) setCompareOpen(false);
+  };
+
+  const clearShortlist = () => {
+    if (batchBusy) return;
+    setShortlisted([]);
+    setShortlistAnchorIndex(null);
+    setShortlistStatus(null);
+    setCompareOpen(false);
+  };
 
   const applyQuery = (next: AssetQuery) => requestTransition("Change the Asset view", () => { setQuery(next); setPreview(null); });
   const chooseAsset = (asset: AssetSummary) => {
@@ -366,7 +561,7 @@ function OpenWorkspace(props: {
         onSession={props.onSession}
         onModalChange={setSidebarModalOpen}
       />
-      <section className="workspace-main" aria-label="Assets">
+      <section className={`workspace-main${shortlisted.length ? " workspace-main--shortlist-open" : ""}`} aria-label="Assets">
         {props.shellError && <div className="error-banner" role="alert"><span>{props.shellError}</span><div className="compact-actions">{props.needsRestart ? <button onClick={restartCore}>Restart Core</button> : <button className="button--quiet" onClick={() => props.setShellError(null)}>Dismiss</button>}</div></div>}
         {pager.error ? <WorkspaceState kind="error" title="Library query failed" detail={pager.error} action="Retry" onAction={pager.refresh} />
           : pager.loading && pager.total === 0 ? <WorkspaceState kind="status" title="Opening contact sheet" detail="Reading the first bounded Asset window…" />
@@ -383,11 +578,31 @@ function OpenWorkspace(props: {
               viewMode={viewMode}
               multiThumbnailPreviews={multiThumbnailPreviews}
               selectedAssetId={selected?.assetId ?? null}
+              shortlistedAssetIds={shortlistedIds}
               ensureWindow={pager.ensureWindow}
               onSelect={chooseAsset}
+              onToggleShortlist={toggleShortlist}
+              onRequestCompare={requestCompare}
+              onReview={requestReview}
               onPreview={setPreview}
               onOpen={(asset) => void props.bridge.openLocation(props.session.sessionId, asset.locationId).catch((reason) => props.setShellError(messageFrom(reason)))}
             />}
+        {shortlisted.length > 0 && <SelectionTray
+          bridge={props.bridge}
+          sessionId={props.session.sessionId}
+          assets={shortlisted}
+          collections={collections}
+          busy={batchBusy}
+          status={shortlistStatus}
+          onInspect={chooseAsset}
+          onRemove={removeFromShortlist}
+          onClear={clearShortlist}
+          onCompare={() => requestCompare()}
+          onReview={(reviewState) => requestBatch(`Mark ${shortlisted.length} shortlisted Assets ${reviewState}`, { reviewState })}
+          onAddTags={(value, onAccepted) => addBatchTokens("tags", value, onAccepted)}
+          onAddUsedIn={(value, onAccepted) => addBatchTokens("usedIn", value, onAccepted)}
+          onAddCollection={addShortlistToCollection}
+        />}
       </section>
       <AssetInspector
         bridge={props.bridge}
@@ -406,7 +621,7 @@ function OpenWorkspace(props: {
         onPreview={(detail) => setPreview(summaryFromDetail(detail))}
         onError={props.setShellError}
       />
-      <div className="selection-announcer" aria-live="polite">{selected ? `Selected ${selected.displayName}` : "No Asset selected"}</div>
+      <div className="selection-announcer" aria-live="polite">{selected ? `Selected ${selected.displayName}. ${shortlisted.length} Assets shortlisted.` : `${shortlisted.length} Assets shortlisted.`}</div>
       {preview && <AssetPreview
         asset={preview}
         source={props.bridge.assetResourceUrl({ sessionId: props.session.sessionId, assetId: preview.assetId, profile: "preview" })}
@@ -416,6 +631,16 @@ function OpenWorkspace(props: {
         onZoomChange={(value) => { setPreviewZoom(value); writePreferences({ previewZoom: value }); }}
         onError={props.setShellError}
         onClose={() => { const assetId = preview.assetId; setPreview(null); requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-asset-id="${assetId}"]`)?.focus()); }}
+      />}
+      {compareOpen && comparedAssets.length >= 2 && <CompareBoard
+        bridge={props.bridge}
+        sessionId={props.session.sessionId}
+        assets={comparedAssets}
+        totalShortlisted={shortlisted.length}
+        onReview={updateReview}
+        onRemove={removeFromShortlist}
+        onError={props.setShellError}
+        onClose={() => { setCompareOpen(false); requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-compare-trigger]")?.focus()); }}
       />}
       {pending && <TransitionDialog label={pending.label} dirty={pending.dirty} canSave={assetDraftErrors(editor.draft).length === 0} onChoice={(choice) => void resolveTransition(choice)} />}
     </main>

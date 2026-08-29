@@ -753,7 +753,7 @@ impl CommandEngine {
             Ok(descriptor) => ServerFrame::Response {
                 protocol_version: PROTOCOL_VERSION,
                 request_id: response.request_id,
-                result: CommandResult::ResourceAuthorized(descriptor),
+                result: Box::new(CommandResult::ResourceAuthorized(descriptor)),
             },
             Err(error) => ServerFrame::Error {
                 protocol_version: PROTOCOL_VERSION,
@@ -851,7 +851,7 @@ pub fn run_server(
                     Ok(result) => ServerFrame::Response {
                         protocol_version: PROTOCOL_VERSION,
                         request_id,
-                        result,
+                        result: Box::new(result),
                     },
                     Err(error) => ServerFrame::Error {
                         protocol_version: PROTOCOL_VERSION,
@@ -862,10 +862,8 @@ pub fn run_server(
                 let shutdown_succeeded = is_shutdown
                     && matches!(
                         &frame,
-                        ServerFrame::Response {
-                            result: CommandResult::Shutdown,
-                            ..
-                        }
+                        ServerFrame::Response { result, .. }
+                            if matches!(result.as_ref(), CommandResult::Shutdown)
                     );
                 write_server_frame(&mut writer, &frame)?;
                 shutdown = shutdown_succeeded;
@@ -973,14 +971,14 @@ mod tests {
         let oversized = ServerFrame::Response {
             protocol_version: PROTOCOL_VERSION,
             request_id: "large-result".into(),
-            result: CommandResult::CanonicalDump {
+            result: Box::new(CommandResult::CanonicalDump {
                 dump: serde_json::json!({"value": "x".repeat(reference_protocol::MAX_FRAME_BYTES)}),
-            },
+            }),
         };
         let following = ServerFrame::Response {
             protocol_version: PROTOCOL_VERSION,
             request_id: "following".into(),
-            result: CommandResult::Shutdown,
+            result: Box::new(CommandResult::Shutdown),
         };
         let mut encoded = Vec::new();
         write_server_frame(&mut encoded, &oversized).unwrap();
@@ -995,8 +993,8 @@ mod tests {
         ));
         assert!(matches!(
             second,
-            ServerFrame::Response { request_id, result: CommandResult::Shutdown, .. }
-                if request_id == "following"
+            ServerFrame::Response { request_id, result, .. }
+                if request_id == "following" && matches!(result.as_ref(), CommandResult::Shutdown)
         ));
     }
 

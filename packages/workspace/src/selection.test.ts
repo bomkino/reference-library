@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
-import type { AssetSummary } from "@pitchdog/reference-bridge";
+import type { AssetDetail, AssetSummary } from "@pitchdog/reference-bridge";
 import {
+  MAX_COMPARE_ASSETS,
+  addShortlistRange,
+  compareAssets,
+  mergeAssetDetail,
   moveSelectionIndex,
   refreshSelectedAsset,
+  refreshShortlistedAssets,
+  replaceShortlistedAsset,
   scrollTopForSelection,
+  toggleShortlistedAsset,
 } from "./selection";
 
 describe("stable virtual selection", () => {
@@ -40,6 +47,63 @@ describe("stable virtual selection", () => {
   });
 });
 
+describe("bounded editorial shortlist", () => {
+  it("toggles without duplicates and refuses growth beyond the explicit cap", () => {
+    const first = asset("asset-1", "one.png", "present");
+    const second = asset("asset-2", "two.png", "present");
+    expect(toggleShortlistedAsset([], first, 1)).toEqual({ assets: [first], capped: false });
+    expect(toggleShortlistedAsset([first], first, 1)).toEqual({ assets: [], capped: false });
+    expect(toggleShortlistedAsset([first], second, 1)).toEqual({ assets: [first], capped: true });
+  });
+
+  it("adds only loaded logical range members and keeps insertion order", () => {
+    const first = asset("asset-1", "one.png", "present");
+    const second = asset("asset-2", "two.png", "present");
+    const third = asset("asset-3", "three.png", "present");
+    const loaded = new Map<number, AssetSummary>([[4, first], [5, second], [7, third]]);
+    expect(addShortlistRange([], loaded, 4, 7, 2)).toEqual({
+      assets: [first, second],
+      capped: true,
+    });
+  });
+
+  it("refreshes shortlist summaries without dropping offscreen selections", () => {
+    const first = asset("asset-1", "before.png", "present");
+    const second = asset("asset-2", "two.png", "present");
+    const renamed = asset("asset-1", "after.png", "present");
+    const refreshed = refreshShortlistedAssets([first, second], [renamed]);
+    expect(refreshed).toEqual([renamed, second]);
+    expect(refreshShortlistedAssets(refreshed, [])).toBe(refreshed);
+  });
+
+  it("merges durable detail into every shortlist surface", () => {
+    const summary = asset("asset-1", "before.png", "present");
+    const detail = assetDetail(summary, {
+      customTitle: "Cover contender",
+      reviewState: "keep",
+      tags: ["night"],
+      usedIn: ["Cover"],
+      revision: 4,
+    });
+    expect(mergeAssetDetail(summary, detail)).toMatchObject({
+      displayName: "Cover contender",
+      reviewState: "keep",
+      tags: ["night"],
+      usedIn: ["Cover"],
+      revision: 4,
+    });
+    expect(replaceShortlistedAsset([summary], detail)[0]).toMatchObject({
+      displayName: "Cover contender",
+      revision: 4,
+    });
+  });
+
+  it("limits the Compare Board to the explicit four-asset visual bound", () => {
+    const assets = Array.from({ length: 8 }, (_, index) => asset(`asset-${index}`, `${index}.png`, "present"));
+    expect(compareAssets(assets)).toEqual(assets.slice(0, MAX_COMPARE_ASSETS));
+  });
+});
+
 function asset(
   assetId: string,
   displayName: string,
@@ -64,5 +128,32 @@ function asset(
     previewAssetIds: [],
     createdAtMs: 1,
     revision: 1,
+  };
+}
+
+function assetDetail(
+  summary: AssetSummary,
+  patch: Partial<AssetDetail>,
+): AssetDetail {
+  return {
+    assetId: summary.assetId,
+    locationId: summary.locationId,
+    originalDisplayName: summary.displayName,
+    relativeDisplayPath: summary.relativeDisplayPath,
+    availability: summary.availability,
+    mediaFamily: summary.mediaFamily,
+    mimeType: summary.mimeType,
+    extension: summary.extension,
+    byteSize: summary.byteSize,
+    category: summary.category,
+    previewKind: summary.previewKind,
+    reviewState: summary.reviewState,
+    customTitle: summary.customTitle,
+    note: null,
+    tags: summary.tags,
+    usedIn: summary.usedIn,
+    revision: summary.revision,
+    collectionIds: [],
+    ...patch,
   };
 }

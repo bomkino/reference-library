@@ -79,12 +79,12 @@ describe("V1 keyboard daily-use seams", () => {
     expect(host.querySelector('[aria-label*="unreadable"]')).not.toBeNull();
     expect(host.querySelector('[aria-label*="missing"]')).not.toBeNull();
     expect(host.querySelector('[aria-label*="unsupported"]')).not.toBeNull();
-    expect(text()).toContain("Catalogue only · unsupported media");
+    expect(text()).toContain("Catalogue only");
     expect(host.querySelector('[role="grid"]')?.getAttribute("aria-label")).toContain("6 assets");
     expect(host.querySelector(".selection-announcer")?.getAttribute("aria-live")).toBe("polite");
 
     await selectByKeyboard(select("Interface"), "1.25");
-    const density = input("Thumbnail density");
+    const density = input("Thumbnail size");
     await changeInputByKeyboard(density, "240", "ArrowRight");
     expect(document.documentElement.style.getPropertyValue("--ui-scale")).toBe("1.25");
     expect(density.value).toBe("240");
@@ -104,9 +104,9 @@ describe("V1 keyboard daily-use seams", () => {
     await waitFor(() => expect(harness.lastQuery?.search).toBe("frame"));
     await selectByKeyboard(select("Root"), "root-1");
     await selectByKeyboard(select("Review"), "keep");
-    await selectByKeyboard(select("Availability"), "unsupported");
+    await selectByKeyboard(select("Source"), "unsupported");
     expect(harness.lastQuery?.availability).toEqual(["unsupported"]);
-    await selectByKeyboard(select("Availability"), "present");
+    await selectByKeyboard(select("Source"), "present");
     await selectByKeyboard(select("Sort"), "name_descending");
     expect(harness.lastQuery).toMatchObject({ rootId: "root-1", reviewStates: ["keep"], availability: ["present"], sort: "name_descending" });
 
@@ -121,7 +121,7 @@ describe("V1 keyboard daily-use seams", () => {
     await waitFor(() => expect(host.querySelector(".topbar")?.hasAttribute("inert")).toBe(true));
     expect(host.querySelector(".topbar")?.getAttribute("aria-hidden")).toBe("true");
     expect(host.querySelector(".preview__stage")?.getAttribute("aria-busy")).toBe("true");
-    expect(host.querySelector(".preview__loading")?.textContent).toBe("Loading Preview…");
+    expect(host.querySelector(".preview__loading")?.textContent).toBe("Loading preview…");
     await act(async () => {
       host.querySelector<HTMLImageElement>(".preview__image")?.dispatchEvent(new Event("load"));
       await settle();
@@ -134,7 +134,7 @@ describe("V1 keyboard daily-use seams", () => {
     expect(document.activeElement).toBe(button("Zoom in"));
     expect(harness.calls.writePreferences).toContainEqual({ previewZoom: 2 });
     expect(select("Interface").value).toBe("1.25");
-    expect(input("Thumbnail density").value).toBe("240");
+    expect(input("Thumbnail size").value).toBe("240");
     await press("Escape");
     expect(host.querySelector('[role="dialog"]')).toBeNull();
     await waitFor(() => expect(host.querySelector(".topbar")?.hasAttribute("inert")).toBe(false));
@@ -142,11 +142,60 @@ describe("V1 keyboard daily-use seams", () => {
 
     await waitFor(() => expect(input("Title")).not.toBeNull());
     await selectByKeyboard(select("Review", host.querySelector(".inspector")!), "keep");
-    await focusAndPress(button("Save", host.querySelector(".inspector")!), "Enter");
+    await focusAndPress(button("Save Changes", host.querySelector(".inspector")!), "Enter");
     expect(harness.calls.updateAsset).toBe(1);
     expect(text()).toContain("Stills/B-frame.jpg");
-    await focusAndPress(button("Reveal Source"), " ");
+    await focusAndPress(button("Reveal"), " ");
     expect(harness.calls.revealLocation).toBe(1);
+  });
+
+  it("saves a dirty Inspector draft before rapid review and refreshes the revision before the second write", async () => {
+    await focusAndPress(button("New Library"), "Enter");
+    await waitFor(() => expect(host.querySelector('[data-asset-id="asset-1"]')).not.toBeNull());
+    const first = host.querySelector<HTMLElement>('[data-asset-id="asset-1"]')!;
+    await focusAndPress(first, " ");
+    await waitFor(() => expect(input("Title")).not.toBeNull());
+    await replaceByKeyboard(input("Title"), "Cover contender");
+
+    first.focus();
+    await press("1");
+    expect(document.querySelector('[role="alertdialog"]')).not.toBeNull();
+    await focusAndPress(button("Save and Continue"), "Enter");
+
+    await waitFor(() => expect(harness.calls.updateAsset).toBe(2));
+    expect(harness.calls.updateRevisions).toEqual([1, 2]);
+    expect(harness.details.get("asset-1")).toMatchObject({
+      customTitle: "Cover contender",
+      reviewState: "keep",
+      revision: 3,
+    });
+  });
+
+  it("shortlists across the virtual grid, compares four-or-fewer candidates and batch-curates without losing active selection", async () => {
+    await focusAndPress(button("New Library"), "Enter");
+    await waitFor(() => expect(host.querySelector('[data-asset-id="asset-1"]')).not.toBeNull());
+
+    const first = host.querySelector<HTMLElement>('[data-asset-id="asset-1"]')!;
+    first.focus();
+    await press("x");
+    await press("ArrowRight");
+    await press("x");
+
+    expect(host.querySelector(".selection-tray")?.getAttribute("aria-label")).toContain("2 assets");
+    expect(host.querySelector('[data-asset-id="asset-1"]')?.getAttribute("aria-pressed")).toBe("true");
+    expect(host.querySelector('[data-asset-id="asset-2"]')?.getAttribute("aria-pressed")).toBe("true");
+    expect(host.querySelector(".selection-announcer")?.textContent).toContain("2 Assets shortlisted");
+
+    await press("c");
+    expect(host.querySelector(".compare-board")?.getAttribute("role")).toBe("dialog");
+    expect(host.querySelectorAll(".compare-card")).toHaveLength(2);
+    await focusAndPress(button("Close", host.querySelector(".compare-board")!), "Escape");
+    expect(host.querySelector(".compare-board")).toBeNull();
+
+    await focusAndPress(button("Maybe", host.querySelector(".selection-tray")!), "Enter");
+    await waitFor(() => expect(harness.calls.updateAsset).toBe(2));
+    expect(host.querySelector(".selection-tray")?.textContent).toContain("Updated 2");
+    expect(host.querySelector('[data-asset-id="asset-2"]')?.getAttribute("aria-selected")).toBe("true");
   });
 
   it("distinguishes pending Preview loading from an unavailable opaque resource", async () => {
@@ -161,7 +210,7 @@ describe("V1 keyboard daily-use seams", () => {
     });
     expect(host.querySelector(".preview__loading")).toBeNull();
     expect(host.querySelector(".preview__error")?.getAttribute("role")).toBe("alert");
-    expect(host.querySelector(".preview__error")?.textContent).toContain("Preview unavailable");
+    expect(host.querySelector(".preview__error")?.textContent).toContain("Preview could not be rendered");
   });
 
   it("coalesces a 100,000-Asset scan storm into bounded public requests and DOM", async () => {
@@ -346,7 +395,7 @@ describe("V1 keyboard daily-use seams", () => {
     await waitFor(() => expect(harness.authoritySession.sessionId).toBe("session-authority-2"));
     expect(input("Title").value).toContain("preserved draft");
     expect(harness.calls.staleFollowUps).toBe(0);
-    await focusAndPress(button("Save", host.querySelector(".inspector")!), "Enter");
+    await focusAndPress(button("Save Changes", host.querySelector(".inspector")!), "Enter");
     expect(harness.calls.updateSessions.at(-1)).toBe("session-authority-2");
   });
 
@@ -388,7 +437,7 @@ describe("V1 keyboard daily-use seams", () => {
     await waitFor(() => expect(input("Title")).not.toBeNull());
     await replaceByKeyboard(input("Title"), "😀".repeat(501));
     expect(text()).toContain("Title must be at most 500 Unicode characters.");
-    expect((button("Save", host.querySelector(".inspector")!) as HTMLButtonElement).disabled).toBe(true);
+    expect((button("Save Changes", host.querySelector(".inspector")!) as HTMLButtonElement).disabled).toBe(true);
     await replaceByKeyboard(input("New Collection"), "e\u0301".repeat(101));
     expect(text()).toContain("Collection name must be at most 200 Unicode characters.");
   });
@@ -470,7 +519,7 @@ class BridgeHarness {
   queryError: Error | null = null;
   authoritySession = SESSION;
   lastQuery: AssetQuery | null = null;
-  calls = { openLibrary: 0, listRoots: 0, listCollections: 0, queryAssets: 0, getAsset: 0, reauthorizeRoot: 0, scanRoot: 0, cancelJob: 0, updateAsset: 0, revealLocation: 0, openLocation: 0, copyLocationPath: 0, renameCollection: 0, deleteCollection: 0, createCollection: 0, setCollectionMembership: 0, restartCore: 0, staleFollowUps: 0, updateSessions: [] as string[], writePreferences: [] as Array<Record<string, unknown>>, completeOpenIntent: [] as Array<[string, string]> };
+  calls = { openLibrary: 0, listRoots: 0, listCollections: 0, queryAssets: 0, getAsset: 0, reauthorizeRoot: 0, scanRoot: 0, cancelJob: 0, updateAsset: 0, revealLocation: 0, openLocation: 0, copyLocationPath: 0, renameCollection: 0, deleteCollection: 0, createCollection: 0, setCollectionMembership: 0, restartCore: 0, staleFollowUps: 0, updateSessions: [] as string[], updateRevisions: [] as number[], writePreferences: [] as Array<Record<string, unknown>>, completeOpenIntent: [] as Array<[string, string]> };
 
   bridge: ReferenceWorkspaceBridge = {
     version: BRIDGE_VERSION,
@@ -515,9 +564,18 @@ class BridgeHarness {
     updateAsset: async (input) => {
       this.calls.updateAsset += 1;
       this.calls.updateSessions.push(input.sessionId);
+      this.calls.updateRevisions.push(input.expectedRevision);
       this.recordFollowUp(input.sessionId);
       const current = this.details.get(input.assetId)!;
-      const updated: AssetDetail = { ...current, customTitle: applyText(current.customTitle, input.patch.customTitle), note: applyText(current.note, input.patch.note), reviewState: input.patch.reviewState ?? current.reviewState, revision: current.revision + 1 };
+      const updated: AssetDetail = {
+        ...current,
+        customTitle: applyText(current.customTitle, input.patch.customTitle),
+        note: applyText(current.note, input.patch.note),
+        reviewState: input.patch.reviewState ?? current.reviewState,
+        tags: applyList(current.tags, input.patch.tags),
+        usedIn: applyList(current.usedIn, input.patch.usedIn),
+        revision: current.revision + 1,
+      };
       this.details.set(input.assetId, updated);
       return { asset: updated, libraryRevision: 2 };
     },
@@ -584,6 +642,7 @@ function detail(summary: AssetSummary): AssetDetail {
   };
 }
 function applyText(current: string | null, patch: { action: string; value?: string }): string | null { return patch.action === "clear" ? null : patch.action === "set" ? patch.value ?? null : current; }
+function applyList(current: string[], patch: { action: string; value?: string[] }): string[] { return patch.action === "set" ? patch.value ?? [] : current; }
 function text() { return document.body.textContent ?? ""; }
 function button(name: string, scope: ParentNode = hostNode()): HTMLElement { const found = [...scope.querySelectorAll<HTMLElement>("button")].find((element) => element.textContent?.trim() === name || element.getAttribute("aria-label") === name); if (!found) throw new Error(`button not found: ${name}`); return found; }
 function input(name: string): HTMLInputElement { const found = [...document.querySelectorAll<HTMLInputElement>("input")].find((element) => element.getAttribute("aria-label") === name || element.closest("label")?.textContent?.includes(name)); if (!found) throw new Error(`input not found: ${name}`); return found; }

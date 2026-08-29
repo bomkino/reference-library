@@ -209,7 +209,7 @@ fn page_envelope_size(page: &CanonicalPage) -> Result<usize, CoreError> {
     let frame = ServerFrame::Response {
         protocol_version: PROTOCOL_VERSION,
         request_id: "r".repeat(MAX_REQUEST_ID_BYTES),
-        result: CommandResult::CanonicalPage(page.clone()),
+        result: Box::new(CommandResult::CanonicalPage(page.clone())),
     };
     Ok(serde_json::to_vec(&frame)?.len())
 }
@@ -586,7 +586,7 @@ pub fn generate(connection: &Connection) -> Result<Value, CoreError> {
     let frame = ServerFrame::Response {
         protocol_version: PROTOCOL_VERSION,
         request_id: "r".repeat(MAX_REQUEST_ID_BYTES),
-        result: CommandResult::CanonicalDump { dump: dump.clone() },
+        result: Box::new(CommandResult::CanonicalDump { dump: dump.clone() }),
     };
     if serde_json::to_vec(&frame)?.len() > MAX_FRAME_BYTES {
         return Err(CoreError::CanonicalDumpTooLarge);

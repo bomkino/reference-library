@@ -59,7 +59,7 @@ impl CoreProcess {
             match self.next() {
                 ServerFrame::Response {
                     request_id, result, ..
-                } if request_id == expected_request_id => return result,
+                } if request_id == expected_request_id => return *result,
                 ServerFrame::Error {
                     request_id, error, ..
                 } if request_id == expected_request_id => {
@@ -480,7 +480,7 @@ fn maximum_unicode_notes_page_exhaustively_without_exceeding_the_frame() {
         let frame = ServerFrame::Response {
             protocol_version: PROTOCOL_VERSION,
             request_id: "r".repeat(MAX_REQUEST_ID_BYTES),
-            result: CommandResult::CanonicalPage(page.clone()),
+            result: Box::new(CommandResult::CanonicalPage(page.clone())),
         };
         let mut encoded = Vec::new();
         write_frame(&mut encoded, &frame).unwrap();

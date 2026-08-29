@@ -63,7 +63,7 @@ impl CoreProcess {
                     request_id: actual,
                     result,
                     ..
-                } if actual == request_id => return result,
+                } if actual == request_id => return *result,
                 ServerFrame::Error {
                     request_id: actual,
                     error,

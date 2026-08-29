@@ -78,7 +78,7 @@ fn worst_case_canonical_asset_pages_fit_the_public_frame_without_gaps() {
         let frame = ServerFrame::Response {
             protocol_version: PROTOCOL_VERSION,
             request_id: "r".repeat(MAX_REQUEST_ID_BYTES),
-            result: CommandResult::CanonicalPage(page.clone()),
+            result: Box::new(CommandResult::CanonicalPage(page.clone())),
         };
         let mut encoded = Vec::new();
         write_frame(&mut encoded, &frame).unwrap();

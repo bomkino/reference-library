@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   DEFAULT_ASSET_QUERY,
+  type AssetDetail,
   type AssetPage,
   type AssetSummary,
   type ReferenceWorkspaceBridge,
@@ -56,6 +57,65 @@ describe("Asset pager query snapshot", () => {
       { offset: 100, expectedLibraryRevision: 2 },
     ]);
   });
+  it("refreshes every visible parity field after an editorial update", async () => {
+    const initial = asset(1, 0);
+    const bridge = {
+      queryAssets: async (): Promise<AssetPage> => ({
+        offset: 0,
+        limit: 100,
+        total: 1,
+        items: [initial],
+        nextOffset: null,
+        libraryRevision: 1,
+        facets: { categories: [], extensions: [], mediaFamilies: [], tags: [], usedIn: [] },
+      }),
+    } as unknown as ReferenceWorkspaceBridge;
+    let pager: AssetPager | null = null;
+    function Probe() {
+      pager = useAssetPager(bridge, "session-1", DEFAULT_ASSET_QUERY, 0);
+      return <output>{pager.items.get(0)?.displayName}</output>;
+    }
+    await act(async () => { root.render(<Probe />); await settle(); });
+    await waitFor(() => expect(current(pager).items.get(0)?.assetId).toBe(initial.assetId));
+
+    const detail: AssetDetail = {
+      assetId: initial.assetId,
+      locationId: "location-updated",
+      originalDisplayName: "Frame 0.jpg",
+      relativeDisplayPath: "Boards/Frame 0.jpg",
+      mediaFamily: "design",
+      mimeType: "application/pdf",
+      extension: "pdf",
+      byteSize: 8_192,
+      category: "Boards",
+      previewKind: "pdf",
+      availability: "present",
+      reviewState: "keep",
+      customTitle: "Cover contender",
+      note: "Strong negative space",
+      tags: ["cover", "night"],
+      usedIn: ["Cover"],
+      revision: 4,
+      collectionIds: [],
+    };
+    await act(async () => { current(pager).refreshSummary(detail); await settle(); });
+    expect(current(pager).items.get(0)).toMatchObject({
+      locationId: "location-updated",
+      displayName: "Cover contender",
+      relativeDisplayPath: "Boards/Frame 0.jpg",
+      mediaFamily: "design",
+      mimeType: "application/pdf",
+      extension: "pdf",
+      byteSize: 8_192,
+      category: "Boards",
+      previewKind: "pdf",
+      reviewState: "keep",
+      tags: ["cover", "night"],
+      usedIn: ["Cover"],
+      revision: 4,
+    });
+  });
+
 });
 
 class MutatingQuerySeam {

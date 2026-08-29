@@ -763,7 +763,7 @@ fn byte_bound_asset_page(
         let frame = ServerFrame::Response {
             protocol_version: PROTOCOL_VERSION,
             request_id: "r".repeat(MAX_REQUEST_ID_BYTES),
-            result: CommandResult::AssetPage(page),
+            result: Box::new(CommandResult::AssetPage(page)),
         };
         Ok(serde_json::to_vec(&frame)?.len().saturating_add(4) <= MAX_FRAME_BYTES)
     };

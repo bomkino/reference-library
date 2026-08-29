@@ -818,7 +818,7 @@ fn worst_case_asset_pages_are_byte_bounded_without_duplicates_or_gaps() {
         let frame = ServerFrame::Response {
             protocol_version: PROTOCOL_VERSION,
             request_id: "r".repeat(MAX_REQUEST_ID_BYTES),
-            result: CommandResult::AssetPage(page.clone()),
+            result: Box::new(CommandResult::AssetPage(page.clone())),
         };
         assert!(serde_json::to_vec(&frame).unwrap().len() <= MAX_FRAME_BYTES);
         observed.extend(page.items.into_iter().map(|item| item.asset_id));

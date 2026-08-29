@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased — 0.2 candidate
+
+### Asset Browser parity
+
+- Catalogues common images, design files, documents, video, audio, fonts and archives without conflating catalogue support with preview support.
+- Adds Grid, Compact and List modes, optional related-thumbnail mosaics, richer facets and file-size sorting.
+- Restores native Open Original, Reveal Source and Copy Path actions while keeping absolute paths inside the native host.
+- Adds durable tags and Used In provenance plus opt-in 60-second Root rescanning.
+
+### Editorial comparison and curation
+
+- Adds a transient, bounded 32-Asset Shortlist that survives filtering and paging within the open Library session.
+- Adds a modal Compare Board for up to four references with shared zoom, per-Asset review and native source actions.
+- Adds batch review, tags, Used In and Collection membership from the Shortlist.
+- Adds `X` shortlist, `C` compare and `1`/`2`/`3`/`0` rapid-review shortcuts.
+- Refreshes each Asset immediately before rapid or batch writes, preventing stale revisions after saved Inspector edits or external changes.
+- Refreshes every visible parity field after curation so cards, Inspector, Preview and Shortlist do not disagree.
+
+### Verification repairs
+
+- Updates stale macOS and Linux bridge-v4 contract fixtures.
+- Boxes large protocol response payloads to restore Clippy’s enum-size boundary without changing serialized wire meaning.
+- Adds causal tests for shortlist bounds, range selection, comparison limits, batch partial failure, fresh-revision writes and visible metadata refresh.
+
 ## 0.1.0 — 2026-08-28
 
 First public Reference Library release.

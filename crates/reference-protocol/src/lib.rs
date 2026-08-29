@@ -337,7 +337,7 @@ pub enum ServerFrame {
     Response {
         protocol_version: u32,
         request_id: String,
-        result: CommandResult,
+        result: Box<CommandResult>,
     },
     Error {
         protocol_version: u32,

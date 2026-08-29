@@ -40,8 +40,8 @@ test("packaged journey requires workspace, bridge, host preferences, Core, and c
     url: "pitchdog-ui://app/index.html",
     readyState: "complete",
     heading: "Your project’s visual memory.",
-    bridgeVersion: 3,
-    preferences: { interfaceScale: 1, thumbnailDensity: 220, previewZoom: 1 },
+    bridgeVersion: 4,
+    preferences: { interfaceScale: 1, thumbnailDensity: 220, previewZoom: 1, viewMode: "grid", multiThumbnailPreviews: false, autoRescan: false },
     capabilities: [
       { name: "common-stills", state: "required_parity", reason: null },
       { name: "source-mutation", state: "intentionally_absent", reason: "outside V1" },

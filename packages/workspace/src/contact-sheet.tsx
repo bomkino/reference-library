@@ -27,8 +27,12 @@ interface ContactSheetProps {
   viewMode: AssetViewMode;
   multiThumbnailPreviews: boolean;
   selectedAssetId: string | null;
+  shortlistedAssetIds: ReadonlySet<string>;
   ensureWindow(start: number, end: number): void;
   onSelect(asset: AssetSummary): void;
+  onToggleShortlist(asset: AssetSummary, index: number, extendRange: boolean): void;
+  onRequestCompare(asset: AssetSummary, index: number): void;
+  onReview(asset: AssetSummary, reviewState: AssetSummary["reviewState"]): void;
   onPreview(asset: AssetSummary): void;
   onOpen(asset: AssetSummary): void;
 }
@@ -142,6 +146,7 @@ export function ContactSheet(props: ContactSheetProps) {
       className={`contact-sheet contact-sheet--${props.viewMode}`}
       ref={viewportRef}
       role="grid"
+      aria-multiselectable="true"
       tabIndex={-1}
       aria-label={`Editorial Contact Sheet, ${props.total} assets, ${props.viewMode} view`}
       aria-rowcount={Math.ceil(props.total / layout.columns)}
@@ -166,12 +171,13 @@ export function ContactSheet(props: ContactSheetProps) {
             const asset = props.items.get(index);
             if (!asset) return <div className="asset-card asset-card--loading" key={index} aria-hidden />;
             const selected = props.selectedAssetId === asset.assetId;
+            const shortlisted = props.shortlistedAssetIds.has(asset.assetId);
             const open = () => asset.availability === "present" && asset.previewKind !== "none"
               ? props.onPreview(asset)
               : props.onOpen(asset);
             return (
               <button
-                className={`asset-card asset-card--${props.viewMode}`}
+                className={`asset-card asset-card--${props.viewMode}${shortlisted ? " asset-card--shortlisted" : ""}`}
                 data-index={index}
                 data-asset-id={asset.assetId}
                 key={asset.assetId}
@@ -179,16 +185,53 @@ export function ContactSheet(props: ContactSheetProps) {
                 aria-rowindex={Math.floor(index / layout.columns) + 1}
                 aria-colindex={(index % layout.columns) + 1}
                 aria-selected={selected}
-                aria-label={`${asset.displayName}, ${asset.category}, ${asset.mediaFamily}, ${asset.reviewState}, ${asset.availability}`}
+                aria-pressed={shortlisted}
+                aria-label={`${asset.displayName}, ${asset.category}, ${asset.mediaFamily}, ${asset.reviewState}, ${asset.availability}, ${shortlisted ? "in shortlist" : "not in shortlist"}`}
                 tabIndex={index === rovingIndex ? 0 : -1}
                 onFocus={() => { restoreGridFocus.current = true; }}
-                onClick={() => props.onSelect(asset)}
+                onClick={(event) => {
+                  const target = event.target instanceof Element ? event.target : null;
+                  const toggle = Boolean(target?.closest("[data-shortlist-toggle]"));
+                  if (toggle || event.metaKey || event.ctrlKey || event.shiftKey) {
+                    props.onToggleShortlist(asset, index, event.shiftKey);
+                  } else {
+                    props.onSelect(asset);
+                  }
+                }}
                 onDoubleClick={open}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") open();
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    open();
+                    return;
+                  }
+                  if (event.key.toLowerCase() === "x") {
+                    event.preventDefault();
+                    props.onToggleShortlist(asset, index, event.shiftKey);
+                    return;
+                  }
+                  if (event.key.toLowerCase() === "c") {
+                    event.preventDefault();
+                    props.onRequestCompare(asset, index);
+                    return;
+                  }
+                  const reviewState = reviewStateForKey(event.key);
+                  if (reviewState) {
+                    event.preventDefault();
+                    props.onReview(asset, reviewState);
+                    return;
+                  }
                   handleKey(event, index);
                 }}
               >
+                <span
+                  className="asset-card__shortlist-toggle"
+                  data-shortlist-toggle
+                  aria-hidden="true"
+                  title={shortlisted ? "Remove from shortlist" : "Add to shortlist"}
+                >
+                  {shortlisted ? "✓" : "+"}
+                </span>
                 <AssetVisual
                   asset={asset}
                   bridge={props.bridge}
@@ -323,4 +366,14 @@ function availabilityLabel(value: string): string {
 
 function isNavigationKey(value: string): value is NavigationKey {
   return ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(value);
+}
+
+function reviewStateForKey(value: string): AssetSummary["reviewState"] | null {
+  const states: Record<string, AssetSummary["reviewState"]> = {
+    "0": "unreviewed",
+    "1": "keep",
+    "2": "maybe",
+    "3": "reject",
+  };
+  return states[value] ?? null;
 }

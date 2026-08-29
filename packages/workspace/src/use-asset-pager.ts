@@ -145,11 +145,20 @@ export function useAssetPager(
         if (item.assetId !== detail.assetId) continue;
         next.set(index, {
           ...item,
+          locationId: detail.locationId,
           displayName: detail.customTitle ?? detail.originalDisplayName,
           relativeDisplayPath: detail.relativeDisplayPath,
+          mediaFamily: detail.mediaFamily,
+          mimeType: detail.mimeType,
+          extension: detail.extension,
+          byteSize: detail.byteSize,
+          category: detail.category,
+          previewKind: detail.previewKind,
           availability: detail.availability,
           reviewState: detail.reviewState,
           customTitle: detail.customTitle,
+          tags: detail.tags,
+          usedIn: detail.usedIn,
           revision: detail.revision,
         });
       }

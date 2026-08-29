@@ -54,7 +54,7 @@ impl CoreProcess {
             match self.next() {
                 ServerFrame::Response {
                     request_id, result, ..
-                } if request_id == id => return result,
+                } if request_id == id => return *result,
                 ServerFrame::Error {
                     request_id, error, ..
                 } if request_id == id => panic!("{}: {}", error.code, error.message),
@@ -164,17 +164,17 @@ fn authorization_is_correlated_cancellable_and_does_not_block_dispatch() {
                     },
                 );
             }
-            ServerFrame::Response {
-                request_id,
-                result: CommandResult::Capabilities(_),
-                ..
-            } if request_id == "capabilities" => capabilities_before_terminal = true,
-            ServerFrame::Response {
-                request_id,
-                result: CommandResult::JobCancellation { state, .. },
-                ..
-            } if request_id == "cancel" => {
-                assert_eq!(state, CancellationState::CancellationRequested);
+            ServerFrame::Response { request_id, result, .. }
+                if request_id == "capabilities"
+                    && matches!(result.as_ref(), CommandResult::Capabilities(_)) =>
+            {
+                capabilities_before_terminal = true
+            }
+            ServerFrame::Response { request_id, result, .. } if request_id == "cancel" => {
+                let CommandResult::JobCancellation { state, .. } = result.as_ref() else {
+                    continue;
+                };
+                assert_eq!(*state, CancellationState::CancellationRequested);
                 cancelled_response = true;
             }
             ServerFrame::Error {

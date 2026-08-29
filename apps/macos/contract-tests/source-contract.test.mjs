@@ -23,7 +23,7 @@ test("Finder package-open routes through opaque serialized intent acknowledgemen
   assert.match(delegate, /applicationShouldTerminate[\s\S]*await model\.stop\(\)[\s\S]*terminateLater/);
 });
 
-test("v3 bridge includes the daily-use seam and excludes prohibited Root removal", async () => {
+test("v4 bridge includes the daily-use seam and excludes prohibited Root removal", async () => {
   const bridge = await source("WorkspaceBridge.swift");
   for (const operation of [
     "completeOpenIntent", "listRoots", "reauthorizeRoot", "scanRoot", "cancelJob",
@@ -31,7 +31,7 @@ test("v3 bridge includes the daily-use seam and excludes prohibited Root removal
     "createCollection", "renameCollection", "deleteCollection", "setCollectionMembership",
     "readPreferences", "writePreferences",
   ]) assert.match(bridge, new RegExp(operation));
-  assert.match(bridge, /version: 3/);
+  assert.match(bridge, /version: 4/);
   assert.doesNotMatch(bridge, /removeRoot|unbindRoot/);
 });
 

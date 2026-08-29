@@ -37,7 +37,21 @@ export function AssetInspector(props: {
   const cannotSave = Boolean(titleError || noteError || tokenErrors.tags || tokenErrors.usedIn || props.saving);
 
   if (props.loading) return <aside className="inspector" aria-label="Inspector" aria-busy="true"><h2>Inspector</h2><p role="status">Loading Asset…</p></aside>;
-  if (!props.detail || !props.draft) return <aside className="inspector" aria-label="Inspector"><h2>Inspector</h2><p className="muted">Select an Asset. Inspector geometry stays put.</p></aside>;
+  if (!props.detail || !props.draft) {
+    return (
+      <aside className="inspector" aria-label="Inspector">
+        <h2>Inspector</h2>
+        {props.error ? (
+          <>
+            <p className="field-error" role="alert">{props.error}</p>
+            <button className="button--secondary" onClick={() => void props.onReload()}>Retry Asset</button>
+          </>
+        ) : (
+          <p className="muted">Select an Asset. Inspector geometry stays put.</p>
+        )}
+      </aside>
+    );
+  }
 
   const detail = props.detail;
   const draft = props.draft;
