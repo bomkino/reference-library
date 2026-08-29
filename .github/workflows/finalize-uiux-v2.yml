@@ -67,6 +67,14 @@ jobs:
               source = source[:disabled] + f'aria-label="{label}"\n                ' + source[disabled:]
           toolbar.write_text(source)
 
+          app = Path('packages/workspace/src/app.tsx')
+          app_source = app.read_text()
+          interface_old = '<label>Interface<select value={interfaceScale}'
+          interface_new = '<label>Interface<select aria-label="Interface" value={interfaceScale}'
+          if app_source.count(interface_old) != 1:
+              raise SystemExit(f'expected one Interface select seam, found {app_source.count(interface_old)}')
+          app.write_text(app_source.replace(interface_old, interface_new, 1))
+
           test = Path('packages/workspace/src/app.keyboard.integration.test.tsx')
           tests = test.read_text()
           start = tests.index('function select(name: string')
