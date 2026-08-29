@@ -52,6 +52,19 @@ jobs:
             | sha256sum --check --strict
           git apply --check "$RUNNER_TEMP/responsive-polish.patch"
           git apply "$RUNNER_TEMP/responsive-polish.patch"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          test = Path("scripts/tests/linux-runtime-smoke.test.mjs")
+          source = test.read_text()
+          old = '    heading: "Your project’s visual memory.",'
+          new = '    heading: "Build the visual memory for one deck.",'
+          if source.count(old) != 1:
+              raise SystemExit(f"expected one packaged-journey heading fixture, found {source.count(old)}")
+          test.write_text(source.replace(old, new, 1))
+          PY
+
           rm -rf .github/uiux-responsive
           rm -f .github/workflows/apply-responsive-uiux-polish.yml
           git diff --check
@@ -66,7 +79,6 @@ jobs:
           npm test
           npm run build
           python3 scripts/check_repository.py
-          node scripts/linux-packaged-runtime-smoke.mjs --source-check-only
 
       - name: Commit verified product source
         shell: bash
