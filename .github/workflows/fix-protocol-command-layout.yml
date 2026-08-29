@@ -115,6 +115,25 @@ jobs:
               raise SystemExit(f"expected one T01 paging marker, found {t01.count(marker)}")
           t01 = t01.replace(marker, catalogue_assertion, 1)
           tracer.write_text(t01)
+
+          adversarial = Path("crates/reference-core/tests/v1_bounded_output_adversarial.rs")
+          bounded = adversarial.read_text()
+          migration_marker = (
+              "const MIGRATION_0003: &str = include_str!(\"../../../migrations/0003_rendition_jobs.sql\");\n"
+          )
+          migration_replacement = (
+              migration_marker
+              + "const MIGRATION_0004: &str = include_str!(\"../../../migrations/0004_asset_browser_parity.sql\");\n"
+          )
+          if bounded.count(migration_marker) != 1:
+              raise SystemExit(f"expected one bounded-output migration marker, found {bounded.count(migration_marker)}")
+          bounded = bounded.replace(migration_marker, migration_replacement, 1)
+          apply_marker = "    connection.execute_batch(MIGRATION_0003).unwrap();\n"
+          apply_replacement = apply_marker + "    connection.execute_batch(MIGRATION_0004).unwrap();\n"
+          if bounded.count(apply_marker) != 1:
+              raise SystemExit(f"expected one bounded-output migration application, found {bounded.count(apply_marker)}")
+          bounded = bounded.replace(apply_marker, apply_replacement, 1)
+          adversarial.write_text(bounded)
           PY
           rm -f .github/workflows/fix-protocol-command-layout.yml
           cargo fmt --all
