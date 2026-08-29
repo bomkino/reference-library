@@ -175,12 +175,6 @@ impl Drop for PopulatedPackage {
     }
 }
 
-impl Drop for PopulatedPackage {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.directory);
-    }
-}
-
 #[test]
 fn populated_schema_one_migrates_without_rekeying_canonical_identity() {
     let package = PopulatedPackage::at_schema_one();
@@ -211,13 +205,15 @@ fn populated_schema_one_migrates_without_rekeying_canonical_identity() {
         connection
             .query_row(
                 "SELECT custom_title, review_state, note, revision FROM assets WHERE id = ?1",
-                params![list]=
-                |row| Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, Option<String>>(2)?,
-                    row.get::<_, i64>(3)?
-                )),
+                params![expected.asset],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, i64>(3)?,
+                    ))
+                },
             )
             .unwrap(),
         ("Fixture title".into(), "keep".into(), None, 0)
@@ -227,11 +223,13 @@ fn populated_schema_one_migrates_without_rekeying_canonical_identity() {
             .query_row(
                 "SELECT job_kind, state, root_id FROM jobs WHERE id = ?1",
                 params![expected.job],
-                |row| Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, Option<String>>(2)?
-                )),
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                },
             )
             .unwrap(),
         ("initial_scan".into(), "completed".into(), None)
@@ -397,7 +395,7 @@ fn library_meta_version(connection: &Connection) -> u32 {
 
 fn assert_version_surfaces_converged(connection: &Connection, package: &std::path::Path) {
     assert_eq!(pragma_version(connection), SCHEMA_VERSION);
-    assert_eq!(library_meta_version(&connection), SCHEMA_VERSION);
+    assert_eq!(library_meta_version(connection), SCHEMA_VERSION);
     assert_eq!(
         Manifest::read(package).unwrap().schema_version,
         SCHEMA_VERSION
