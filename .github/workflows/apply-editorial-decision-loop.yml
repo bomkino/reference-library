@@ -63,6 +63,7 @@ jobs:
           set -euo pipefail
           npm ci --ignore-scripts
           npm run typecheck
+          cargo build --locked -p reference-core
           npm test
           npm run build
           cargo fmt --all -- --check
