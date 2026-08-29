@@ -1,4 +1,4 @@
-name: Export prepared 0.2.0 patch
+name: Export prepared 0.2.0 source
 
 on:
   push:
@@ -40,15 +40,24 @@ jobs:
           rm -f .github/workflows/export-prepared-release-patch.yml
           git diff --check
           git diff --binary > "$RUNNER_TEMP/release-0.2.0.patch"
+          tar \
+            --exclude=.git \
+            --exclude=target \
+            --exclude=node_modules \
+            --exclude='*/node_modules' \
+            --exclude='*/dist' \
+            --exclude=artifacts \
+            -czf "$RUNNER_TEMP/reference-library-0.2.0-prepared-source.tar.gz" .
           cd "$RUNNER_TEMP"
-          sha256sum release-0.2.0.patch > SHA256SUMS
+          sha256sum release-0.2.0.patch reference-library-0.2.0-prepared-source.tar.gz > SHA256SUMS
 
-      - name: Upload exact patch
+      - name: Upload exact prepared source
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: reference-library-0.2.0-patch
+          name: reference-library-0.2.0-source-only
           path: |
             ${{ runner.temp }}/release-0.2.0.patch
+            ${{ runner.temp }}/reference-library-0.2.0-prepared-source.tar.gz
             ${{ runner.temp }}/SHA256SUMS
           if-no-files-found: error
           retention-days: 1
