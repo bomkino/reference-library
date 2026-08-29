@@ -49,7 +49,7 @@ jobs:
             | gzip --decompress \
             > "$RUNNER_TEMP/editorial-repair.patch"
           printf '%s  %s\n' \
-            'a1bddf7c10a7070cd4b161f4dd355f08c4a13c92008e394450b36bfbe1569692' \
+            '85ab744d46879c3881ea68e994dcb97237ce4757863f7d4273c5de92ba753ca4' \
             "$RUNNER_TEMP/editorial-repair.patch" \
             | sha256sum --check --strict
           git apply --check "$RUNNER_TEMP/editorial-repair.patch"
