@@ -1,0 +1,50 @@
+name: Capture final UIUX journey
+
+on:
+  push:
+    branches:
+      - codex/reference-library-feature-parity
+    paths:
+      - .github/uiux-audit/**
+      - .github/workflows/capture-final-uiux.yml
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: codex/reference-library-feature-parity
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install and build workspace
+        run: |
+          npm ci --ignore-scripts
+          npm run build -w @pitchdog/reference-workspace
+
+      - name: Capture deterministic journey states
+        shell: bash
+        env:
+          PRELOAD: ${{ github.workspace }}/.github/uiux-audit/preload.cjs
+          INDEX_HTML: ${{ github.workspace }}/packages/workspace/dist/index.html
+          SCREENSHOT_DIR: ${{ runner.temp }}/reference-uiux/screenshots
+        run: xvfb-run -a ./node_modules/.bin/electron .github/uiux-audit/capture.cjs --no-sandbox
+
+      - name: Upload screenshots and failure state
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: reference-library-final-uiux-screenshots
+          path: ${{ runner.temp }}/reference-uiux/screenshots/*.png
+          if-no-files-found: error
+          retention-days: 1
