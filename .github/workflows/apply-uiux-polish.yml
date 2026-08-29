@@ -5,7 +5,7 @@ on:
     branches:
       - codex/reference-library-feature-parity
     paths:
-      - .github/uiux-polish/uiux-polish.patch.gz.b64
+      - .github/uiux-polish/uiux-polish.patch.gz.b64.part-*
       - .github/workflows/apply-uiux-polish.yml
 
 permissions:
@@ -36,7 +36,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          base64 --decode .github/uiux-polish/uiux-polish.patch.gz.b64 \
+          echo "74064d0be49869c474ea05b38bbbc362f8ce8347a05eef758c7e5562f35fbcca  .github/uiux-polish/uiux-polish.patch.gz.b64.part-00" | sha256sum --check --strict
+          echo "d4fe76ab7bfab0bc476efce85b58f8e321812ff0ef5c8eed910014cf98912376  .github/uiux-polish/uiux-polish.patch.gz.b64.part-01" | sha256sum --check --strict
+          echo "e812341a54fceec5c4b98398be370acab5ef5fe6b539b4dbdc7c5a2eb63761db  .github/uiux-polish/uiux-polish.patch.gz.b64.part-02" | sha256sum --check --strict
+          echo "d8c0370d57e9c4c97734ad2a30fd85e14dd0385666afbf21b2d83ac063d3de2c  .github/uiux-polish/uiux-polish.patch.gz.b64.part-03" | sha256sum --check --strict
+          cat .github/uiux-polish/uiux-polish.patch.gz.b64.part-* \
+            > "$RUNNER_TEMP/uiux-polish.patch.gz.b64"
+          echo "b8272aa16476f17ee88372c3bba34db2366ffab9f0f201b07c8fe1e632a65d05  $RUNNER_TEMP/uiux-polish.patch.gz.b64" \
+            | sha256sum --check --strict
+          base64 --decode "$RUNNER_TEMP/uiux-polish.patch.gz.b64" \
             > "$RUNNER_TEMP/uiux-polish.patch.gz"
           echo "cac02bde6a8160268877f3afa1e34ac0c39a6349cdf24acbfe659d3230156c48  $RUNNER_TEMP/uiux-polish.patch.gz" \
             | sha256sum --check --strict
