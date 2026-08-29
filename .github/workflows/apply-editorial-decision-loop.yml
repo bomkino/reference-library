@@ -45,7 +45,7 @@ jobs:
           base64 --decode .github/editorial-decision-loop/decision-loop.patch.gz.b64 \
             | gzip --decompress \
             > "$RUNNER_TEMP/editorial-decision-loop.patch"
-          echo "dbc5e7d14868fc8d005df50097103b0ef480e8b7df6a69641fdd9e843efb0e4b  $RUNNER_TEMP/editorial-decision-loop.patch" \
+          echo "ce9a7225ad2a6a59983f91fabc11b8eeda6efeb97cd59c964f51a0caea596bfe  $RUNNER_TEMP/editorial-decision-loop.patch" \
             | sha256sum --check --strict
           git apply --check "$RUNNER_TEMP/editorial-decision-loop.patch"
           git apply "$RUNNER_TEMP/editorial-decision-loop.patch"
