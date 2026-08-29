@@ -2,9 +2,9 @@
 
 ## Status
 
-**Draft pull-request candidate. Compatible source and package verification passed. Not merged. Not released. Not target-integrated.**
+**Implementation complete and released as 0.2.0. Compatible source and package verification passed. Target integration remains unclaimed.**
 
-This receipt covers `codex/reference-library-feature-parity` and draft pull request #4. It does not authorize a merge or release.
+This receipt records the feature-parity, editorial-decision and source-truth work promoted through pull request #4 into release 0.2.0. Explicit merge and release authority was granted on 2026-08-29.
 
 Exact product source after the editorial decision-loop and source-truth repairs:
 
@@ -145,9 +145,9 @@ Workflow run `33233311053` passed all five ordinary jobs against `bcb52571fe79bc
 - extracted application validation;
 - checksums and source-bound build-receipt verification.
 
-## Remaining proof boundary
+## Known unclosed integration gates
 
-Compatible CI is not representative target integration. Before promotion, complete the real-machine journeys for:
+Compatible CI is not representative target integration. Release 0.2.0 is public with these real-machine journeys still open:
 
 - Apple-Silicon macOS;
 - Jenai’s Garuda/Arch/KDE environment under Wayland and X11;
@@ -156,4 +156,4 @@ Compatible CI is not representative target integration. Before promotion, comple
 
 ## Deliberate non-claim
 
-This branch is a strong source and compatible-package candidate. It is not yet evidence that every broad catalogue format has a high-fidelity preview, that comparison ergonomics are proven in daily pitch.dog work, that the app is integrated on the target machines, or that a public release is ready.
+Release 0.2.0 is not evidence that every broad catalogue format has a high-fidelity preview, that comparison ergonomics are proven in sustained daily pitch.dog work, or that representative target-machine integration is complete. Those limits remain explicit release facts.

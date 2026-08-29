@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — 0.2 candidate
+## 0.2.0 — 2026-08-29
 
 ### Asset Browser parity
 
@@ -17,6 +17,14 @@
 - Adds `X` shortlist, `C` compare and `1`/`2`/`3`/`0` rapid-review shortcuts.
 - Refreshes each Asset immediately before rapid or batch writes, preventing stale revisions after saved Inspector edits or external changes.
 - Refreshes every visible parity field after curation so cards, Inspector, Preview and Shortlist do not disagree.
+
+### Interface and user journey
+
+- Rebuilds first-run, no-Library, empty-Library, no-results, unsupported and failure states as deliberate parts of the product journey.
+- Strengthens hierarchy, spacing, touch targets and editorial chrome without turning the app into a SaaS dashboard.
+- Preserves the Inspector through narrow-window reflow and adds a settled responsive drawer journey.
+- Tightens keyboard order, focus restoration, modal isolation, accessible labels and reduced-motion behaviour.
+- Adds desktop and narrow-layout screenshot/computed-style audits, then removes the temporary audit scaffolding from the repository.
 
 ### Verification repairs
 

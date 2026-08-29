@@ -63,4 +63,4 @@ Font consolidation is not a Reference Library capability. It copies source files
 
 ## Promotion boundary
 
-Do not merge or release from CI evidence alone. Promotion requires exact packaged use on representative Apple-Silicon macOS and Garuda/Arch/KDE systems, followed by one real Mac → Garuda → Mac Library journey and an explicit architecture/release decision.
+Compatible CI cannot close representative Apple-Silicon, Garuda/KDE, cross-host or production-architecture gates. An explicitly authorized public release may proceed with those gates open only when the release notes and receipts state the limitations plainly; release status must never be presented as target-integration evidence.

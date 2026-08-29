@@ -8,62 +8,77 @@ One project gets one `.pitchlibrary` package. Apple-Silicon macOS is primary. Ga
 
 ## Status
 
-Version 0.1.0 is the first public GitHub release. The unmerged 0.2 candidate on `codex/reference-library-feature-parity` restores the useful breadth of the original Pitch Deck Tools Asset Browser, then pushes the product beyond file browsing into deliberate editorial comparison and curation.
+**0.2.0 is the current public release.** It restores the useful breadth of the original Pitch Deck Tools Asset Browser, adds a deliberate shortlist-and-compare decision loop, and completes the responsive editorial UI/UX journey.
 
-The candidate remains a draft until its exact head passes the full five-job CI matrix and the packaged application completes representative Apple-Silicon, Garuda/KDE and Mac → Garuda → Mac journeys. No draft branch or CI result authorizes a release.
+Release binaries are built from exact `main`, validated by the five-job CI matrix, and published with SHA-256 checksums and source-bound build receipts. Representative Apple-Silicon, Garuda/KDE and Mac → Garuda → Mac target-machine journeys remain open evidence gates; the release does not falsely claim those integrations.
 
-See [Asset Browser parity](docs/product/ASSET_BROWSER_PARITY.md), [Editorial Shortlist and Compare](docs/product/EDITORIAL_SHORTLIST_AND_COMPARE.md), and the [feature-parity execution contract](docs/specs/FEATURE_PARITY_EXECUTION_CONTRACT.md).
+See [Asset Browser parity](docs/product/ASSET_BROWSER_PARITY.md), [Editorial Shortlist and Compare](docs/product/EDITORIAL_SHORTLIST_AND_COMPARE.md), the [feature-parity execution contract](docs/specs/FEATURE_PARITY_EXECUTION_CONTRACT.md), and the [0.2.0 release receipt](docs/evidence/RELEASE_0.2.0.md).
 
 ## Download and install
 
-Download the current stable 0.1.0 assets from [GitHub Releases](https://github.com/bomkino/reference-library/releases/latest). Verify the downloaded file against `SHA256SUMS` from the same release before opening it.
+Download 0.2.0 from [GitHub Releases](https://github.com/bomkino/reference-library/releases/latest). Verify the downloaded file against `SHA256SUMS` from the same release before opening it.
 
 ### Apple-Silicon macOS
 
-1. Download `reference-library-0.1.0-macos-arm64.app.zip` and expand it.
+1. Download `reference-library-0.2.0-macos-arm64.app.zip` and expand it.
 2. Move `Reference Library.app` to `/Applications`.
 3. On first launch, Control-click the app in Finder and choose **Open**. If macOS still blocks it, use **System Settings → Privacy & Security → Open Anyway**.
 
-The app is ad-hoc signed but not notarized because this project does not use a paid Apple Developer membership. Do not remove quarantine attributes globally; approve this exact app through macOS instead.
+The app is ad-hoc signed but not notarized because this project does not use a paid Apple Developer membership. Do not disable Gatekeeper or clear quarantine globally; approve this exact app instead.
 
 ### Linux x86_64
 
-The stable release includes AppImage, pacman and tar distributions produced by exact-`main` Ubuntu CI. Ubuntu package/runtime rehearsal is verified; Garuda/KDE hardware integration is not yet claimed.
+- AppImage: make `reference-library-0.2.0-x86_64.AppImage` executable, then run it.
+- Arch/Garuda: install `reference-library-0.2.0-x64.pacman` with `sudo pacman -U`.
+- Portable fallback: expand `reference-library-0.2.0-x64.tar.gz` and run the bundled executable.
 
-- AppImage: make `reference-library-0.1.0-x86_64.AppImage` executable, then run it.
-- Arch/Garuda: install `reference-library-0.1.0-x64.pacman` with `sudo pacman -U`.
-- Portable fallback: expand `reference-library-0.1.0-x64.tar.gz` and run the bundled executable.
+Ubuntu CI validates the packages and packaged X11/Wayland journeys. This is compatible-runner evidence, not a claim that representative Garuda/KDE hardware integration is complete.
 
-## Unreleased 0.2 candidate
+## What 0.2.0 adds
 
-- broad honest catalogue support across images, design files, documents, video, audio, fonts and archives
+### Broad, honest catalogue
+
+- common images, design files, documents, video, audio, fonts and archives
 - Grid, Compact and List browsing
 - optional related-thumbnail mosaics
-- category, extension, media-family, tag, Used In, Root, review, availability and Collection facets
+- category, extension, media-family, Tag, Used In, Root, review, availability and Collection facets
 - name, date, review-state and file-size sorting
-- native Open Original, Reveal Source and Copy Path actions without exposing paths to the embedded workspace
+- native Open Original, Reveal Source and Copy Path without exposing absolute paths to the embedded workspace
 - opt-in 60-second Root rescanning
-- durable tags and Used In provenance
-- bounded Shortlist across filters and paging
-- ordered Compare slots and a four-up board with shared zoom, optional synchronized pan, curation context and native source actions
-- batch review, tags, Used In and Collection membership for up to 32 shortlisted Assets
-- rapid review shortcuts: `1` Keep, `2` Maybe, `3` Reject, `0` Clear review, `X` shortlist, `C` compare
-- revision-safe writes that refresh each Asset immediately before rapid or batch curation
+- durable Tags and Used In provenance
 
-Catalogue support and preview support remain separate. Material without a trusted renderer stays visible, searchable, curatable, openable and revealable as catalogue-only; it is never silently dropped or falsely presented as previewable.
+Catalogue support and preview support remain separate. Material without a trusted renderer stays visible, searchable, curatable, openable and revealable as catalogue-only; it is never silently dropped or falsely presented as damaged.
 
-## Stable 0.1 scope
+### Editorial decision loop
+
+- bounded 32-Asset Shortlist across filters and paging
+- ordered first-four Compare slots
+- four-up Compare Board with shared zoom and optional synchronized pan
+- review, Tags and Used In context while comparing
+- per-candidate Keep, Maybe, Reject, Open, Reveal and Copy Path
+- batch review, Tags, Used In and Collection membership
+- rapid review shortcuts: `1` Keep, `2` Maybe, `3` Reject, `0` Clear, `X` Shortlist, `C` Compare
+- revision-safe writes with conflict-aware partial results
+
+### Interface and journey
+
+- clearer first-run and empty states
+- stronger hierarchy and quieter editorial chrome
+- responsive Inspector and narrow-window drawer behaviour
+- preserved focus, keyboard order and modal isolation
+- larger touch targets and independent Interface Scale, thumbnail density and Preview zoom
+- reduced-motion support and visual regression coverage across desktop and narrow layouts
+
+## Core model
 
 - project-local `.pitchlibrary` package
-- authorized Root add, reconnect and rescan
+- authorized Root add, reconnect, rescan and optional automatic reconciliation
 - stable Asset identity across supported external renames
-- bounded still-image thumbnails and previews
-- manual review, title and note curation
-- lexical query, filters, sorting and flat Collections
-- native reveal and opaque resource delivery
+- durable review, title, note, Tags, Used In and flat Collections
+- private opaque preview delivery
 - bounded cross-host canonical proof
 
-Source mutation, similarity, duplicate review, nested or smart Collections, MCP and automatic application updates remain deferred.
+Source mutation, similarity, duplicate review, nested or smart Collections, ratings, saved searches, MCP and automatic application updates remain deferred.
 
 ## Repository map
 
@@ -75,7 +90,7 @@ Source mutation, similarity, duplicate review, nested or smart Collections, MCP 
 - `docs/`: product, architecture, security, maintenance and receipts
 - `fixtures/`: tiny committed fixtures; large fixtures are generated
 
-Read `AGENTS.md`, `CONTEXT.md` and `docs/specs/FEATURE_PARITY_EXECUTION_CONTRACT.md` before changing candidate source.
+Read `AGENTS.md`, `CONTEXT.md` and the relevant product, security and architecture documents before changing source.
 
 ## Toolchains
 

@@ -17,9 +17,9 @@ const repository = path.resolve(import.meta.dirname, "../..");
 test("Linux package names and local-file association are release-metadata bound", async () => {
   const metadata = await readReleaseMetadata(repository);
   assert.deepEqual(expectedLinuxArtifacts(metadata), [
-    "reference-library-0.1.0-x64.pacman",
-    "reference-library-0.1.0-x86_64.AppImage",
-    "reference-library-0.1.0-x64.tar.gz",
+    "reference-library-0.2.0-x64.pacman",
+    "reference-library-0.2.0-x86_64.AppImage",
+    "reference-library-0.2.0-x64.tar.gz",
   ]);
   const [desktop, mimePackage] = await Promise.all([
     readFile(path.join(repository, "apps/linux/packaging/io.pitchdog.ReferenceLibrary.desktop"), "utf8"),

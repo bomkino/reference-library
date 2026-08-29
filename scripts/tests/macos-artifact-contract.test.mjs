@@ -13,7 +13,7 @@ const repository = path.resolve(import.meta.dirname, "../..");
 test("macOS archive and document registration are release-metadata bound", async () => {
   const metadata = await readReleaseMetadata(repository);
   assert.deepEqual(expectedMacosArtifacts(metadata), [
-    "reference-library-0.1.0-macos-arm64.app.zip",
+    "reference-library-0.2.0-macos-arm64.app.zip",
   ]);
   const plist = {
     CFBundleDisplayName: metadata.productName,

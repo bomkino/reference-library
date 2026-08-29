@@ -1,0 +1,106 @@
+name: Release verified main
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: release-verified-main
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+      RUN_ID: ${{ github.event.workflow_run.id }}
+    steps:
+      - name: Check out exact verified source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Read release metadata and guard idempotency
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python3 -c 'import json; print(json.load(open("release-metadata.json"))["version"])')"
+          tag="v$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "Release $tag already exists; no-op."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download exact verified CI artifacts
+        if: steps.metadata.outputs.publish == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name "reference-library-linux-x86_64-$SOURCE_SHA" --dir release-bundle/linux
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name "reference-library-macos-arm64-$SOURCE_SHA" --dir release-bundle/macos
+
+      - name: Assemble release evidence
+        if: steps.metadata.outputs.publish == 'true'
+        shell: bash
+        env:
+          VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          version="$VERSION"
+          linux="release-bundle/linux"
+          macos="release-bundle/macos"
+          for file in "$linux/reference-library-$version-x64.pacman" "$linux/reference-library-$version-x86_64.AppImage" "$linux/reference-library-$version-x64.tar.gz" "$macos/reference-library-$version-macos-arm64.app.zip"; do
+            test -f "$file"
+          done
+          sha256sum "$linux/reference-library-$version-x64.pacman" "$linux/reference-library-$version-x86_64.AppImage" "$linux/reference-library-$version-x64.tar.gz" "$macos/reference-library-$version-macos-arm64.app.zip" | sed -E 's#release-bundle/(linux|macos)/##' > release-bundle/SHA256SUMS
+          cp "$linux/V1_BUILD_RECEIPT.json" release-bundle/BUILD_RECEIPT-linux-x86_64.json
+          cp "$macos/V1_BUILD_RECEIPT.json" release-bundle/BUILD_RECEIPT-macos-arm64.json
+          python3 - <<'PY_RELEASE'
+          import json, os
+          from pathlib import Path
+          payload = {
+              "schemaVersion": 1,
+              "version": os.environ["VERSION"],
+              "tag": "v" + os.environ["VERSION"],
+              "sourceSha": os.environ["SOURCE_SHA"],
+              "ciRunId": int(os.environ["RUN_ID"]),
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "evidence": "Artifacts downloaded from the successful exact-main CI workflow run.",
+              "targetIntegrationClaimed": False,
+          }
+          Path("release-bundle/RELEASE_RECEIPT.json").write_text(json.dumps(payload, indent=2) + "
+")
+          PY_RELEASE
+
+      - name: Publish GitHub Release
+        if: steps.metadata.outputs.publish == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.metadata.outputs.version }}"
+          tag="${{ steps.metadata.outputs.tag }}"
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "Reference Library $version" --notes-file "docs/releases/$version.md"             "release-bundle/linux/reference-library-$version-x64.pacman"             "release-bundle/linux/reference-library-$version-x86_64.AppImage"             "release-bundle/linux/reference-library-$version-x64.tar.gz"             "release-bundle/macos/reference-library-$version-macos-arm64.app.zip"             release-bundle/SHA256SUMS             release-bundle/BUILD_RECEIPT-linux-x86_64.json             release-bundle/BUILD_RECEIPT-macos-arm64.json             release-bundle/RELEASE_RECEIPT.json
+
+      - name: Remove merged Codex branches
+        if: steps.metadata.outputs.publish == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git ls-remote --heads origin 'refs/heads/codex/*' | awk '{sub("refs/heads/", "", $2); print $2}' | while IFS= read -r branch; do
+            test -n "$branch" || continue
+            git push origin --delete "$branch"
+          done

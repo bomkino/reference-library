@@ -143,9 +143,9 @@ jobs:
           node scripts/write-artifact-checksums.mjs \
             --source "$GITHUB_SHA" --repository "$GITHUB_WORKSPACE" \
             --target linux-x86_64 --output release/linux/SHA256SUMS \
-            release/linux/reference-library-0.1.0-x64.pacman \
-            release/linux/reference-library-0.1.0-x86_64.AppImage \
-            release/linux/reference-library-0.1.0-x64.tar.gz
+            release/linux/reference-library-0.2.0-x64.pacman \
+            release/linux/reference-library-0.2.0-x86_64.AppImage \
+            release/linux/reference-library-0.2.0-x64.tar.gz
           node scripts/verify-artifact-checksums.mjs \
             --require-clean-source --repository "$GITHUB_WORKSPACE" \
             release/linux/SHA256SUMS
@@ -155,9 +155,9 @@ jobs:
           --target linux-x86_64
           --checksums release/linux/SHA256SUMS
           --output release/linux/V1_BUILD_RECEIPT.json
-          release/linux/reference-library-0.1.0-x64.pacman
-          release/linux/reference-library-0.1.0-x86_64.AppImage
-          release/linux/reference-library-0.1.0-x64.tar.gz
+          release/linux/reference-library-0.2.0-x64.pacman
+          release/linux/reference-library-0.2.0-x86_64.AppImage
+          release/linux/reference-library-0.2.0-x64.tar.gz
       - run: >-
           node scripts/verify-artifact-receipt.mjs
           --require-current-target --require-clean-source --repository "$GITHUB_WORKSPACE"
@@ -167,9 +167,9 @@ jobs:
         with:
           name: reference-library-linux-x86_64-${{ github.sha }}
           path: |
-            release/linux/reference-library-0.1.0-x64.pacman
-            release/linux/reference-library-0.1.0-x86_64.AppImage
-            release/linux/reference-library-0.1.0-x64.tar.gz
+            release/linux/reference-library-0.2.0-x64.pacman
+            release/linux/reference-library-0.2.0-x86_64.AppImage
+            release/linux/reference-library-0.2.0-x64.tar.gz
             release/linux/SHA256SUMS
             release/linux/V1_BUILD_RECEIPT.json
             release/linux/LINUX_ARTIFACT_VALIDATION.json
@@ -213,7 +213,7 @@ jobs:
           node scripts/write-artifact-checksums.mjs \
             --source "$GITHUB_SHA" --repository "$GITHUB_WORKSPACE" \
             --target macos-arm64 --output release/macos/SHA256SUMS \
-            release/macos/reference-library-0.1.0-macos-arm64.app.zip
+            release/macos/reference-library-0.2.0-macos-arm64.app.zip
           node scripts/verify-artifact-checksums.mjs \
             --require-clean-source --repository "$GITHUB_WORKSPACE" \
             release/macos/SHA256SUMS
@@ -223,7 +223,7 @@ jobs:
           --target macos-arm64
           --checksums release/macos/SHA256SUMS
           --output release/macos/V1_BUILD_RECEIPT.json
-          release/macos/reference-library-0.1.0-macos-arm64.app.zip
+          release/macos/reference-library-0.2.0-macos-arm64.app.zip
       - run: >-
           node scripts/verify-artifact-receipt.mjs
           --require-current-target --require-clean-source --repository "$GITHUB_WORKSPACE"
@@ -233,7 +233,7 @@ jobs:
         with:
           name: reference-library-macos-arm64-${{ github.sha }}
           path: |
-            release/macos/reference-library-0.1.0-macos-arm64.app.zip
+            release/macos/reference-library-0.2.0-macos-arm64.app.zip
             release/macos/SHA256SUMS
             release/macos/V1_BUILD_RECEIPT.json
             release/macos/MACOS_ARTIFACT_VALIDATION.json
