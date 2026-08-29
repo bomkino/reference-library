@@ -2,8 +2,10 @@ name: Release verified main
 
 on:
   workflow_run:
-    workflows: ["CI"]
-    types: [completed]
+    workflows:
+      - CI
+    types:
+      - completed
 
 permissions:
   actions: read
@@ -15,7 +17,9 @@ concurrency:
 
 jobs:
   publish:
-    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -36,9 +40,13 @@ jobs:
           set -euo pipefail
           version="$(python3 -c 'import json; print(json.load(open("release-metadata.json"))["version"])')"
           tag="v$version"
+          current_main="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          if [[ "$current_main" != "$SOURCE_SHA" ]]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "CI source $SOURCE_SHA is stale; current main is $current_main. No release."
+          elif gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "publish=false" >> "$GITHUB_OUTPUT"
             echo "Release $tag already exists; no-op."
           else
@@ -50,8 +58,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name "reference-library-linux-x86_64-$SOURCE_SHA" --dir release-bundle/linux
-          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name "reference-library-macos-arm64-$SOURCE_SHA" --dir release-bundle/macos
+          gh run download "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "reference-library-linux-x86_64-$SOURCE_SHA" \
+            --dir release-bundle/linux
+          gh run download "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "reference-library-macos-arm64-$SOURCE_SHA" \
+            --dir release-bundle/macos
 
       - name: Assemble release evidence
         if: steps.metadata.outputs.publish == 'true'
@@ -63,15 +77,27 @@ jobs:
           version="$VERSION"
           linux="release-bundle/linux"
           macos="release-bundle/macos"
-          for file in "$linux/reference-library-$version-x64.pacman" "$linux/reference-library-$version-x86_64.AppImage" "$linux/reference-library-$version-x64.tar.gz" "$macos/reference-library-$version-macos-arm64.app.zip"; do
+          for file in \
+            "$linux/reference-library-$version-x64.pacman" \
+            "$linux/reference-library-$version-x86_64.AppImage" \
+            "$linux/reference-library-$version-x64.tar.gz" \
+            "$macos/reference-library-$version-macos-arm64.app.zip"; do
             test -f "$file"
           done
-          sha256sum "$linux/reference-library-$version-x64.pacman" "$linux/reference-library-$version-x86_64.AppImage" "$linux/reference-library-$version-x64.tar.gz" "$macos/reference-library-$version-macos-arm64.app.zip" | sed -E 's#release-bundle/(linux|macos)/##' > release-bundle/SHA256SUMS
+          sha256sum \
+            "$linux/reference-library-$version-x64.pacman" \
+            "$linux/reference-library-$version-x86_64.AppImage" \
+            "$linux/reference-library-$version-x64.tar.gz" \
+            "$macos/reference-library-$version-macos-arm64.app.zip" \
+            | sed -E 's#release-bundle/(linux|macos)/##' \
+            > release-bundle/SHA256SUMS
           cp "$linux/V1_BUILD_RECEIPT.json" release-bundle/BUILD_RECEIPT-linux-x86_64.json
           cp "$macos/V1_BUILD_RECEIPT.json" release-bundle/BUILD_RECEIPT-macos-arm64.json
           python3 - <<'PY_RELEASE'
-          import json, os
+          import json
+          import os
           from pathlib import Path
+
           payload = {
               "schemaVersion": 1,
               "version": os.environ["VERSION"],
@@ -82,8 +108,9 @@ jobs:
               "evidence": "Artifacts downloaded from the successful exact-main CI workflow run.",
               "targetIntegrationClaimed": False,
           }
-          Path("release-bundle/RELEASE_RECEIPT.json").write_text(json.dumps(payload, indent=2) + "
-")
+          Path("release-bundle/RELEASE_RECEIPT.json").write_text(
+              json.dumps(payload, indent=2) + "\n"
+          )
           PY_RELEASE
 
       - name: Publish GitHub Release
@@ -93,14 +120,28 @@ jobs:
           set -euo pipefail
           version="${{ steps.metadata.outputs.version }}"
           tag="${{ steps.metadata.outputs.tag }}"
-          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "Reference Library $version" --notes-file "docs/releases/$version.md"             "release-bundle/linux/reference-library-$version-x64.pacman"             "release-bundle/linux/reference-library-$version-x86_64.AppImage"             "release-bundle/linux/reference-library-$version-x64.tar.gz"             "release-bundle/macos/reference-library-$version-macos-arm64.app.zip"             release-bundle/SHA256SUMS             release-bundle/BUILD_RECEIPT-linux-x86_64.json             release-bundle/BUILD_RECEIPT-macos-arm64.json             release-bundle/RELEASE_RECEIPT.json
+          gh release create "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --title "Reference Library $version" \
+            --notes-file "docs/releases/$version.md" \
+            "release-bundle/linux/reference-library-$version-x64.pacman" \
+            "release-bundle/linux/reference-library-$version-x86_64.AppImage" \
+            "release-bundle/linux/reference-library-$version-x64.tar.gz" \
+            "release-bundle/macos/reference-library-$version-macos-arm64.app.zip" \
+            release-bundle/SHA256SUMS \
+            release-bundle/BUILD_RECEIPT-linux-x86_64.json \
+            release-bundle/BUILD_RECEIPT-macos-arm64.json \
+            release-bundle/RELEASE_RECEIPT.json
 
       - name: Remove merged Codex branches
         if: steps.metadata.outputs.publish == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          git ls-remote --heads origin 'refs/heads/codex/*' | awk '{sub("refs/heads/", "", $2); print $2}' | while IFS= read -r branch; do
-            test -n "$branch" || continue
-            git push origin --delete "$branch"
-          done
+          git ls-remote --heads origin 'refs/heads/codex/*' \
+            | awk '{sub("refs/heads/", "", $2); print $2}' \
+            | while IFS= read -r branch; do
+                test -n "$branch" || continue
+                git push origin --delete "$branch"
+              done
