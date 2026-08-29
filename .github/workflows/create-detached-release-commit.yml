@@ -1,0 +1,148 @@
+name: Create detached 0.2.0 release commit
+
+on:
+  push:
+    branches:
+      - codex/reference-library-feature-parity
+    paths:
+      - .github/workflows/create-detached-release-commit.yml
+
+permissions:
+  contents: write
+
+jobs:
+  create:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out exact release branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          ref: codex/reference-library-feature-parity
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Recreate the verified prepared tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/release-prep/prepare.py
+          python3 .github/release-prep/update-fixtures.py
+          npm install --package-lock-only --ignore-scripts
+          cargo check --workspace
+          rm -rf .github/release-prep
+          rm -f .github/workflows/prepare-v0.2.0-release.yml
+          rm -f .github/workflows/export-prepared-release-patch.yml
+          rm -f .github/workflows/create-detached-release-commit.yml
+          git add -A
+          git diff --cached --check
+          node scripts/check-release-metadata.mjs
+          python3 scripts/check_repository.py
+
+      - name: Create detached Git objects
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          parent = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          base_tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip()
+
+          raw = subprocess.check_output(
+              ["git", "diff", "--cached", "--name-status", "-z", "--no-renames"]
+          )
+          fields = raw.split(b"\0")
+          if fields and fields[-1] == b"":
+              fields.pop()
+          if len(fields) % 2:
+              raise SystemExit(f"unexpected staged name-status field count: {len(fields)}")
+
+          entries = []
+          for index in range(0, len(fields), 2):
+              status = fields[index].decode()
+              path = fields[index + 1].decode()
+              if status == "D":
+                  entries.append({"path": path, "mode": "100644", "type": "blob", "sha": None})
+                  continue
+              if status not in {"A", "M"}:
+                  raise SystemExit(f"unsupported staged status {status}: {path}")
+              encoded = base64.b64encode(Path(path).read_bytes()).decode()
+              response = subprocess.run(
+                  [
+                      "gh", "api", "--method", "POST",
+                      f"repos/{repository}/git/blobs",
+                      "--input", "-",
+                  ],
+                  input=json.dumps({"content": encoded, "encoding": "base64"}),
+                  text=True,
+                  check=True,
+                  capture_output=True,
+              )
+              blob_sha = json.loads(response.stdout)["sha"]
+              mode = subprocess.check_output(
+                  ["git", "ls-files", "-s", "--", path], text=True
+              ).split()[0]
+              entries.append({"path": path, "mode": mode, "type": "blob", "sha": blob_sha})
+
+          tree_response = subprocess.run(
+              [
+                  "gh", "api", "--method", "POST",
+                  f"repos/{repository}/git/trees",
+                  "--input", "-",
+              ],
+              input=json.dumps({"base_tree": base_tree, "tree": entries}),
+              text=True,
+              check=True,
+              capture_output=True,
+          )
+          tree_sha = json.loads(tree_response.stdout)["sha"]
+
+          commit_response = subprocess.run(
+              [
+                  "gh", "api", "--method", "POST",
+                  f"repos/{repository}/git/commits",
+                  "--input", "-",
+              ],
+              input=json.dumps({
+                  "message": "release: prepare Reference Library 0.2.0",
+                  "tree": tree_sha,
+                  "parents": [parent],
+              }),
+              text=True,
+              check=True,
+              capture_output=True,
+          )
+          commit_sha = json.loads(commit_response.stdout)["sha"]
+          payload = {
+              "parent": parent,
+              "baseTree": base_tree,
+              "preparedTree": tree_sha,
+              "commit": commit_sha,
+              "entryCount": len(entries),
+          }
+          Path("/tmp/DETACHED_RELEASE_COMMIT.json").write_text(
+              json.dumps(payload, indent=2) + "\n"
+          )
+          print(json.dumps(payload, indent=2))
+          PY
+
+      - name: Upload detached commit receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: reference-library-0.2.0-detached-commit
+          path: /tmp/DETACHED_RELEASE_COMMIT.json
+          if-no-files-found: error
+          retention-days: 1
