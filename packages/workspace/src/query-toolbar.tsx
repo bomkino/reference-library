@@ -15,63 +15,70 @@ export function QueryToolbar(props: {
   roots: RootSummary[];
   facets: AssetFacets;
   disabled?: boolean;
-  onChange(query: AssetQuery): void;
+  onChange(update: (query: AssetQuery) => AssetQuery): void;
 }) {
   const [search, setSearch] = useState(props.query.search ?? "");
   const [filtersOpen, setFiltersOpen] = useState(false);
   useEffect(() => setSearch(props.query.search ?? ""), [props.query.search]);
+  const emitChange = (update: (query: AssetQuery) => AssetQuery) => props.onChange(update);
   const searchError = textLimitError(search, MAX_SEARCH_SCALARS, "Search", true);
-  const activeCount = useMemo(() => countActiveFilters(props.query), [props.query]);
-  const advancedCount = useMemo(() => countAdvancedFilters(props.query), [props.query]);
+  const activeFilters = useMemo(
+    () => describeActiveFilters(props.query, props.roots),
+    [props.query, props.roots],
+  );
+  const activeCount = activeFilters.length;
 
   const commitSearch = () => {
     if (searchError) return;
     const normalized = search.trim();
-    props.onChange({ ...props.query, search: normalized || null });
+    emitChange((current) => ({ ...current, search: normalized || null }));
   };
 
   const clearAll = () => {
     setSearch("");
-    props.onChange(clearQuery(props.query));
+    emitChange((current) => ({
+      ...current,
+      search: null,
+      rootId: null,
+      reviewStates: [],
+      availability: [],
+      collectionId: null,
+      categories: [],
+      extensions: [],
+      mediaFamilies: [],
+      tags: [],
+      usedIn: [],
+    }));
   };
 
   return (
     <div className="query-surface">
       <form
-        className="query-toolbar"
+        className="query-commandbar"
         aria-label="Search, filter and sort Assets"
         onSubmit={(event) => { event.preventDefault(); commitSearch(); }}
       >
-        <label className="query-toolbar__search">
-          <span>Search</span>
+        <label className="query-commandbar__search">
+          <span className="visually-hidden">Search Assets</span>
           <input
             aria-invalid={Boolean(searchError)}
             aria-describedby={searchError ? "search-limit-error" : undefined}
             disabled={props.disabled}
             type="search"
-            placeholder="Names, notes, tags, file types…"
+            placeholder="Search names, notes, tags, file types…"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
         </label>
-        <button className="query-toolbar__submit" disabled={props.disabled || Boolean(searchError)} type="submit">Search</button>
-        <label className="query-toolbar__review">
-          <span>Review</span>
+        <button disabled={props.disabled || Boolean(searchError)} type="submit">Search</button>
+        <label className="query-commandbar__sort">
+          <span className="visually-hidden">Sort Assets</span>
           <select
+            aria-label="Sort Assets"
             disabled={props.disabled}
-            value={props.query.reviewStates[0] ?? ""}
-            onChange={(event) => props.onChange({ ...props.query, reviewStates: event.target.value ? [event.target.value as ReviewState] : [] })}
+            value={props.query.sort}
+            onChange={(event) => { const sort = event.target.value as AssetQuery["sort"]; emitChange((current) => ({ ...current, sort })); }}
           >
-            <option value="">All states</option>
-            <option value="unreviewed">Unreviewed</option>
-            <option value="keep">Keep</option>
-            <option value="maybe">Maybe</option>
-            <option value="reject">Reject</option>
-          </select>
-        </label>
-        <label className="query-toolbar__sort">
-          <span>Sort</span>
-          <select disabled={props.disabled} value={props.query.sort} onChange={(event) => props.onChange({ ...props.query, sort: event.target.value as AssetQuery["sort"] })}>
             <option value="created_descending">Newest first</option>
             <option value="created_ascending">Oldest first</option>
             <option value="name_ascending">Name, A–Z</option>
@@ -82,109 +89,212 @@ export function QueryToolbar(props: {
           </select>
         </label>
         <button
-          className="button--secondary query-toolbar__filters"
+          className="button--secondary query-commandbar__filters"
+          aria-label="Filters"
           aria-expanded={filtersOpen}
-          aria-controls="advanced-filters"
+          aria-controls="asset-filter-panel"
           disabled={props.disabled}
           type="button"
           onClick={() => setFiltersOpen((open) => !open)}
         >
-          Filters{advancedCount > 0 ? ` · ${advancedCount}` : ""}
+          Filters{activeCount > 0 ? ` · ${activeCount}` : ""}
         </button>
-        {activeCount > 0 && (
-          <button className="button--quiet query-toolbar__clear" disabled={props.disabled} type="button" onClick={clearAll}>
-            Clear all
-          </button>
-        )}
         {searchError && <p className="field-error" id="search-limit-error" role="alert">{searchError}</p>}
       </form>
 
-      <ActiveFilters query={props.query} disabled={props.disabled} onChange={props.onChange} />
+      {activeCount > 0 && (
+        <div className="active-filter-strip" aria-label="Active filters">
+          <span className="active-filter-strip__label">Viewing</span>
+          <div className="active-filter-strip__chips">
+            {activeFilters.map((filter) => (
+              <button
+                className="active-filter-chip"
+                disabled={props.disabled}
+                key={filter.key}
+                title={`Remove ${filter.label}`}
+                type="button"
+                onClick={() => {
+                  if (filter.key === "search") setSearch("");
+                  emitChange(filter.clear);
+                }}
+              >
+                <span>{filter.label}</span><span aria-hidden>×</span>
+              </button>
+            ))}
+          </div>
+          <button className="button--quiet active-filter-strip__clear" disabled={props.disabled} type="button" onClick={clearAll}>Clear all</button>
+        </div>
+      )}
 
-      <div className={`query-drawer${filtersOpen ? " query-drawer--open" : ""}`} id="advanced-filters" aria-hidden={!filtersOpen}>
-        <div className="query-drawer__selects">
-          <label>
-            <span>Root</span>
-            <select disabled={props.disabled} value={props.query.rootId ?? ""} onChange={(event) => props.onChange({ ...props.query, rootId: event.target.value || null })}>
-              <option value="">All Roots</option>
-              {props.roots.map((root) => <option key={root.rootId} value={root.rootId}>{root.displayName}</option>)}
-            </select>
-          </label>
-          <label>
-            <span>Source</span>
-            <select
+      {filtersOpen && (
+        <section className="filter-panel" id="asset-filter-panel" aria-label="Asset filters">
+          <div className="filter-panel__primary">
+            <label>
+              <span>Root</span>
+              <select aria-label="Root" disabled={props.disabled} value={props.query.rootId ?? ""} onChange={(event) => { const rootId = event.target.value || null; emitChange((current) => ({ ...current, rootId })); }}>
+                <option value="">All Roots</option>
+                {props.roots.map((root) => <option key={root.rootId} value={root.rootId}>{root.displayName}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Review</span>
+              <select
+                aria-label="Review"
+                disabled={props.disabled}
+                value={props.query.reviewStates[0] ?? ""}
+                onChange={(event) => { const reviewState = event.target.value as ReviewState | ""; emitChange((current) => ({ ...current, reviewStates: reviewState ? [reviewState] : [] })); }}
+              >
+                <option value="">All states</option>
+                <option value="unreviewed">Unreviewed</option>
+                <option value="keep">Keep</option>
+                <option value="maybe">Maybe</option>
+                <option value="reject">Reject</option>
+              </select>
+            </label>
+            <label>
+              <span>Source</span>
+              <select
+                aria-label="Source"
+                disabled={props.disabled}
+                value={props.query.availability[0] ?? ""}
+                onChange={(event) => { const availability = event.target.value as Availability | ""; emitChange((current) => ({ ...current, availability: availability ? [availability] : [] })); }}
+              >
+                <option value="">Any availability</option>
+                <option value="present">Present</option>
+                <option value="missing">Missing</option>
+                <option value="needs_permission">Needs permission</option>
+                <option value="offline_volume">Offline volume</option>
+                <option value="unreadable">Unreadable</option>
+                <option value="unavailable">Unavailable</option>
+                <option value="unsupported">Catalogue only</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="facet-rails" aria-label="Library facets">
+            <FacetRail
+              label="Categories"
+              items={props.facets.categories}
+              selected={props.query.categories}
               disabled={props.disabled}
-              value={props.query.availability[0] ?? ""}
-              onChange={(event) => props.onChange({ ...props.query, availability: event.target.value ? [event.target.value as Availability] : [] })}
-            >
-              <option value="">Any availability</option>
-              <option value="present">Present</option>
-              <option value="missing">Missing</option>
-              <option value="needs_permission">Needs permission</option>
-              <option value="offline_volume">Offline volume</option>
-              <option value="unreadable">Unreadable</option>
-              <option value="unavailable">Unavailable</option>
-              <option value="unsupported">Catalogue only</option>
-            </select>
-          </label>
-        </div>
-        <div className="facet-rails" aria-label="Library facets">
-          <FacetRail label="Categories" items={props.facets.categories} selected={props.query.categories} disabled={props.disabled} onChange={(categories) => props.onChange({ ...props.query, categories })} />
-          <FacetRail label="File types" items={props.facets.extensions} selected={props.query.extensions} prefix="." disabled={props.disabled} onChange={(extensions) => props.onChange({ ...props.query, extensions })} />
-          <FacetRail label="Media" items={props.facets.mediaFamilies} selected={props.query.mediaFamilies} disabled={props.disabled} onChange={(mediaFamilies) => props.onChange({ ...props.query, mediaFamilies })} />
-          <FacetRail label="Tags" items={props.facets.tags} selected={props.query.tags} prefix="#" disabled={props.disabled} onChange={(tags) => props.onChange({ ...props.query, tags })} />
-          <FacetRail label="Used in" items={props.facets.usedIn} selected={props.query.usedIn} disabled={props.disabled} onChange={(usedIn) => props.onChange({ ...props.query, usedIn })} />
-        </div>
-      </div>
+              onChange={(categories) => emitChange((current) => ({ ...current, categories }))}
+            />
+            <FacetRail
+              label="File types"
+              items={props.facets.extensions}
+              selected={props.query.extensions}
+              prefix="."
+              disabled={props.disabled}
+              onChange={(extensions) => emitChange((current) => ({ ...current, extensions }))}
+            />
+            <FacetRail
+              label="Media"
+              items={props.facets.mediaFamilies}
+              selected={props.query.mediaFamilies}
+              disabled={props.disabled}
+              onChange={(mediaFamilies) => emitChange((current) => ({ ...current, mediaFamilies }))}
+            />
+            <FacetRail
+              label="Tags"
+              items={props.facets.tags}
+              selected={props.query.tags}
+              prefix="#"
+              disabled={props.disabled}
+              onChange={(tags) => emitChange((current) => ({ ...current, tags }))}
+            />
+            <FacetRail
+              label="Used in"
+              items={props.facets.usedIn}
+              selected={props.query.usedIn}
+              disabled={props.disabled}
+              onChange={(usedIn) => emitChange((current) => ({ ...current, usedIn }))}
+            />
+          </div>
+        </section>
+      )}
     </div>
   );
 }
 
-function ActiveFilters(props: { query: AssetQuery; disabled?: boolean; onChange(query: AssetQuery): void }) {
-  const filters = [
-    ...(props.query.rootId ? [{ key: "root", label: "One Root", remove: () => props.onChange({ ...props.query, rootId: null }) }] : []),
-    ...props.query.reviewStates.map((value) => ({ key: `review-${value}`, label: value, remove: () => props.onChange({ ...props.query, reviewStates: props.query.reviewStates.filter((item) => item !== value) }) })),
-    ...props.query.availability.map((value) => ({ key: `availability-${value}`, label: availabilityLabel(value), remove: () => props.onChange({ ...props.query, availability: props.query.availability.filter((item) => item !== value) }) })),
-    ...props.query.categories.map((value) => ({ key: `category-${value}`, label: value, remove: () => props.onChange({ ...props.query, categories: props.query.categories.filter((item) => item !== value) }) })),
-    ...props.query.extensions.map((value) => ({ key: `extension-${value}`, label: `.${value}`, remove: () => props.onChange({ ...props.query, extensions: props.query.extensions.filter((item) => item !== value) }) })),
-    ...props.query.mediaFamilies.map((value) => ({ key: `media-${value}`, label: value, remove: () => props.onChange({ ...props.query, mediaFamilies: props.query.mediaFamilies.filter((item) => item !== value) }) })),
-    ...props.query.tags.map((value) => ({ key: `tag-${value}`, label: `#${value}`, remove: () => props.onChange({ ...props.query, tags: props.query.tags.filter((item) => item !== value) }) })),
-    ...props.query.usedIn.map((value) => ({ key: `used-${value}`, label: `Used in ${value}`, remove: () => props.onChange({ ...props.query, usedIn: props.query.usedIn.filter((item) => item !== value) }) })),
-    ...(props.query.collectionId ? [{ key: "collection", label: "Collection", remove: () => props.onChange({ ...props.query, collectionId: null }) }] : []),
-  ];
-  if (filters.length === 0) return null;
-  return (
-    <div className="active-filter-row" aria-label="Active filters">
-      {filters.map((filter) => (
-        <button className="active-filter-chip" disabled={props.disabled} key={filter.key} type="button" onClick={filter.remove}>
-          {filter.label}<span aria-hidden>×</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function FacetRail(props: { label: string; items: FacetCount[]; selected: string[]; prefix?: string; disabled?: boolean; onChange(values: string[]): void }) {
+function FacetRail(props: {
+  label: string;
+  items: FacetCount[];
+  selected: string[];
+  prefix?: string;
+  disabled?: boolean;
+  onChange(values: string[]): void;
+}) {
   if (props.items.length === 0 && props.selected.length === 0) return null;
   const available = new Map(props.items.map((item) => [item.value, item]));
-  for (const value of props.selected) if (!available.has(value)) available.set(value, { value, count: 0 });
+  for (const value of props.selected) {
+    if (!available.has(value)) available.set(value, { value, count: 0 });
+  }
   return (
     <section className="facet-rail" aria-label={props.label}>
       <h3>{props.label}</h3>
       <div className="facet-rail__scroller">
         {[...available.values()].map((item) => {
           const selected = props.selected.includes(item.value);
-          return <button className="facet-chip" aria-pressed={selected} disabled={props.disabled} key={item.value} type="button" onClick={() => props.onChange(toggleValue(props.selected, item.value))}><span>{props.prefix}{item.value}</span><small>{item.count}</small></button>;
+          return (
+            <button
+              className="facet-chip"
+              aria-pressed={selected}
+              disabled={props.disabled}
+              key={item.value}
+              type="button"
+              onClick={() => props.onChange(toggleValue(props.selected, item.value))}
+            >
+              <span>{props.prefix}{item.value}</span>
+              <small>{item.count}</small>
+            </button>
+          );
         })}
       </div>
     </section>
   );
 }
 
-function clearQuery(query: AssetQuery): AssetQuery {
-  return { ...query, search: null, rootId: null, reviewStates: [], availability: [], collectionId: null, categories: [], extensions: [], mediaFamilies: [], tags: [], usedIn: [] };
+interface ActiveFilter {
+  key: string;
+  label: string;
+  clear(query: AssetQuery): AssetQuery;
 }
-function toggleValue(values: string[], value: string): string[] { return values.includes(value) ? values.filter((item) => item !== value) : [...values, value]; }
-function countActiveFilters(query: AssetQuery): number { return Number(Boolean(query.search)) + countAdvancedFilters(query) + query.reviewStates.length; }
-function countAdvancedFilters(query: AssetQuery): number { return Number(Boolean(query.rootId)) + Number(Boolean(query.collectionId)) + query.availability.length + query.categories.length + query.extensions.length + query.mediaFamilies.length + query.tags.length + query.usedIn.length; }
-function availabilityLabel(value: Availability): string { return ({ needs_permission: "Needs permission", offline_volume: "Offline volume", unreadable: "Unreadable", unsupported: "Catalogue only" } as Partial<Record<Availability, string>>)[value] ?? value; }
+
+function describeActiveFilters(query: AssetQuery, roots: RootSummary[]): ActiveFilter[] {
+  const filters: ActiveFilter[] = [];
+  if (query.search) filters.push({ key: "search", label: `“${query.search}”`, clear: (current) => ({ ...current, search: null }) });
+  if (query.rootId) {
+    const name = roots.find((root) => root.rootId === query.rootId)?.displayName ?? "Root";
+    filters.push({ key: "root", label: name, clear: (current) => ({ ...current, rootId: null }) });
+  }
+  if (query.collectionId) filters.push({ key: "collection", label: "Collection", clear: (current) => ({ ...current, collectionId: null }) });
+  for (const value of query.reviewStates) filters.push({ key: `review-${value}`, label: reviewLabel(value), clear: (current) => ({ ...current, reviewStates: current.reviewStates.filter((item) => item !== value) }) });
+  for (const value of query.availability) filters.push({ key: `availability-${value}`, label: availabilityLabel(value), clear: (current) => ({ ...current, availability: current.availability.filter((item) => item !== value) }) });
+  for (const value of query.categories) filters.push({ key: `category-${value}`, label: value, clear: (current) => ({ ...current, categories: current.categories.filter((item) => item !== value) }) });
+  for (const value of query.extensions) filters.push({ key: `extension-${value}`, label: `.${value}`, clear: (current) => ({ ...current, extensions: current.extensions.filter((item) => item !== value) }) });
+  for (const value of query.mediaFamilies) filters.push({ key: `media-${value}`, label: value, clear: (current) => ({ ...current, mediaFamilies: current.mediaFamilies.filter((item) => item !== value) }) });
+  for (const value of query.tags) filters.push({ key: `tag-${value}`, label: `#${value}`, clear: (current) => ({ ...current, tags: current.tags.filter((item) => item !== value) }) });
+  for (const value of query.usedIn) filters.push({ key: `used-${value}`, label: `Used in ${value}`, clear: (current) => ({ ...current, usedIn: current.usedIn.filter((item) => item !== value) }) });
+  return filters;
+}
+
+function reviewLabel(value: ReviewState): string {
+  return value === "unreviewed" ? "Unreviewed" : `${value[0]?.toUpperCase()}${value.slice(1)}`;
+}
+
+function availabilityLabel(value: Availability): string {
+  const labels: Record<Availability, string> = {
+    present: "Present",
+    missing: "Missing",
+    needs_permission: "Needs permission",
+    offline_volume: "Offline volume",
+    unreadable: "Unreadable",
+    unavailable: "Unavailable",
+    unsupported: "Catalogue only",
+  };
+  return labels[value];
+}
+
+function toggleValue(values: string[], value: string): string[] {
+  return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
+}

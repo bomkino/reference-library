@@ -20,6 +20,7 @@ export function LibrarySidebar(props: {
   rootRevision: number;
   collectionRevision: number;
   disabled?: boolean;
+  onAddRoot(): void;
   onCollectionChange(collectionId: string | null): void;
   onClose(): void;
   onDeleteActiveCollection(label: string, action: () => Promise<void>): void;
@@ -163,15 +164,7 @@ export function LibrarySidebar(props: {
       <section aria-labelledby="roots-heading">
         <div className="section-heading">
           <h2 id="roots-heading">Roots</h2>
-          <button className="button--quiet" disabled={props.disabled || authorityBusy} onClick={async () => {
-            setAuthorityBusy(true);
-            try {
-              const result = await props.bridge.chooseRoot(props.sessionId);
-              if (!result) return;
-              props.onSession(result.session);
-            } catch (reason) { props.onError(messageFrom(reason)); }
-            finally { setAuthorityBusy(false); }
-          }}>Add</button>
+          <button className="button--quiet" data-add-root disabled={props.disabled || authorityBusy} onClick={props.onAddRoot}>Add Root</button>
         </div>
         {roots.length === 0 ? <p className="muted">No Root authorized.</p> : (
           <ul className="plain-list">

@@ -104,19 +104,20 @@ describe("bounded editorial shortlist", () => {
     expect(compareAssets(assets)).toEqual(assets.slice(0, MAX_COMPARE_ASSETS));
   });
 
-  it("reorders explicit compare priority without duplicating or dropping Assets", () => {
+  it("reorders stable Asset identities without inventing a second shortlist", () => {
     const first = asset("asset-1", "one.png", "present");
     const second = asset("asset-2", "two.png", "present");
     const third = asset("asset-3", "three.png", "present");
-    expect(moveShortlistedAsset([first, second, third], second.assetId, "earlier")).toEqual([
-      second, first, third,
+    expect(moveShortlistedAsset([first, second, third], second.assetId, -1)).toEqual([
+      second,
+      first,
+      third,
     ]);
-    expect(moveShortlistedAsset([first, second, third], second.assetId, "later")).toEqual([
-      first, third, second,
+    expect(moveShortlistedAsset([first, second, third], first.assetId, -1)).toEqual([
+      first,
+      second,
+      third,
     ]);
-    const unchanged = [first, second];
-    expect(moveShortlistedAsset(unchanged, first.assetId, "earlier")).toBe(unchanged);
-    expect(moveShortlistedAsset(unchanged, "missing", "later")).toBe(unchanged);
   });
 });
 

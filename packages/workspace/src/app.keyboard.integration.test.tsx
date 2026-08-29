@@ -59,6 +59,7 @@ describe("V1 keyboard daily-use seams", () => {
     harness = new BridgeHarness();
     window.referenceLibrary = harness.bridge;
     await act(async () => { root.render(<App />); await settle(); });
+    await replaceByKeyboard(input("Library name"), "Film References");
   });
 
   afterEach(async () => {
@@ -102,6 +103,8 @@ describe("V1 keyboard daily-use seams", () => {
     await typeByKeyboard(search, "frame");
     await focusAndPress(search, "Enter");
     await waitFor(() => expect(harness.lastQuery?.search).toBe("frame"));
+    await focusAndPress(button("Filters"), "Enter");
+    expect(button("Filters").getAttribute("aria-expanded")).toBe("true");
     await selectByKeyboard(select("Root"), "root-1");
     await selectByKeyboard(select("Review"), "keep");
     await selectByKeyboard(select("Source"), "unsupported");
@@ -141,7 +144,8 @@ describe("V1 keyboard daily-use seams", () => {
     expect(document.activeElement?.getAttribute("data-asset-id")).toBe("asset-2");
 
     await waitFor(() => expect(input("Title")).not.toBeNull());
-    await selectByKeyboard(select("Review", host.querySelector(".inspector")!), "keep");
+    await focusAndPress(button("Keep", host.querySelector(".inspector")!), "Enter");
+    expect(button("Keep", host.querySelector(".inspector")!).getAttribute("aria-pressed")).toBe("true");
     await focusAndPress(button("Save Changes", host.querySelector(".inspector")!), "Enter");
     expect(harness.calls.updateAsset).toBe(1);
     expect(text()).toContain("Stills/B-frame.jpg");
@@ -174,6 +178,11 @@ describe("V1 keyboard daily-use seams", () => {
   it("shortlists across the virtual grid, compares four-or-fewer candidates and batch-curates without losing active selection", async () => {
     await focusAndPress(button("New Library"), "Enter");
     await waitFor(() => expect(host.querySelector('[data-asset-id="asset-1"]')).not.toBeNull());
+    expect(host.querySelector("#asset-filter-panel")).toBeNull();
+    await focusAndPress(button("Filters"), "Enter");
+    expect(host.querySelector("#asset-filter-panel")).not.toBeNull();
+    await focusAndPress(button("Filters"), "Enter");
+    expect(host.querySelector("#asset-filter-panel")).toBeNull();
 
     const first = host.querySelector<HTMLElement>('[data-asset-id="asset-1"]')!;
     first.focus();
@@ -186,20 +195,19 @@ describe("V1 keyboard daily-use seams", () => {
     expect(host.querySelector('[data-asset-id="asset-2"]')?.getAttribute("aria-pressed")).toBe("true");
     expect(host.querySelector(".selection-announcer")?.textContent).toContain("2 Assets shortlisted");
 
-    const tray = host.querySelector(".selection-tray")!;
-    await focusAndPress(button("Move B-frame.jpg earlier", tray), "Enter");
-    expect(tray.querySelector(".selection-chip strong")?.textContent).toBe("B-frame.jpg");
-
-    await focusAndPress(button("Compare", tray), "Enter");
-    const board = host.querySelector(".compare-board")!;
-    expect(board.getAttribute("role")).toBe("dialog");
-    expect(board.querySelectorAll(".compare-card")).toHaveLength(2);
-    expect(board.querySelector(".compare-card h3")?.textContent).toBe("B-frame.jpg");
-    await focusAndPress(button("Copy path", board.querySelector(".compare-card")!), "Enter");
-    expect(harness.calls.copyLocationPath).toBe(1);
-    await focusAndPress(button("Close", board), "Escape");
+    expect(host.querySelector("#shortlist-batch-tools")).toBeNull();
+    await press("c");
+    expect(host.querySelector(".compare-board")?.getAttribute("role")).toBe("dialog");
+    expect(host.querySelectorAll(".compare-card")).toHaveLength(2);
+    expect(button("Fit", host.querySelector(".compare-board")!).getAttribute("aria-pressed")).toBe("true");
+    await focusAndPress(button("Fill", host.querySelector(".compare-board")!), "Enter");
+    expect(button("Fill", host.querySelector(".compare-board")!).getAttribute("aria-pressed")).toBe("true");
+    await focusAndPress(button("Close", host.querySelector(".compare-board")!), "Escape");
     expect(host.querySelector(".compare-board")).toBeNull();
 
+    await focusAndPress(button("Batch edit", host.querySelector(".selection-tray")!), "Enter");
+    expect(host.querySelector(".selection-tray")?.classList.contains("selection-tray--expanded")).toBe(true);
+    expect(host.querySelector("#shortlist-batch-tools")).not.toBeNull();
     await focusAndPress(button("Maybe", host.querySelector(".selection-tray")!), "Enter");
     await waitFor(() => expect(harness.calls.updateAsset).toBe(2));
     expect(host.querySelector(".selection-tray")?.textContent).toContain("Updated 2");
@@ -310,10 +318,10 @@ describe("V1 keyboard daily-use seams", () => {
     await focusAndPress(host.querySelector<HTMLElement>('[data-asset-id="asset-2"]')!, " ");
     await waitFor(() => expect(host.querySelector('.inspector [role="alert"]')?.textContent).toContain("Asset update failed"));
     expect(host.querySelector(".inspector")?.textContent).not.toContain("A-frame.jpg");
-    expect(button("Retry Asset", host.querySelector(".inspector")!)).not.toBeNull();
+    expect(button("Retry Reference", host.querySelector(".inspector")!)).not.toBeNull();
 
     harness.getAssetFailures.delete("asset-2");
-    await focusAndPress(button("Retry Asset", host.querySelector(".inspector")!), "Enter");
+    await focusAndPress(button("Retry Reference", host.querySelector(".inspector")!), "Enter");
     await waitFor(() => expect(host.querySelector(".inspector")?.textContent).toContain("B-frame.jpg"));
   });
 
@@ -394,7 +402,7 @@ describe("V1 keyboard daily-use seams", () => {
     await waitFor(() => expect(input("Title")).not.toBeNull());
     await typeByKeyboard(input("Title"), " preserved draft");
 
-    await focusAndPress(button("Add"), "Enter");
+    await focusAndPress(button("Add Root"), "Enter");
     await waitFor(() => expect(harness.authoritySession.sessionId).toBe("session-authority-1"));
     expect(input("Title").value).toContain("preserved draft");
     expect(host.querySelector(".selection-announcer")?.textContent).toContain("A-frame.jpg");
@@ -408,15 +416,15 @@ describe("V1 keyboard daily-use seams", () => {
   });
 
   it("renders distinct no-Library, empty-Library and filtered no-results states", async () => {
-    expect(text()).toContain("Your project’s visual memory.");
+    expect(text()).toContain("Build the visual memory for one deck.");
     harness.assets = [];
     await focusAndPress(button("New Library"), "Enter");
-    await waitFor(() => expect(text()).toContain("This Library has no Assets yet"));
+    await waitFor(() => expect(text()).toContain("Start with a project folder."));
     harness.assets = [...ASSETS];
     const search = input("Search");
     await replaceByKeyboard(search, "no-match");
     await focusAndPress(search, "Enter");
-    await waitFor(() => expect(text()).toContain("No Assets match this view"));
+    await waitFor(() => expect(text()).toContain("No references match this view"));
   });
 
   it("recovers a no-Library Core failure before create/open and keeps controls inaccessible until restart", async () => {
@@ -654,7 +662,16 @@ function applyList(current: string[], patch: { action: string; value?: string[] 
 function text() { return document.body.textContent ?? ""; }
 function button(name: string, scope: ParentNode = hostNode()): HTMLElement { const found = [...scope.querySelectorAll<HTMLElement>("button")].find((element) => element.textContent?.trim() === name || element.getAttribute("aria-label") === name); if (!found) throw new Error(`button not found: ${name}`); return found; }
 function input(name: string): HTMLInputElement { const found = [...document.querySelectorAll<HTMLInputElement>("input")].find((element) => element.getAttribute("aria-label") === name || element.closest("label")?.textContent?.includes(name)); if (!found) throw new Error(`input not found: ${name}`); return found; }
-function select(name: string, scope: ParentNode = hostNode()): HTMLSelectElement { const found = [...scope.querySelectorAll<HTMLSelectElement>("select")].find((element) => element.closest("label")?.textContent?.includes(name)); if (!found) throw new Error(`select not found: ${name}`); return found; }
+function select(name: string, scope: ParentNode = hostNode()): HTMLSelectElement {
+  const found = [...scope.querySelectorAll<HTMLSelectElement>("select")].find((element) => {
+    const accessibleName = element.getAttribute("aria-label");
+    if (accessibleName === name || accessibleName?.startsWith(`${name} `)) return true;
+    const directLabel = element.closest("label")?.querySelector<HTMLElement>(":scope > span")?.textContent?.trim();
+    return directLabel === name;
+  });
+  if (!found) throw new Error(`select not found: ${name}`);
+  return found;
+}
 function hostNode(): ParentNode { return document.body; }
 async function focusAndPress(element: HTMLElement, key: string) { element.focus(); await press(key); }
 async function press(key: string, shiftKey = false) { await act(async () => { const target = document.activeElement as HTMLElement; const down = new KeyboardEvent("keydown", { key, shiftKey, bubbles: true, cancelable: true }); target.dispatchEvent(down); if (!down.defaultPrevented) { if ((key === "Enter" || key === " ") && target instanceof HTMLButtonElement) target.click(); else if (key === " " && target instanceof HTMLInputElement && target.type === "checkbox") target.click(); else if (key === "Enter" && target instanceof HTMLInputElement) target.form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); else if (key === "Tab") moveTab(target, shiftKey); } target.dispatchEvent(new KeyboardEvent("keyup", { key, shiftKey, bubbles: true })); await settle(); }); }

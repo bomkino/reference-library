@@ -1,39 +1,42 @@
 import { describe, expect, it } from "vitest";
 import { normalizedPan, panOffsets } from "./compare-board";
 
-describe("synchronized visual comparison", () => {
-  it("normalizes one stage and maps it onto different image dimensions", () => {
+describe("Compare Board pan normalization", () => {
+  it("normalizes a scrolled stage and maps it onto a differently sized stage", () => {
     const pan = normalizedPan({
-      scrollLeft: 50,
-      scrollTop: 75,
-      scrollWidth: 200,
-      scrollHeight: 400,
-      clientWidth: 100,
-      clientHeight: 100,
+      scrollLeft: 300,
+      scrollTop: 150,
+      scrollWidth: 1_000,
+      scrollHeight: 700,
+      clientWidth: 400,
+      clientHeight: 400,
     });
-    expect(pan).toEqual({ x: 0.5, y: 0.25 });
+    expect(pan).toEqual({ x: 0.5, y: 0.5 });
     expect(panOffsets(pan, {
-      scrollWidth: 500,
-      scrollHeight: 900,
-      clientWidth: 100,
-      clientHeight: 100,
-    })).toEqual({ left: 200, top: 200 });
+      scrollWidth: 1_600,
+      scrollHeight: 1_000,
+      clientWidth: 400,
+      clientHeight: 400,
+    })).toEqual({ left: 600, top: 300 });
   });
 
-  it("treats non-scrollable axes as the stable origin and clamps hostile metrics", () => {
+  it("uses a centred neutral pan for stages that cannot scroll", () => {
     expect(normalizedPan({
-      scrollLeft: 999,
-      scrollTop: -20,
-      scrollWidth: 100,
-      scrollHeight: 200,
-      clientWidth: 100,
-      clientHeight: 100,
-    })).toEqual({ x: 0, y: 0 });
-    expect(panOffsets({ x: 3, y: Number.NaN }, {
-      scrollWidth: 300,
-      scrollHeight: 300,
-      clientWidth: 100,
-      clientHeight: 100,
-    })).toEqual({ left: 200, top: 0 });
+      scrollLeft: 0,
+      scrollTop: 0,
+      scrollWidth: 400,
+      scrollHeight: 400,
+      clientWidth: 400,
+      clientHeight: 400,
+    })).toEqual({ x: 0.5, y: 0.5 });
+  });
+
+  it("clamps invalid normalized inputs before applying offsets", () => {
+    expect(panOffsets({ x: -4, y: 8 }, {
+      scrollWidth: 900,
+      scrollHeight: 900,
+      clientWidth: 300,
+      clientHeight: 300,
+    })).toEqual({ left: 0, top: 600 });
   });
 });

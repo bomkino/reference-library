@@ -4,7 +4,6 @@ export type NavigationKey = "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown"
 
 export const MAX_SHORTLIST_ASSETS = 32;
 export const MAX_COMPARE_ASSETS = 4;
-export type ShortlistMove = "earlier" | "later";
 
 export interface ShortlistMutation {
   assets: AssetSummary[];
@@ -132,14 +131,14 @@ export function compareAssets(
 export function moveShortlistedAsset(
   shortlisted: readonly AssetSummary[],
   assetId: string,
-  direction: ShortlistMove,
+  direction: -1 | 1,
 ): AssetSummary[] {
-  const index = shortlisted.findIndex((asset) => asset.assetId === assetId);
-  if (index < 0) return shortlisted as AssetSummary[];
-  const target = direction === "earlier" ? index - 1 : index + 1;
+  const current = shortlisted.findIndex((asset) => asset.assetId === assetId);
+  if (current < 0) return shortlisted as AssetSummary[];
+  const target = current + direction;
   if (target < 0 || target >= shortlisted.length) return shortlisted as AssetSummary[];
   const next = [...shortlisted];
-  [next[index], next[target]] = [next[target]!, next[index]!];
+  [next[current], next[target]] = [next[target]!, next[current]!];
   return next;
 }
 

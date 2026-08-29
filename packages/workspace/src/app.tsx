@@ -33,7 +33,6 @@ import {
   refreshShortlistedAssets,
   replaceShortlistedAsset,
   toggleShortlistedAsset,
-  type ShortlistMove,
 } from "./selection";
 import { assetDraftErrors, useAssetEditor } from "./use-asset-editor";
 import { batchOutcomeMessage, parseBatchTokens, runBatchCuration, type BatchCurationAction } from "./batch-curation";
@@ -62,6 +61,7 @@ function LibraryWorkspace({ bridge }: { bridge: ReferenceWorkspaceBridge }) {
   const [session, setSession] = useState<SessionOpened | null>(null);
   const [invalidations, setInvalidations] = useState(initialWorkspaceInvalidations);
   const [busy, setBusy] = useState(false);
+  const [newLibraryName, setNewLibraryName] = useState("");
   const [shellError, setShellError] = useState<string | null>(null);
   const [needsRestart, setNeedsRestart] = useState(false);
   const [openIntent, setOpenIntent] = useState<{ intentId: string; displayName: string } | null>(null);
@@ -101,7 +101,7 @@ function LibraryWorkspace({ bridge }: { bridge: ReferenceWorkspaceBridge }) {
     setBusy(true);
     setShellError(null);
     try {
-      const opened = mode === "create" ? await bridge.createLibrary("Project Reference Library") : await bridge.openLibrary();
+      const opened = mode === "create" ? await bridge.createLibrary(newLibraryName.trim()) : await bridge.openLibrary();
       if (opened) setSession(opened);
     } catch (reason) { setShellError(messageFrom(reason)); }
     finally { setBusy(false); }
@@ -135,18 +135,38 @@ function LibraryWorkspace({ bridge }: { bridge: ReferenceWorkspaceBridge }) {
         <section className="document-empty__card" aria-busy={busy} inert={Boolean(openIntent)} aria-hidden={Boolean(openIntent)}>
           <div className="document-empty__mark"><ProductMark variant="hero" /></div>
           <div className="document-empty__content">
-          <p className="eyebrow">Reference Library</p><h1>Your project’s visual memory.</h1>
-          <p className="document-empty__lede">Gather widely. Compare closely. Keep the decisions that make the deck yours.</p>
-          <ul className="document-empty__principles" aria-label="Product principles">
-            <li>Originals stay where they are</li><li>No account or cloud</li><li>No AI deciding what matters</li>
-          </ul>
-          <div className="button-row">
-            <button disabled={busy || needsRestart} onClick={() => void openSession("create")}>New Library</button>
-            <button className="button--secondary" disabled={busy || needsRestart} onClick={() => void openSession("open")}>Open Library</button>
-            {needsRestart && <button autoFocus onClick={() => void restart()}>Restart Core</button>}
-          </div>
-          {busy && <p role="status">Waiting for destination…</p>}
-          {shellError && <p className="error-state" role="alert">{shellError}</p>}
+            <p className="eyebrow">Reference Library</p>
+            <h1>Build the visual memory for one deck.</h1>
+            <p className="document-empty__lede">Add folders. Keep originals in place. Compare what matters. Record the decision.</p>
+            <ol className="document-empty__steps" aria-label="How Reference Library works">
+              <li><span>01</span><strong>Connect</strong><small>Authorise project folders without moving the sources.</small></li>
+              <li><span>02</span><strong>See</strong><small>Search, filter, shortlist, and compare the full visual field.</small></li>
+              <li><span>03</span><strong>Decide</strong><small>Keep, annotate, tag, and record where each reference belongs.</small></li>
+            </ol>
+            <label className="document-empty__name">
+              <span>Library name</span>
+              <input
+                aria-label="Library name"
+                autoComplete="off"
+                disabled={busy || needsRestart}
+                placeholder="Project title"
+                value={newLibraryName}
+                onChange={(event) => setNewLibraryName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && newLibraryName.trim() && !busy && !needsRestart) {
+                    event.preventDefault();
+                    void openSession("create");
+                  }
+                }}
+              />
+            </label>
+            <div className="button-row">
+              <button aria-label="New Library" disabled={busy || needsRestart || !newLibraryName.trim()} onClick={() => void openSession("create")}>Create a Library</button>
+              <button aria-label="Open Library" className="button--secondary" disabled={busy || needsRestart} onClick={() => void openSession("open")}>Open an Existing Library</button>
+              {needsRestart && <button autoFocus onClick={() => void restart()}>Restart Core</button>}
+            </div>
+            {busy && <p role="status">Waiting for destination…</p>}
+            {shellError && <p className="error-state" role="alert">{shellError}</p>}
           </div>
         </section>
         {openIntent && <SimpleIntentDialog displayName={openIntent.displayName} onOpen={() => void resolveCleanIntent("discard")} onCancel={() => void resolveCleanIntent("cancel")} />}
@@ -512,7 +532,7 @@ function OpenWorkspace(props: {
     );
   };
 
-  const moveShortlist = (assetId: string, direction: ShortlistMove) => {
+  const moveShortlist = (assetId: string, direction: -1 | 1) => {
     if (batchBusy) return;
     const next = moveShortlistedAsset(shortlisted, assetId, direction);
     if (next === shortlisted) return;
@@ -538,7 +558,10 @@ function OpenWorkspace(props: {
     setCompareOpen(false);
   };
 
-  const applyQuery = (next: AssetQuery) => requestTransition("Change the Asset view", () => { setQuery(next); setPreview(null); });
+  const applyQuery = (update: (query: AssetQuery) => AssetQuery) => requestTransition(
+  "Change the Asset view",
+  () => { setQuery((current) => update(current)); setPreview(null); },
+);
   const chooseAsset = (asset: AssetSummary) => {
     if (asset.assetId === selected?.assetId) return;
     requestTransition(`Select ${asset.displayName}`, () => {
@@ -566,7 +589,7 @@ function OpenWorkspace(props: {
     } catch (reason) { props.setShellError(messageFrom(reason)); }
     finally { setBusy(false); }
   };
-  const clearAssetView = () => applyQuery({ ...DEFAULT_ASSET_QUERY });
+  const clearAssetView = () => applyQuery(() => ({ ...DEFAULT_ASSET_QUERY }));
   const openPreview = (asset: AssetSummary) => {
     setLibraryDrawerOpen(false);
     setInspectorDrawerOpen(false);
@@ -579,12 +602,13 @@ function OpenWorkspace(props: {
       <header className="topbar">
         <div className="topbar__identity">
           <ProductMark variant="compact" />
-          <div className="topbar__title"><p className="eyebrow">Reference Library</p><h1>{props.session.name}</h1></div>
+          <div className="topbar__title">
+            <p className="eyebrow">Editorial Contact Sheet</p>
+            <h1>{props.session.name}</h1>
+            <p>{pager.total.toLocaleString()} {pager.total === 1 ? "reference" : "references"} · {shortlisted.length} shortlisted</p>
+          </div>
         </div>
-        <div className="topbar__status" aria-label="Current Library summary">
-          <strong>{pager.total.toLocaleString()}</strong><span>{pager.total === 1 ? "Asset" : "Assets"}</span>
-        </div>
-        <div className="topbar__actions">
+        <div className="topbar__primary-actions">
           <button
             className="button--quiet topbar__drawer-toggle topbar__library-toggle"
             aria-controls="library-navigation"
@@ -597,23 +621,23 @@ function OpenWorkspace(props: {
             aria-expanded={inspectorDrawerOpen}
             disabled={!selected}
             onClick={() => { setLibraryDrawerOpen(false); setInspectorDrawerOpen((open) => !open); }}
-          >Inspector</button>
-          <button className="button--quiet topbar__shortcuts" aria-label="Keyboard shortcuts" onClick={() => setShortcutsOpen(true)}>Shortcuts</button>
-          <details className="workspace-menu">
-            <summary>View & Library</summary>
-            <div className="workspace-menu__panel">
-              <label>Interface<select value={interfaceScale} onChange={(event) => { const value = Number(event.target.value) as InterfaceScale; setInterfaceScale(value); writePreferences({ interfaceScale: value }); }}>{INTERFACE_SCALES.map((scale) => <option key={scale} value={scale}>{Math.round(scale * 100)}%</option>)}</select></label>
+          >Selected Reference</button>
+          <div className="view-switcher" role="group" aria-label="Asset view">
+            {(["grid", "compact", "list"] as AssetViewMode[]).map((mode) => (
+              <button className="button--secondary" aria-pressed={viewMode === mode} key={mode} onClick={() => { setViewMode(mode); writePreferences({ viewMode: mode }); }}>{mode}</button>
+            ))}
+          </div>
+          <details className="view-settings">
+            <summary>View &amp; sync</summary>
+            <div className="view-settings__panel">
+              <label>Interface<select aria-label="Interface" value={interfaceScale} onChange={(event) => { const value = Number(event.target.value) as InterfaceScale; setInterfaceScale(value); writePreferences({ interfaceScale: value }); }}>{INTERFACE_SCALES.map((scale) => <option key={scale} value={scale}>{Math.round(scale * 100)}%</option>)}</select></label>
               <label>Thumbnail size<input aria-label="Thumbnail size" max="340" min="140" step="20" type="range" value={thumbnailSize} onChange={(event) => { const value = Number(event.target.value); setThumbnailSize(value); writePreferences({ thumbnailDensity: value }); }} /></label>
-              <div className="view-switcher" role="group" aria-label="Asset view">
-                {(["grid", "compact", "list"] as AssetViewMode[]).map((mode) => (
-                  <button className="button--secondary" aria-pressed={viewMode === mode} key={mode} onClick={() => { setViewMode(mode); writePreferences({ viewMode: mode }); }}>{mode}</button>
-                ))}
-              </div>
-              <label className="toggle-control"><input type="checkbox" checked={multiThumbnailPreviews} onChange={(event) => { setMultiThumbnailPreviews(event.target.checked); writePreferences({ multiThumbnailPreviews: event.target.checked }); }} /><span>Multiple thumbnails</span></label>
-              <label className="toggle-control"><input type="checkbox" checked={autoRescan} onChange={(event) => { setAutoRescan(event.target.checked); writePreferences({ autoRescan: event.target.checked }); }} /><span>Auto-rescan · 60 s</span></label>
-              <button className="button--secondary workspace-menu__close" disabled={busy} onClick={closeLibrary}>Close Library</button>
+              <label className="toggle-control"><input type="checkbox" checked={multiThumbnailPreviews} onChange={(event) => { setMultiThumbnailPreviews(event.target.checked); writePreferences({ multiThumbnailPreviews: event.target.checked }); }} /><span>Related thumbnails</span></label>
+              <label className="toggle-control"><input type="checkbox" checked={autoRescan} onChange={(event) => { setAutoRescan(event.target.checked); writePreferences({ autoRescan: event.target.checked }); }} /><span>Auto-rescan every 60 s</span></label>
             </div>
           </details>
+          <button className="button--quiet topbar__shortcuts" aria-label="Keyboard shortcuts" onClick={() => setShortcutsOpen(true)}>Shortcuts</button>
+          <button className="button--quiet" disabled={busy} onClick={closeLibrary}>Close</button>
         </div>
         <QueryToolbar query={query} roots={roots} facets={pager.facets} disabled={busy || props.needsRestart} onChange={applyQuery} />
       </header>
@@ -633,7 +657,8 @@ function OpenWorkspace(props: {
         rootRevision={props.invalidations.roots}
         collectionRevision={props.invalidations.collections}
         disabled={busy || props.needsRestart}
-        onCollectionChange={(collectionId) => { applyQuery({ ...query, collectionId }); setLibraryDrawerOpen(false); }}
+        onAddRoot={() => void addRoot()}
+        onCollectionChange={(collectionId) => { applyQuery((current) => ({ ...current, collectionId })); setLibraryDrawerOpen(false); }}
         onClose={() => setLibraryDrawerOpen(false)}
         onDeleteActiveCollection={(label, action) => requestTransition(label, async () => {
           await action();
@@ -647,33 +672,41 @@ function OpenWorkspace(props: {
         onModalChange={setSidebarModalOpen}
       />
       <section className={`workspace-main${shortlisted.length ? " workspace-main--shortlist-open" : ""}`} aria-label="Assets">
+        <div className="workspace-context" aria-label="Contact sheet context">
+          <span><strong>{pager.total.toLocaleString()}</strong> {pager.total === 1 ? "result" : "results"}</span>
+          {query.collectionId && <span>Collection view</span>}
+          {shortlisted.length > 0 && <span><strong>{shortlisted.length}</strong> shortlisted</span>}
+          <span className="workspace-context__shortcuts">Enter preview · X shortlist · C compare · 1/2/3 review</span>
+        </div>
         {props.shellError && <div className="error-banner" role="alert"><span>{props.shellError}</span><div className="compact-actions">{props.needsRestart ? <button onClick={restartCore}>Restart Core</button> : <button className="button--quiet" onClick={() => props.setShellError(null)}>Dismiss</button>}</div></div>}
-        {pager.error ? <WorkspaceState kind="error" title="Library query failed" detail={pager.error} action="Retry" onAction={pager.refresh} />
-          : pager.loading && pager.total === 0 ? <WorkspaceState kind="status" title="Opening contact sheet" detail="Reading the first bounded Asset window…" />
-          : pager.total === 0 ? <WorkspaceState
-              title={hasActiveQuery(query) ? "No Assets match this view" : "This Library has no Assets yet"}
-              detail={hasActiveQuery(query) ? "Clear the current view, or rescan an authorized Root." : "Connect a folder of project material. Assets appear progressively while the scan continues."}
-              action={hasActiveQuery(query) ? "Clear Filters" : "Add Root"}
-              onAction={hasActiveQuery(query) ? clearAssetView : () => void addRoot()}
-            />
-          : <ContactSheet
-              bridge={props.bridge}
-              sessionId={props.session.sessionId}
-              total={pager.total}
-              items={pager.items}
-              thumbnailSize={thumbnailSize}
-              viewMode={viewMode}
-              multiThumbnailPreviews={multiThumbnailPreviews}
-              selectedAssetId={selected?.assetId ?? null}
-              shortlistedAssetIds={shortlistedIds}
-              ensureWindow={pager.ensureWindow}
-              onSelect={chooseAsset}
-              onToggleShortlist={toggleShortlist}
-              onRequestCompare={requestCompare}
-              onReview={requestReview}
-              onPreview={openPreview}
-              onOpen={(asset) => void props.bridge.openLocation(props.session.sessionId, asset.locationId).catch((reason) => props.setShellError(messageFrom(reason)))}
-            />}
+        <div className="workspace-main__surface">
+          {pager.error ? <WorkspaceState kind="error" title="Library query failed" detail={pager.error} action="Retry" onAction={pager.refresh} />
+            : pager.loading && pager.total === 0 ? <WorkspaceState kind="status" title="Opening contact sheet" detail="Reading the first bounded Asset window…" />
+            : pager.total === 0 ? <WorkspaceState
+                title={hasActiveQuery(query) ? "No references match this view" : "Start with a project folder."}
+                detail={hasActiveQuery(query) ? "Remove a filter, change the search, or rescan an authorised Root." : "Reference Library keeps every original in place. Add a Root and the contact sheet will build progressively."}
+                action={hasActiveQuery(query) ? "Clear Filters" : "Add a Root"}
+                onAction={hasActiveQuery(query) ? clearAssetView : () => void addRoot()}
+              />
+            : <ContactSheet
+                bridge={props.bridge}
+                sessionId={props.session.sessionId}
+                total={pager.total}
+                items={pager.items}
+                thumbnailSize={thumbnailSize}
+                viewMode={viewMode}
+                multiThumbnailPreviews={multiThumbnailPreviews}
+                selectedAssetId={selected?.assetId ?? null}
+                shortlistedAssetIds={shortlistedIds}
+                ensureWindow={pager.ensureWindow}
+                onSelect={chooseAsset}
+                onToggleShortlist={toggleShortlist}
+                onRequestCompare={requestCompare}
+                onReview={requestReview}
+                onPreview={openPreview}
+                onOpen={(asset) => void props.bridge.openLocation(props.session.sessionId, asset.locationId).catch((reason) => props.setShellError(messageFrom(reason)))}
+              />}
+        </div>
         {shortlisted.length > 0 && <SelectionTray
           bridge={props.bridge}
           sessionId={props.session.sessionId}
@@ -728,6 +761,7 @@ function OpenWorkspace(props: {
         assets={comparedAssets}
         totalShortlisted={shortlisted.length}
         onReview={updateReview}
+        onMove={moveShortlist}
         onRemove={removeFromShortlist}
         onError={props.setShellError}
         onClose={() => { setCompareOpen(false); requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-compare-trigger]")?.focus()); }}

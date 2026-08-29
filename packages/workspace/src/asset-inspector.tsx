@@ -18,8 +18,8 @@ export function AssetInspector(props: {
   sessionId: string;
   detail: AssetDetail | null;
   draft: AssetDraft | null;
-  drawerOpen: boolean;
   collections: CollectionSummary[];
+  drawerOpen: boolean;
   loading: boolean;
   saving: boolean;
   dirty: boolean;
@@ -38,24 +38,27 @@ export function AssetInspector(props: {
   const tokenErrors = props.draft ? tokenFieldErrors(props.draft) : { tags: null, usedIn: null };
   const cannotSave = Boolean(titleError || noteError || tokenErrors.tags || tokenErrors.usedIn || props.saving);
 
-  if (props.loading) return <aside className={`inspector inspector--active${props.drawerOpen ? " inspector--drawer-open" : ""}`} id="asset-inspector" aria-label="Inspector" aria-busy="true"><div className="section-heading"><h2>Inspector</h2><button className="button--quiet inspector__close" onClick={props.onClose}>Close</button></div><p role="status">Loading Asset…</p></aside>;
+  if (props.loading) return <aside className={`inspector${props.drawerOpen ? " inspector--drawer-open" : ""}`} id="asset-inspector" aria-label="Inspector" aria-busy="true"><div className="inspector-empty"><p className="eyebrow">Inspector</p><h2>Loading reference…</h2></div></aside>;
   if (!props.detail || !props.draft) {
     return (
-      <aside className="inspector inspector--empty" id="asset-inspector" aria-label="Inspector">
+      <aside className={`inspector inspector--empty${props.drawerOpen ? " inspector--drawer-open" : ""}`} id="asset-inspector" aria-label="Inspector">
         <div className="inspector-empty">
-          <p className="eyebrow">Inspector</p>
-          <h2>Choose a reference.</h2>
+          <div className="section-heading">
+            <p className="eyebrow">Inspector</p>
+            <button className="button--quiet inspector__close" onClick={props.onClose}>Close</button>
+          </div>
+          <h2>{props.error ? "Reference unavailable" : "Choose a reference."}</h2>
           {props.error ? (
             <>
               <p className="field-error" role="alert">{props.error}</p>
-              <button className="button--secondary" onClick={() => void props.onReload()}>Retry Asset</button>
+              <button className="button--secondary" onClick={() => void props.onReload()}>Retry Reference</button>
             </>
           ) : (
             <>
-              <p className="muted">Select an Asset to preview it, record the decision, and keep its place in the deck.</p>
+              <p className="muted">Select a card to preview it, record the decision, and keep its place in the deck.</p>
               <dl className="inspector-empty__keys">
                 <div><dt><kbd>1 / 2 / 3</kbd></dt><dd>Keep, Maybe, Reject</dd></div>
-                <div><dt><kbd>X</kbd></dt><dd>Add to Shortlist</dd></div>
+                <div><dt><kbd>X</kbd></dt><dd>Shortlist the selected reference</dd></div>
                 <div><dt><kbd>C</kbd></dt><dd>Compare shortlisted work</dd></div>
               </dl>
             </>
@@ -82,32 +85,49 @@ export function AssetInspector(props: {
 
   return (
     <aside className={`inspector inspector--active${props.drawerOpen ? " inspector--drawer-open" : ""}`} id="asset-inspector" aria-label="Inspector">
-      <div className="section-heading inspector__heading">
-        <div><p className="eyebrow">Selected Asset</p><h2>{detail.customTitle ?? detail.originalDisplayName}</h2></div>
+      <InspectorVisual bridge={props.bridge} sessionId={props.sessionId} detail={detail} onPreview={() => props.onPreview(detail)} />
+
+      <div className="inspector__identity">
+        <div>
+          <p className="eyebrow">Selected reference</p>
+          <h2>{detail.customTitle ?? detail.originalDisplayName}</h2>
+          <p>{detail.category} · {detail.extension ? `.${detail.extension}` : detail.mediaFamily} · {formatBytes(detail.byteSize)}</p>
+        </div>
         <div className="inspector__heading-actions">
-          {props.dirty && <span className="draft-mark" role="status">Edited</span>}
+          {props.dirty && <span className="draft-mark" role="status">Unsaved</span>}
           <button className="button--quiet inspector__close" onClick={props.onClose}>Close</button>
         </div>
       </div>
 
-      <InspectorVisual
-        bridge={props.bridge}
-        sessionId={props.sessionId}
-        detail={detail}
-        onPreview={() => props.onPreview(detail)}
-      />
-
       <div className="inspector__source-actions">
-        <button disabled={!sourceAvailable} onClick={() => void nativeAction("open")}>Open</button>
+        <button disabled={!sourceAvailable} onClick={() => void nativeAction("open")}>Open Original</button>
         <button className="button--secondary" disabled={!sourceAvailable} onClick={() => void nativeAction("reveal")}>Reveal</button>
-        <button className="button--secondary" disabled={!sourceAvailable} onClick={() => void nativeAction("copy")}>Copy Path</button>
-        {detail.previewKind !== "none" && detail.availability === "present" && (
-          <button className="button--secondary" onClick={() => props.onPreview(detail)}>Preview</button>
-        )}
+        <button className="button--quiet" disabled={!sourceAvailable} onClick={() => void nativeAction("copy")}>Copy path</button>
       </div>
       {actionStatus && <p className="inline-status" role="status">{actionStatus}</p>}
 
-      <section className="inspector__section">
+      <section className="inspector__decision" aria-labelledby="review-heading">
+        <div className="inspector__section-heading">
+          <h3 id="review-heading">Editorial decision</h3>
+          <span>1 / 2 / 3 / 0</span>
+        </div>
+        <div className="review-segment" role="group" aria-label="Review state">
+          {(["keep", "maybe", "reject"] as AssetDraft["reviewState"][]).map((reviewState) => (
+            <button
+              className={`review-choice review-choice--${reviewState}`}
+              aria-pressed={draft.reviewState === reviewState}
+              key={reviewState}
+              type="button"
+              onClick={() => props.onDraft({ ...draft, reviewState })}
+            >
+              {reviewState[0]?.toUpperCase()}{reviewState.slice(1)}
+            </button>
+          ))}
+          <button className="button--quiet" aria-pressed={draft.reviewState === "unreviewed"} type="button" onClick={() => props.onDraft({ ...draft, reviewState: "unreviewed" })}>Clear</button>
+        </div>
+      </section>
+
+      <section className="inspector__section inspector__editorial-fields">
         <label>
           Title
           <input
@@ -119,20 +139,12 @@ export function AssetInspector(props: {
         </label>
         {titleError && <p className="field-error" id="title-limit-error" role="alert">{titleError}</p>}
         <label>
-          Review
-          <select value={draft.reviewState} onChange={(event) => props.onDraft({ ...draft, reviewState: event.target.value as AssetDraft["reviewState"] })}>
-            <option value="unreviewed">Unreviewed</option>
-            <option value="keep">Keep</option>
-            <option value="maybe">Maybe</option>
-            <option value="reject">Reject</option>
-          </select>
-        </label>
-        <label>
           Note
           <textarea
             aria-invalid={Boolean(noteError)}
             aria-describedby={noteError ? "note-limit-error" : undefined}
-            rows={6}
+            rows={5}
+            placeholder="Why this reference matters, what to steal, what to avoid…"
             value={draft.note}
             onChange={(event) => props.onDraft({ ...draft, note: event.target.value })}
           />
@@ -147,21 +159,17 @@ export function AssetInspector(props: {
         />
         <TokenEditor
           label="Used in"
-          placeholder="Deck, slide or version"
+          placeholder="Cover, Slide 07, V2"
           values={draft.usedIn}
           error={tokenErrors.usedIn}
           onChange={(usedIn) => props.onDraft({ ...draft, usedIn })}
         />
-        <div className="button-row inspector__save-row">
-          <button disabled={!props.dirty || cannotSave} onClick={() => void props.onSave()}>Save Changes</button>
-          <button className="button--secondary" disabled={!props.dirty || props.saving} onClick={props.onDiscard}>Discard</button>
-        </div>
         {props.error && <p className="field-error" role="alert">{props.error}</p>}
       </section>
 
-      <details className="inspector__section inspector__disclosure inspector__facts">
-        <summary>File details</summary>
-        <dl aria-label="Asset facts">
+      <details className="inspector__disclosure">
+        <summary>File details <span>{detail.availability}</span></summary>
+        <dl>
           <dt>Original</dt><dd>{detail.originalDisplayName}</dd>
           <dt>Category</dt><dd>{detail.category}</dd>
           <dt>Type</dt><dd>{detail.extension ? `.${detail.extension}` : detail.mediaFamily}</dd>
@@ -173,8 +181,8 @@ export function AssetInspector(props: {
         </dl>
       </details>
 
-      <details className="inspector__section inspector__disclosure" open>
-        <summary>Collections · {detail.collectionIds.length}</summary>
+      <details className="inspector__disclosure">
+        <summary>Collections <span>{detail.collectionIds.length}</span></summary>
         <fieldset className="membership" disabled={props.dirty || props.saving}>
           <legend className="visually-hidden">Collections</legend>
           {props.collections.length === 0 ? <p className="muted">No Collections yet.</p> : props.collections.map((collection) => {
@@ -188,10 +196,17 @@ export function AssetInspector(props: {
           })}
         </fieldset>
       </details>
+
+      <div className="inspector__save-dock">
+        <span>{props.dirty ? "Changes not yet in the Library." : "All changes saved."}</span>
+        <div>
+          <button disabled={!props.dirty || cannotSave} onClick={() => void props.onSave()}>{props.saving ? "Saving…" : "Save Changes"}</button>
+          <button className="button--quiet" disabled={!props.dirty || props.saving} onClick={props.onDiscard}>Discard</button>
+        </div>
+      </div>
     </aside>
   );
 }
-
 
 function InspectorVisual(props: {
   bridge: ReferenceWorkspaceBridge;
@@ -200,20 +215,29 @@ function InspectorVisual(props: {
   onPreview(): void;
 }) {
   const [failed, setFailed] = useState(false);
-  const previewable = props.detail.availability === "present" && props.detail.previewKind !== "none";
-  const imagePreview = previewable && ["image/png", "image/jpeg", "image/webp"].includes(props.detail.mimeType);
-  if (!imagePreview || failed) {
-    return (
-      <div className="inspector__visual inspector__visual--placeholder">
-        <strong>{props.detail.extension?.toUpperCase() ?? props.detail.mediaFamily.toUpperCase()}</strong>
-        <span>{previewable ? `${props.detail.previewKind} preview` : props.detail.availability === "unsupported" ? "Catalogue only" : props.detail.availability}</span>
-      </div>
-    );
-  }
+  const image = props.detail.availability === "present" && props.detail.previewKind === "image" && !failed;
   return (
-    <button className="inspector__visual" aria-label={`Preview ${props.detail.customTitle ?? props.detail.originalDisplayName}`} onClick={props.onPreview}>
-      <img alt="" aria-hidden draggable={false} src={props.bridge.assetResourceUrl({ sessionId: props.sessionId, assetId: props.detail.assetId, profile: "grid_standard" })} onError={() => setFailed(true)} />
-      <span>Open preview</span>
+    <button
+      className="inspector__visual"
+      disabled={props.detail.previewKind === "none" || props.detail.availability !== "present"}
+      title={props.detail.previewKind === "none" ? "No in-app preview for this format" : "Open Preview"}
+      type="button"
+      onClick={props.onPreview}
+    >
+      {image ? (
+        <img
+          alt=""
+          aria-hidden
+          src={props.bridge.assetResourceUrl({ sessionId: props.sessionId, assetId: props.detail.assetId, profile: "grid_standard" })}
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <span className="inspector__visual-placeholder">
+          <strong>{props.detail.extension?.toUpperCase() ?? props.detail.mediaFamily.toUpperCase()}</strong>
+          <small>{props.detail.previewKind === "none" ? "Catalogue only" : props.detail.availability}</small>
+        </span>
+      )}
+      {props.detail.previewKind !== "none" && props.detail.availability === "present" && <span className="inspector__visual-action">Open Preview</span>}
     </button>
   );
 }
