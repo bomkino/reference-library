@@ -7,6 +7,8 @@ use uuid::Uuid;
 const MIGRATION_0001: &str = include_str!("../../../migrations/0001_t01.sql");
 const MIGRATION_0002: &str = include_str!("../../../migrations/0002_v1_domain.sql");
 const MIGRATION_0003: &str = include_str!("../../../migrations/0003_rendition_jobs.sql");
+const MIGRATION_0004: &str =
+    include_str!("../../../migrations/0004_asset_browser_parity.sql");
 
 struct PopulatedPackage {
     directory: PathBuf,
@@ -173,6 +175,12 @@ impl Drop for PopulatedPackage {
     }
 }
 
+impl Drop for PopulatedPackage {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.directory);
+    }
+}
+
 #[test]
 fn populated_schema_one_migrates_without_rekeying_canonical_identity() {
     let package = PopulatedPackage::at_schema_one();
@@ -194,13 +202,16 @@ fn populated_schema_one_migrates_without_rekeying_canonical_identity() {
         single_id(&connection, "asset_origins"),
         expected.asset_origin
     );
-    assert_eq!(single_id(&connection, "renditions"), expected.rendition);
+    assert_eq!(
+        single_id(&connection, "renditions"),
+        expected.rendition
+    );
     assert_eq!(single_id(&connection, "jobs"), expected.job);
     assert_eq!(
         connection
             .query_row(
                 "SELECT custom_title, review_state, note, revision FROM assets WHERE id = ?1",
-                params![expected.asset],
+                params![list]=
                 |row| Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
@@ -251,6 +262,7 @@ fn reopen_repairs_a_committed_migration_metadata_boundary() {
     let connection = Connection::open(package.database()).unwrap();
     connection.execute_batch(MIGRATION_0002).unwrap();
     connection.execute_batch(MIGRATION_0003).unwrap();
+    connection.execute_batch(MIGRATION_0004).unwrap();
     // Reproduce a package written by the pre-fix migration sequence, where
     // PRAGMA/ledger committed before the separate library_meta write.
     connection
@@ -385,7 +397,7 @@ fn library_meta_version(connection: &Connection) -> u32 {
 
 fn assert_version_surfaces_converged(connection: &Connection, package: &std::path::Path) {
     assert_eq!(pragma_version(connection), SCHEMA_VERSION);
-    assert_eq!(library_meta_version(connection), SCHEMA_VERSION);
+    assert_eq!(library_meta_version(&connection), SCHEMA_VERSION);
     assert_eq!(
         Manifest::read(package).unwrap().schema_version,
         SCHEMA_VERSION
