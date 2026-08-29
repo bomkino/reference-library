@@ -75,6 +75,13 @@ export function AssetInspector(props: {
         {props.dirty && <span className="draft-mark" role="status">Edited</span>}
       </div>
 
+      <InspectorVisual
+        bridge={props.bridge}
+        sessionId={props.sessionId}
+        detail={detail}
+        onPreview={() => props.onPreview(detail)}
+      />
+
       <div className="inspector__source-actions">
         <button disabled={!sourceAvailable} onClick={() => void nativeAction("open")}>Open</button>
         <button className="button--secondary" disabled={!sourceAvailable} onClick={() => void nativeAction("reveal")}>Reveal</button>
@@ -137,9 +144,9 @@ export function AssetInspector(props: {
         {props.error && <p className="field-error" role="alert">{props.error}</p>}
       </section>
 
-      <section className="inspector__section inspector__facts" aria-label="Asset facts">
-        <h3>File</h3>
-        <dl>
+      <details className="inspector__section inspector__disclosure inspector__facts">
+        <summary>File details</summary>
+        <dl aria-label="Asset facts">
           <dt>Original</dt><dd>{detail.originalDisplayName}</dd>
           <dt>Category</dt><dd>{detail.category}</dd>
           <dt>Type</dt><dd>{detail.extension ? `.${detail.extension}` : detail.mediaFamily}</dd>
@@ -149,21 +156,50 @@ export function AssetInspector(props: {
           <dt>Availability</dt><dd>{detail.availability}</dd>
           <dt>Source</dt><dd className="relative-path">{safeRelativeDisplayPath(detail.relativeDisplayPath)}</dd>
         </dl>
-      </section>
+      </details>
 
-      <fieldset className="membership" disabled={props.dirty || props.saving}>
-        <legend>Collections</legend>
-        {props.collections.length === 0 ? <p className="muted">No Collections yet.</p> : props.collections.map((collection) => {
-          const checked = detail.collectionIds.includes(collection.collectionId);
-          return <label key={collection.collectionId}><input type="checkbox" checked={checked} onChange={async (event) => {
-            try {
-              await props.bridge.setCollectionMembership({ sessionId: props.sessionId, collectionId: collection.collectionId, assetIds: [detail.assetId], member: event.target.checked });
-              await props.onReload();
-            } catch (reason) { props.onError(safeErrorMessage(reason, "Collection membership failed.")); }
-          }} />{collection.name}</label>;
-        })}
-      </fieldset>
+      <details className="inspector__section inspector__disclosure" open>
+        <summary>Collections · {detail.collectionIds.length}</summary>
+        <fieldset className="membership" disabled={props.dirty || props.saving}>
+          <legend className="visually-hidden">Collections</legend>
+          {props.collections.length === 0 ? <p className="muted">No Collections yet.</p> : props.collections.map((collection) => {
+            const checked = detail.collectionIds.includes(collection.collectionId);
+            return <label key={collection.collectionId}><input type="checkbox" checked={checked} onChange={async (event) => {
+              try {
+                await props.bridge.setCollectionMembership({ sessionId: props.sessionId, collectionId: collection.collectionId, assetIds: [detail.assetId], member: event.target.checked });
+                await props.onReload();
+              } catch (reason) { props.onError(safeErrorMessage(reason, "Collection membership failed.")); }
+            }} />{collection.name}</label>;
+          })}
+        </fieldset>
+      </details>
     </aside>
+  );
+}
+
+
+function InspectorVisual(props: {
+  bridge: ReferenceWorkspaceBridge;
+  sessionId: string;
+  detail: AssetDetail;
+  onPreview(): void;
+}) {
+  const [failed, setFailed] = useState(false);
+  const previewable = props.detail.availability === "present" && props.detail.previewKind !== "none";
+  const imagePreview = previewable && ["image/png", "image/jpeg", "image/webp"].includes(props.detail.mimeType);
+  if (!imagePreview || failed) {
+    return (
+      <div className="inspector__visual inspector__visual--placeholder">
+        <strong>{props.detail.extension?.toUpperCase() ?? props.detail.mediaFamily.toUpperCase()}</strong>
+        <span>{previewable ? `${props.detail.previewKind} preview` : props.detail.availability === "unsupported" ? "Catalogue only" : props.detail.availability}</span>
+      </div>
+    );
+  }
+  return (
+    <button className="inspector__visual" aria-label={`Preview ${props.detail.customTitle ?? props.detail.originalDisplayName}`} onClick={props.onPreview}>
+      <img alt="" aria-hidden draggable={false} src={props.bridge.assetResourceUrl({ sessionId: props.sessionId, assetId: props.detail.assetId, profile: "grid_standard" })} onError={() => setFailed(true)} />
+      <span>Open preview</span>
+    </button>
   );
 }
 

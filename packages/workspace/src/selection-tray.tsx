@@ -27,6 +27,7 @@ export function SelectionTray(props: {
   const [tagInput, setTagInput] = useState("");
   const [usedInInput, setUsedInInput] = useState("");
   const [collectionId, setCollectionId] = useState("");
+  const [batchOpen, setBatchOpen] = useState(false);
 
   const submitTags = (event: FormEvent) => {
     event.preventDefault();
@@ -52,7 +53,16 @@ export function SelectionTray(props: {
           >
             Compare {props.assets.length > MAX_COMPARE_ASSETS ? `first ${MAX_COMPARE_ASSETS}` : ""}
           </button>
-          <button className="button--secondary" disabled={props.busy} onClick={props.onClear}>Clear</button>
+          <button
+            className="button--secondary"
+            aria-expanded={batchOpen}
+            aria-controls="shortlist-batch-tools"
+            disabled={props.busy}
+            onClick={() => setBatchOpen((open) => !open)}
+          >
+            {batchOpen ? "Hide batch tools" : "Batch edit"}
+          </button>
+          <button className="button--quiet" disabled={props.busy} onClick={props.onClear}>Clear</button>
         </div>
       </header>
 
@@ -105,7 +115,7 @@ export function SelectionTray(props: {
         })}
       </div>
 
-      <div className="selection-tray__actions">
+      <div className={`selection-tray__actions${batchOpen ? " selection-tray__actions--open" : ""}`} id="shortlist-batch-tools" aria-hidden={!batchOpen}>
         <fieldset disabled={props.busy}>
           <legend>Batch review</legend>
           <div className="selection-tray__review-buttons">
@@ -157,7 +167,7 @@ export function SelectionTray(props: {
       </div>
 
       <footer className="selection-tray__footer">
-        <span>X shortlists · Shift-click adds a visible range · reorder decides the four Compare slots · 1/2/3/0 reviews</span>
+        <span>First four become Compare slots · drag the decision forward with X, C and 1/2/3/0</span>
         {props.status && <strong role="status">{props.status}</strong>}
       </footer>
     </aside>
