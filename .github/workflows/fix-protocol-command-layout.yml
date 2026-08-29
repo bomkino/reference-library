@@ -32,7 +32,7 @@ jobs:
           toolchain: 1.90.0
           components: rustfmt,clippy
 
-      - name: Bound the expanded query and refresh historical fixtures
+      - name: Bound the expanded query and refresh historical contracts
         shell: bash
         run: |
           set -euo pipefail
@@ -81,9 +81,40 @@ jobs:
           ]
           for old, new in replacements:
               if tests.count(old) != 1:
-                  raise SystemExit(f"expected one historical fixture seam, found {tests.count(old)} for {old!r}")
+                  raise SystemExit(f"expected one historical V1 fixture seam, found {tests.count(old)} for {old!r}")
               tests = tests.replace(old, new, 1)
           fixture.write_text(tests)
+
+          tracer = Path("crates/reference-core/tests/t01_public_seams.rs")
+          t01 = tracer.read_text()
+          t01_replacements = [
+              ("fn write_common_stills(&self)", "fn write_common_catalogue(&self)"),
+              ("project.write_common_stills();", "project.write_common_catalogue();"),
+              (
+                  "fn stills_progress_page_preview_reveal_missing_and_round_trip()",
+                  "fn catalogue_progress_page_preview_reveal_missing_and_round_trip()",
+              ),
+              ("    assert_eq!(first_page.total, 3);", "    assert_eq!(first_page.total, 4);"),
+              ("    assert_eq!(second_page.items.len(), 1);", "    assert_eq!(second_page.items.len(), 2);"),
+              ("    assert_eq!(after_missing.total, 3);", "    assert_eq!(after_missing.total, 4);"),
+          ]
+          for old, new in t01_replacements:
+              if t01.count(old) != 1:
+                  raise SystemExit(f"expected one T01 catalogue seam, found {t01.count(old)} for {old!r}")
+              t01 = t01.replace(old, new, 1)
+          marker = "    assert_eq!(second_page.next_offset, None);\n"
+          catalogue_assertion = (
+              marker
+              + "    assert!(first_page\n"
+              + "        .items\n"
+              + "        .iter()\n"
+              + "        .chain(&second_page.items)\n"
+              + "        .any(|item| item.extension.as_deref() == Some(\"txt\")));\n"
+          )
+          if t01.count(marker) != 1:
+              raise SystemExit(f"expected one T01 paging marker, found {t01.count(marker)}")
+          t01 = t01.replace(marker, catalogue_assertion, 1)
+          tracer.write_text(t01)
           PY
           rm -f .github/workflows/fix-protocol-command-layout.yml
           cargo fmt --all
