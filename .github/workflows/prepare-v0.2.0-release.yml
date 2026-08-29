@@ -69,13 +69,13 @@ jobs:
           node scripts/generate-product-icon.mjs --check
           node scripts/check-release-metadata.mjs
           npm run typecheck
+          cargo build --locked -p reference-core
           cargo build --locked --release -p reference-core
           npm test
           npm run build
           cargo fmt --all -- --check
           cargo clippy --workspace --all-targets -- -D warnings
           cargo test --workspace
-          cargo build --locked -p reference-core
           python3 scripts/generate_dependency_licenses.py --check
           node scripts/legal-bundle-contract.mjs --directory .
           git diff --check
