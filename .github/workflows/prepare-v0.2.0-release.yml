@@ -69,6 +69,7 @@ jobs:
           node scripts/generate-product-icon.mjs --check
           node scripts/check-release-metadata.mjs
           npm run typecheck
+          cargo build --locked --release -p reference-core
           npm test
           npm run build
           cargo fmt --all -- --check
