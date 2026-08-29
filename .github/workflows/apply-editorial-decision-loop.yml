@@ -5,7 +5,7 @@ on:
     branches:
       - codex/reference-library-feature-parity
     paths:
-      - .github/editorial-decision-loop/decision-loop.patch.gz.b64
+      - .github/editorial-decision-loop/decision-loop.patch.gz.part-*
       - .github/workflows/apply-editorial-decision-loop.yml
 
 permissions:
@@ -42,8 +42,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          base64 --decode .github/editorial-decision-loop/decision-loop.patch.gz.b64 \
-            | gzip --decompress \
+          cat .github/editorial-decision-loop/decision-loop.patch.gz.part-* \
+            > "$RUNNER_TEMP/editorial-decision-loop.patch.gz"
+          echo "1c6b36cc8bc4740edb2a51d14ee177e4e9b88290f908a15ecdce371334cc9f14  $RUNNER_TEMP/editorial-decision-loop.patch.gz" \
+            | sha256sum --check --strict
+          gzip --decompress --stdout "$RUNNER_TEMP/editorial-decision-loop.patch.gz" \
             > "$RUNNER_TEMP/editorial-decision-loop.patch"
           echo "ce9a7225ad2a6a59983f91fabc11b8eeda6efeb97cd59c964f51a0caea596bfe  $RUNNER_TEMP/editorial-decision-loop.patch" \
             | sha256sum --check --strict
