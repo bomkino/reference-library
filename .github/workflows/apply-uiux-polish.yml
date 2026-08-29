@@ -107,3 +107,5 @@ jobs:
           path: ${{ runner.temp }}/reference-uiux-polish/screenshots/*.png
           if-no-files-found: warn
           retention-days: 1
+
+# rerun after explicitly adding the shortcuts dialog source
