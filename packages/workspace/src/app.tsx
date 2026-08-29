@@ -297,6 +297,16 @@ function OpenWorkspace(props: {
   }, [selected]);
 
   useEffect(() => {
+    const drawer = libraryDrawerOpen
+      ? document.getElementById("library-navigation")
+      : inspectorDrawerOpen
+        ? document.getElementById("asset-inspector")
+        : null;
+    if (!drawer) return;
+    requestAnimationFrame(() => { drawer.scrollLeft = 0; });
+  }, [inspectorDrawerOpen, libraryDrawerOpen]);
+
+  useEffect(() => {
     if (!libraryDrawerOpen && !inspectorDrawerOpen) return;
     const closeDrawer = (event: globalThis.KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -622,7 +632,7 @@ function OpenWorkspace(props: {
             disabled={!selected}
             onClick={() => { setLibraryDrawerOpen(false); setInspectorDrawerOpen((open) => !open); }}
           >Selected Reference</button>
-          <div className="view-switcher" role="group" aria-label="Asset view">
+          <div className="view-switcher topbar__view-switcher" role="group" aria-label="Asset view">
             {(["grid", "compact", "list"] as AssetViewMode[]).map((mode) => (
               <button className="button--secondary" aria-pressed={viewMode === mode} key={mode} onClick={() => { setViewMode(mode); writePreferences({ viewMode: mode }); }}>{mode}</button>
             ))}
@@ -630,14 +640,20 @@ function OpenWorkspace(props: {
           <details className="view-settings">
             <summary>View &amp; sync</summary>
             <div className="view-settings__panel">
+              <div className="view-switcher view-settings__view-switcher" role="group" aria-label="Asset view in settings">
+                {(["grid", "compact", "list"] as AssetViewMode[]).map((mode) => (
+                  <button className="button--secondary" aria-pressed={viewMode === mode} key={mode} onClick={() => { setViewMode(mode); writePreferences({ viewMode: mode }); }}>{mode}</button>
+                ))}
+              </div>
               <label>Interface<select aria-label="Interface" value={interfaceScale} onChange={(event) => { const value = Number(event.target.value) as InterfaceScale; setInterfaceScale(value); writePreferences({ interfaceScale: value }); }}>{INTERFACE_SCALES.map((scale) => <option key={scale} value={scale}>{Math.round(scale * 100)}%</option>)}</select></label>
               <label>Thumbnail size<input aria-label="Thumbnail size" max="340" min="140" step="20" type="range" value={thumbnailSize} onChange={(event) => { const value = Number(event.target.value); setThumbnailSize(value); writePreferences({ thumbnailDensity: value }); }} /></label>
               <label className="toggle-control"><input type="checkbox" checked={multiThumbnailPreviews} onChange={(event) => { setMultiThumbnailPreviews(event.target.checked); writePreferences({ multiThumbnailPreviews: event.target.checked }); }} /><span>Related thumbnails</span></label>
               <label className="toggle-control"><input type="checkbox" checked={autoRescan} onChange={(event) => { setAutoRescan(event.target.checked); writePreferences({ autoRescan: event.target.checked }); }} /><span>Auto-rescan every 60 s</span></label>
+              <button className="button--secondary view-settings__close" disabled={busy} onClick={closeLibrary}>Close Library</button>
             </div>
           </details>
           <button className="button--quiet topbar__shortcuts" aria-label="Keyboard shortcuts" onClick={() => setShortcutsOpen(true)}>Shortcuts</button>
-          <button className="button--quiet" disabled={busy} onClick={closeLibrary}>Close</button>
+          <button className="button--quiet topbar__close" disabled={busy} onClick={closeLibrary}>Close</button>
         </div>
         <QueryToolbar query={query} roots={roots} facets={pager.facets} disabled={busy || props.needsRestart} onChange={applyQuery} />
       </header>

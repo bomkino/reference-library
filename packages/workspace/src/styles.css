@@ -1353,3 +1353,141 @@ button {
 @media (prefers-reduced-motion: reduce) {
   .sidebar, .inspector { transition: none; }
 }
+
+/* Final responsive settlement — one calm command row, bounded drawers, no horizontal drift. */
+.view-settings__view-switcher,
+.view-settings__close { display: none; }
+
+@media (max-width: 1320px) {
+  .sidebar,
+  .inspector {
+    inline-size: min(27rem, calc(100vw - 1.25rem));
+    max-inline-size: 100vw;
+    min-inline-size: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+  .sidebar > *,
+  .inspector > *,
+  .sidebar section,
+  .inspector section,
+  .sidebar form,
+  .inspector form,
+  .root-row,
+  .collection-row,
+  .compact-actions,
+  .collection-create,
+  .inspector__source-actions,
+  .inspector__editorial-fields {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .sidebar input,
+  .sidebar select,
+  .sidebar textarea,
+  .inspector input,
+  .inspector select,
+  .inspector textarea { max-width: 100%; }
+  .collection-row .nav-choice { min-width: 0; overflow: hidden; }
+  .root-row strong { overflow: hidden; text-overflow: ellipsis; }
+}
+
+@media (max-width: 760px) {
+  .topbar {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.55rem;
+    padding: 0.6rem;
+  }
+  .topbar__identity {
+    grid-column: 1;
+    grid-row: 1;
+    gap: 0.6rem;
+  }
+  .product-mark--compact { width: 2.75rem; height: 2.75rem; }
+  .topbar__title .eyebrow { margin-bottom: 0.22rem; font-size: 0.62rem; }
+  .topbar h1 { max-width: calc(100vw - 4.75rem); font-size: 1.55rem; }
+  .topbar__title > p:last-child { margin-top: 0.18rem; font-size: 0.7rem; }
+
+  .topbar__primary-actions {
+    grid-column: 1;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    gap: 0.35rem;
+    width: 100%;
+  }
+  .topbar__primary-actions > button,
+  .view-settings > summary {
+    width: 100%;
+    min-width: 0;
+    min-height: 2.45rem;
+    justify-content: center;
+    padding: 0.45rem 0.55rem;
+    overflow: hidden;
+    font-size: 0.72rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .topbar__view-switcher,
+  .topbar__close,
+  .topbar__shortcuts { display: none !important; }
+  .view-settings { min-width: 0; }
+  .view-settings__panel {
+    top: 7.4rem;
+    right: 0.45rem;
+    left: 0.45rem;
+    width: auto;
+    max-height: calc(100vh - 7.9rem);
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .view-settings__view-switcher {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .view-settings__view-switcher button { min-width: 0; }
+  .view-settings__close { display: block; width: 100%; }
+
+  .query-surface { grid-column: 1; grid-row: 3; padding-top: 0.55rem; }
+  .query-commandbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.4rem;
+  }
+  .query-commandbar__search { grid-column: 1; grid-row: 1; }
+  .query-commandbar > button[type="submit"] { grid-column: 2; grid-row: 1; }
+  .query-commandbar__sort { grid-column: 1; grid-row: 2; }
+  .query-commandbar__filters { grid-column: 2; grid-row: 2; }
+  .query-commandbar input,
+  .query-commandbar select,
+  .query-commandbar button { min-height: 2.55rem; }
+
+  .sidebar,
+  .inspector {
+    inline-size: 100vw;
+    width: 100vw;
+    max-inline-size: 100vw;
+    padding: 0.9rem;
+  }
+  .sidebar__header,
+  .inspector__identity {
+    position: sticky;
+    top: -0.9rem;
+    z-index: 2;
+    margin: -0.9rem -0.9rem 0;
+    padding: 0.9rem;
+    background: var(--surface-raised);
+  }
+  .sidebar__header { border-bottom: 1px solid var(--ink); }
+  .root-row .compact-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .root-row .compact-actions button { min-width: 0; }
+  .collection-row { grid-template-columns: minmax(0, 1fr) 2.7rem 2.7rem; gap: 0.35rem; }
+  .collection-row .icon-button { width: 2.7rem; height: 2.7rem; }
+  .collection-create { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .collection-create label,
+  .collection-create input,
+  .collection-create button { width: 100%; min-width: 0; }
+  .inspector__source-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .inspector__source-actions button { min-width: 0; padding-inline: 0.4rem; font-size: 0.72rem; }
+}

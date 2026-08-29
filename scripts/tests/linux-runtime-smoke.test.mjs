@@ -39,7 +39,7 @@ test("packaged journey requires workspace, bridge, host preferences, Core, and c
   const observation = {
     url: "pitchdog-ui://app/index.html",
     readyState: "complete",
-    heading: "Your project’s visual memory.",
+    heading: "Build the visual memory for one deck.",
     bridgeVersion: 4,
     preferences: { interfaceScale: 1, thumbnailDensity: 220, previewZoom: 1, viewMode: "grid", multiThumbnailPreviews: false, autoRescan: false },
     capabilities: [

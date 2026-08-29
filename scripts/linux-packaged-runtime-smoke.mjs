@@ -206,7 +206,7 @@ async function waitForPackagedJourneyObservation(client, timeoutMs) {
 export function assertPackagedJourneyObservation(observation) {
   assert.equal(observation?.url, "pitchdog-ui://app/index.html");
   assert.ok(["interactive", "complete"].includes(observation.readyState), "workspace document did not become ready");
-  assert.equal(observation.heading, "Your project’s visual memory.");
+  assert.equal(observation.heading, "Build the visual memory for one deck.");
   assert.equal(observation.bridgeVersion, 4);
   assert.ok([0.8, 1, 1.25, 1.5].includes(observation.preferences?.interfaceScale));
   assert.ok(Number.isSafeInteger(observation.preferences?.thumbnailDensity));

@@ -26,11 +26,18 @@ async function waitFor(window, label, expression, attempts = 60) {
   throw new Error(`Timed out waiting for ${label}`);
 }
 
-async function capture(window, name) {
-  await wait(300);
+async function capture(window, name, settle = 700) {
+  await wait(settle);
+  const metrics = await window.webContents.executeJavaScript(`({
+    innerWidth: window.innerWidth,
+    innerHeight: window.innerHeight,
+    devicePixelRatio: window.devicePixelRatio,
+    bodyScrollWidth: document.body.scrollWidth,
+    bodyClientWidth: document.body.clientWidth,
+  })`);
   const image = await window.webContents.capturePage();
   fs.writeFileSync(path.join(screenshotDirectory, `${name}.png`), image.toPNG());
-  console.log(`[audit] captured ${name}`);
+  console.log(`[audit] captured ${name}`, metrics);
 }
 
 async function clickText(window, selector, text) {
@@ -123,15 +130,17 @@ app.whenReady().then(async () => {
     await wait(700);
     await capture(window, "08-narrow-canvas");
 
-    await clickText(window, ".topbar__primary-actions button", "Library");
+    await evaluate(window, "open Library drawer", `document.querySelector(".topbar__library-toggle").click()`);
     await waitFor(window, "Library drawer", "document.querySelector('.sidebar--drawer-open')");
-    await capture(window, "09-narrow-library");
-    await clickText(window, ".sidebar button", "Close");
+    await evaluate(window, "reset Library drawer scroll", `document.querySelector(".sidebar").scrollLeft = 0`);
+    await capture(window, "09-narrow-library", 500);
+    await evaluate(window, "close Library drawer", `document.querySelector(".sidebar__close").click()`);
     await waitFor(window, "Library drawer close", "!document.querySelector('.sidebar--drawer-open')");
 
-    await clickText(window, ".topbar__primary-actions button", "Selected Reference");
+    await evaluate(window, "open Inspector drawer", `document.querySelector(".topbar__inspector-toggle").click()`);
     await waitFor(window, "Inspector drawer", "document.querySelector('.inspector--drawer-open')");
-    await capture(window, "10-narrow-inspector");
+    await evaluate(window, "reset Inspector drawer scroll", `document.querySelector(".inspector").scrollLeft = 0`);
+    await capture(window, "10-narrow-inspector", 500);
   } catch (error) {
     console.error("[audit] journey failed", error);
     try { await capture(window, "99-failure-state"); } catch (captureError) { console.error(captureError); }
