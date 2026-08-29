@@ -61,22 +61,43 @@ jobs:
 
           toolbar = Path("packages/workspace/src/query-toolbar.tsx")
           source = toolbar.read_text()
-          marker = "  const queryRef = useRef(props.query);\n"
-          replacement = (
-              marker
-              + "  const propQueryRef = useRef(props.query);\n"
-              + "  if (props.query !== propQueryRef.current) {\n"
-              + "    propQueryRef.current = props.query;\n"
-              + "    queryRef.current = props.query;\n"
-              + "  }\n"
+          source = source.replace(
+              'import { useEffect, useMemo, useRef, useState } from "react";',
+              'import { useEffect, useMemo, useState } from "react";',
+              1,
           )
-          if source.count(marker) != 1:
-              raise SystemExit(f"expected one queryRef declaration, found {source.count(marker)}")
-          source = source.replace(marker, replacement, 1)
-          passive = "  useEffect(() => { queryRef.current = props.query; }, [props.query]);\n"
-          if source.count(passive) != 1:
-              raise SystemExit(f"expected one passive query sync, found {source.count(passive)}")
-          toolbar.write_text(source.replace(passive, "", 1))
+          old_signature = '  onChange(query: AssetQuery): void;\n'
+          new_signature = '  onChange(update: (query: AssetQuery) => AssetQuery): void;\n'
+          if source.count(old_signature) != 1:
+              raise SystemExit(f"expected one QueryToolbar onChange signature, found {source.count(old_signature)}")
+          source = source.replace(old_signature, new_signature, 1)
+          old_state = '''  const queryRef = useRef(props.query);
+          useEffect(() => setSearch(props.query.search ?? ""), [props.query.search]);
+          useEffect(() => { queryRef.current = props.query; }, [props.query]);
+          const emitChange = (update: (query: AssetQuery) => AssetQuery) => {
+            const next = update(queryRef.current);
+            queryRef.current = next;
+            props.onChange(next);
+          };
+          '''
+          new_state = '''  useEffect(() => setSearch(props.query.search ?? ""), [props.query.search]);
+          const emitChange = (update: (query: AssetQuery) => AssetQuery) => props.onChange(update);
+          '''
+          if source.count(old_state) != 1:
+              raise SystemExit(f"expected one local query composition block, found {source.count(old_state)}")
+          toolbar.write_text(source.replace(old_state, new_state, 1))
+
+          app = Path("packages/workspace/src/app.tsx")
+          app_source = app.read_text()
+          old_apply = '  const applyQuery = (next: AssetQuery) => requestTransition("Change the Asset view", () => { setQuery(next); setPreview(null); });\n'
+          new_apply = '''  const applyQuery = (update: (query: AssetQuery) => AssetQuery) => requestTransition(
+            "Change the Asset view",
+            () => { setQuery((current) => update(current)); setPreview(null); },
+          );
+          '''
+          if app_source.count(old_apply) != 1:
+              raise SystemExit(f"expected one applyQuery seam, found {app_source.count(old_apply)}")
+          app.write_text(app_source.replace(old_apply, new_apply, 1))
 
           test = Path("packages/workspace/src/app.keyboard.integration.test.tsx")
           tests = test.read_text()
