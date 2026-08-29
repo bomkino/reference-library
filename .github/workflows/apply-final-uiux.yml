@@ -109,10 +109,24 @@ jobs:
 
           app = Path("packages/workspace/src/app.tsx")
           app_source = app.read_text()
+          old_query_state = '  const [query, setQuery] = useState<AssetQuery>({ ...DEFAULT_ASSET_QUERY });\n'
+          new_query_state = '''  const [query, setQuery] = useState<AssetQuery>({ ...DEFAULT_ASSET_QUERY });
+          const queryRef = useRef(query);
+          useEffect(() => { queryRef.current = query; }, [query]);
+          '''
+          if app_source.count(old_query_state) != 1:
+              raise SystemExit(f"expected one query state seam, found {app_source.count(old_query_state)}")
+          app_source = app_source.replace(old_query_state, new_query_state, 1)
+
           old_apply = '  const applyQuery = (next: AssetQuery) => requestTransition("Change the Asset view", () => { setQuery(next); setPreview(null); });\n'
           new_apply = '''  const applyQuery = (update: (query: AssetQuery) => AssetQuery) => requestTransition(
             "Change the Asset view",
-            () => { setQuery((current) => update(current)); setPreview(null); },
+            () => {
+              const next = update(queryRef.current);
+              queryRef.current = next;
+              setQuery(next);
+              setPreview(null);
+            },
           );
           '''
           if app_source.count(old_apply) != 1:
