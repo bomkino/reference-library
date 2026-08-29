@@ -61,21 +61,22 @@ jobs:
 
           toolbar = Path("packages/workspace/src/query-toolbar.tsx")
           source = toolbar.read_text()
-          old = '''  const queryRef = useRef(props.query);
-          useEffect(() => setSearch(props.query.search ?? ""), [props.query.search]);
-          useEffect(() => { queryRef.current = props.query; }, [props.query]);
-          const emitChange = (update: (query: AssetQuery) => AssetQuery) => {'''
-          new = '''  const queryRef = useRef(props.query);
-          const propQueryRef = useRef(props.query);
-          if (props.query !== propQueryRef.current) {
-            propQueryRef.current = props.query;
-            queryRef.current = props.query;
-          }
-          useEffect(() => setSearch(props.query.search ?? ""), [props.query.search]);
-          const emitChange = (update: (query: AssetQuery) => AssetQuery) => {'''
-          if source.count(old) != 1:
-              raise SystemExit(f"expected one query synchronization seam, found {source.count(old)}")
-          toolbar.write_text(source.replace(old, new, 1))
+          marker = "  const queryRef = useRef(props.query);\n"
+          replacement = (
+              marker
+              + "  const propQueryRef = useRef(props.query);\n"
+              + "  if (props.query !== propQueryRef.current) {\n"
+              + "    propQueryRef.current = props.query;\n"
+              + "    queryRef.current = props.query;\n"
+              + "  }\n"
+          )
+          if source.count(marker) != 1:
+              raise SystemExit(f"expected one queryRef declaration, found {source.count(marker)}")
+          source = source.replace(marker, replacement, 1)
+          passive = "  useEffect(() => { queryRef.current = props.query; }, [props.query]);\n"
+          if source.count(passive) != 1:
+              raise SystemExit(f"expected one passive query sync, found {source.count(passive)}")
+          toolbar.write_text(source.replace(passive, "", 1))
 
           test = Path("packages/workspace/src/app.keyboard.integration.test.tsx")
           tests = test.read_text()
