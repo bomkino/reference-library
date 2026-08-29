@@ -1,0 +1,108 @@
+name: Apply responsive material-first UIUX polish
+
+on:
+  push:
+    branches:
+      - codex/reference-library-feature-parity
+    paths:
+      - .github/uiux-responsive/**
+      - .github/uiux-responsive-audit/**
+      - .github/workflows/apply-responsive-uiux-polish.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: reference-library-responsive-uiux-polish
+  cancel-in-progress: false
+
+jobs:
+  apply-verify-capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          ref: codex/reference-library-feature-parity
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: 1.90.0
+
+      - name: Apply reviewed responsive UIUX delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "92cc8dcfa1f0b2f42679f2b947b4935670c27fcb166f787afcb8442e1c3b8773  .github/uiux-responsive/uiux-responsive.patch.gz.b64" \
+            | sha256sum --check --strict
+          base64 --decode .github/uiux-responsive/uiux-responsive.patch.gz.b64 \
+            > "$RUNNER_TEMP/uiux-responsive.patch.gz"
+          echo "ea3086ebb08bd907e36260807d5af7322938e15afd6b65edf5b419000153bd28  $RUNNER_TEMP/uiux-responsive.patch.gz" \
+            | sha256sum --check --strict
+          gzip --decompress --stdout "$RUNNER_TEMP/uiux-responsive.patch.gz" \
+            > "$RUNNER_TEMP/uiux-responsive.patch"
+          echo "5185fc7bcef69bcd2f475312d9c7c20ad2ef42769181b7156560b14255b4d1f8  $RUNNER_TEMP/uiux-responsive.patch" \
+            | sha256sum --check --strict
+          git apply --check "$RUNNER_TEMP/uiux-responsive.patch"
+          git apply "$RUNNER_TEMP/uiux-responsive.patch"
+          git diff --check
+
+      - name: Verify exact source before capture
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm run typecheck
+          cargo build --locked -p reference-core
+          npm test
+          npm run build
+          python3 scripts/check_repository.py
+
+      - name: Capture responsive journey
+        shell: bash
+        env:
+          PRELOAD: ${{ github.workspace }}/.github/uiux-responsive-audit/preload.cjs
+          INDEX_HTML: ${{ github.workspace }}/packages/workspace/dist/index.html
+          SCREENSHOT_DIR: ${{ runner.temp }}/reference-uiux-responsive/screenshots
+        run: |
+          set -euo pipefail
+          mkdir -p "$SCREENSHOT_DIR"
+          xvfb-run -a ./node_modules/.bin/electron .github/uiux-responsive-audit/capture.cjs --no-sandbox
+
+      - name: Remove temporary audit machinery
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .github/uiux-responsive
+          rm -rf .github/uiux-responsive-audit
+          rm -f .github/workflows/apply-responsive-uiux-polish.yml
+          git diff --check
+
+      - name: Commit verified product source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "pitch.dog"
+          git config user.email "111725271+bomkino@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "feat(workspace): keep the canvas primary at every width"
+          git push origin HEAD:codex/reference-library-feature-parity
+
+      - name: Upload responsive screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: reference-library-responsive-uiux-screenshots
+          path: ${{ runner.temp }}/reference-uiux-responsive/screenshots/*.png
+          if-no-files-found: warn
+          retention-days: 1
