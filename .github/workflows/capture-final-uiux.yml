@@ -38,7 +38,7 @@ jobs:
           PRELOAD: ${{ github.workspace }}/.github/uiux-audit/preload.cjs
           INDEX_HTML: ${{ github.workspace }}/packages/workspace/dist/index.html
           SCREENSHOT_DIR: ${{ runner.temp }}/reference-uiux/screenshots
-        run: xvfb-run -a ./node_modules/.bin/electron .github/uiux-audit/capture.cjs --no-sandbox
+        run: xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron .github/uiux-audit/capture.cjs --no-sandbox
 
       - name: Upload screenshots and failure state
         if: always()
