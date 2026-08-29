@@ -6,7 +6,13 @@
 
 This receipt covers `codex/reference-library-feature-parity` and draft pull request #4. It does not authorize a merge or release.
 
-The Asset Browser parity programme previously passed the ordinary five-job pull-request matrix. The subsequent editorial decision pass was committed as `4ea42637f7aa7ec07784d8a4472d80ccd7594cab` after its focused source gates passed. The full matrix for the receipt-bearing head remains the authoritative promotion evidence.
+The clean editorial decision-loop source commit is:
+
+```text
+92f673cdc2c81075fc1141302b9e1a2bfaa03c6d
+```
+
+Before that commit was written, the exact source passed its focused gate: patch integrity, TypeScript typechecking, Rust Core build, 46 workspace tests, 35 Linux/native source-contract tests, source builds, Rust formatting, and repository-boundary validation. The ordinary five-job matrix for this receipt-bearing head remains the authoritative compatible-package evidence.
 
 ## Product result
 
@@ -35,12 +41,13 @@ The parity build could find and inspect material, but a deck researcher also nee
 
 - a transient Shortlist capped at 32 Assets;
 - range extension across the virtual contact sheet;
+- explicit ordering, with the first four Shortlist positions becoming Compare slots;
 - an ordered four-up Compare Board with shared Fit, 100%, and 200% zoom;
 - optional normalized pan synchronization across differently sized images;
-- visible review, Tags and Used In context;
+- visible review, Tags, and Used In context;
 - explicit placeholders for catalogue-only and unavailable candidates;
 - per-candidate Keep, Maybe, Reject, Open, Reveal, and Copy Path actions;
-- accessible Shortlist reordering that determines the four Compare slots;
+- accessible Shortlist reordering;
 - batch review, tag, Used In, and Collection operations;
 - keyboard shortcuts for shortlist, compare, and rapid review;
 - partial-conflict reporting instead of all-or-nothing concealment;
@@ -48,7 +55,7 @@ The parity build could find and inspect material, but a deck researcher also nee
 - full visible-summary refresh after tags, Used In, size, category, MIME, extension, or preview capability changes;
 - recoverable Inspector failure state with stale Asset details removed.
 
-The Shortlist is intentionally session-local. It is a working comparison surface, not hidden canonical project meaning.
+The Shortlist is intentionally session-local. It is a working comparison surface, not hidden canonical project meaning. Durable decisions belong in review state, Tags, Used In, notes, titles, and Collections.
 
 ## Security and product boundaries
 
@@ -58,20 +65,20 @@ The Shortlist is intentionally session-local. It is a working comparison surface
 - The workspace does not gain unrestricted filesystem, shell, process, SQL, network, or arbitrary IPC access.
 - Catalogue breadth is not described as universal preview breadth.
 - Automatic rescanning is explicit and opt-in.
-- Compare is capped and Shortlist work is bounded.
+- Compare is capped at four visible candidates and Shortlist work is bounded at 32.
 - Font consolidation remains outside Reference Library because it belongs to the standalone font product and would introduce a source-copy workflow into a currently non-mutating application.
 
-## Fresh verification requirement
+## Exact-head verification requirement
 
-This push repairs stale Linux contract fixtures and Rust formatting exposed by the previous exact-head run, then extends the editorial decision loop. Its exact commit must freshly pass:
+The receipt-bearing head must freshly pass:
 
-- repository boundary, generated icon, release metadata, dependency-licence and legal-bundle checks;
-- TypeScript typechecking, Linux/native contract tests, workspace tests and source builds;
-- Rust formatting, Clippy with warnings denied, complete Rust tests and T01/V1 semantic round trips;
+- repository boundary, generated icon, release metadata, dependency-licence, and legal-bundle checks;
+- TypeScript typechecking, Linux/native contract tests, workspace tests, and source builds;
+- Rust formatting, Clippy with warnings denied, complete Rust tests, and T01/V1 semantic round trips;
 - extracted Linux packages under X11 and headless Wayland;
-- Swift tests and Apple-Silicon application build, extraction, checksums and source-bound receipt validation.
+- Swift tests and Apple-Silicon application build, extraction, checksums, and source-bound receipt validation.
 
-The final exact SHA and workflow results are added only after that run completes.
+The final workflow run ID and exact receipt-bearing SHA will be recorded only after that matrix completes.
 
 ## Remaining proof boundary
 
