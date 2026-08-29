@@ -81,7 +81,8 @@ jobs:
           end = tests.index('\nfunction hostNode()', start)
           replacement = '''function select(name: string, scope: ParentNode = hostNode()): HTMLSelectElement {
             const found = [...scope.querySelectorAll<HTMLSelectElement>("select")].find((element) => {
-              if (element.getAttribute("aria-label") === name) return true;
+              const accessibleName = element.getAttribute("aria-label");
+              if (accessibleName === name || accessibleName?.startsWith(`${name} `)) return true;
               const directLabel = element.closest("label")?.querySelector<HTMLElement>(":scope > span")?.textContent?.trim();
               return directLabel === name;
             });
