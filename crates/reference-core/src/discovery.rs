@@ -607,18 +607,13 @@ fn refresh_existing(
     candidate: &FileCandidate,
     timestamp: i64,
 ) -> Result<(), CoreError> {
-    let location_state = if candidate.preview_kind == "none" {
-        "unreadable"
-    } else {
-        "present"
-    };
     transaction.execute(
         "UPDATE locations SET state = ?1, relative_path_display = ?2,
              last_stat_size = ?3, last_stat_mtime_ms = ?4,
              platform_file_id = ?5, platform_file_id_kind = ?6, updated_at_ms = ?7
          WHERE id = ?8",
         params![
-            location_state,
+            candidate.location_state,
             candidate.relative_display,
             candidate.byte_size as i64,
             candidate.mtime_ms,
@@ -698,11 +693,6 @@ fn insert_new(
         ],
     )?;
     insert_revision(transaction, &revision_id, &source_id, candidate, timestamp)?;
-    let location_state = if candidate.preview_kind == "none" {
-        "unreadable"
-    } else {
-        "present"
-    };
     transaction.execute(
         "INSERT INTO locations (
             id, root_id, source_id, relative_path_bytes, relative_path_display,
@@ -717,7 +707,7 @@ fn insert_new(
             candidate.relative_display,
             candidate.platform_file_id,
             candidate.platform_file_id_kind,
-            location_state,
+            candidate.location_state,
             candidate.byte_size as i64,
             candidate.mtime_ms,
             timestamp
@@ -960,6 +950,7 @@ struct FileCandidate {
     platform_file_id: Option<Vec<u8>>,
     platform_file_id_kind: Option<String>,
     platform_link_count: Option<u64>,
+    location_state: &'static str,
     mime_type: String,
     media_family: String,
     preview_kind: String,
@@ -993,6 +984,11 @@ impl FileCandidate {
         } else {
             None
         };
+        let location_state = if kind.dimension_probe && eligible_size && dimensions.is_none() {
+            "unreadable"
+        } else {
+            "present"
+        };
         let grid_servable = kind.grid_candidate
             && dimensions.is_some_and(|value| valid_dimensions(value.width, value.height));
         let (pixel_width, pixel_height) = dimensions
@@ -1020,6 +1016,7 @@ impl FileCandidate {
             platform_file_id,
             platform_file_id_kind,
             platform_link_count,
+            location_state,
             mime_type: kind.mime_type.into(),
             media_family: kind.media_family.into(),
             preview_kind: kind.preview_kind.into(),
@@ -1055,6 +1052,11 @@ impl FileCandidate {
         let dimensions = (kind.dimension_probe && eligible_size)
             .then(|| read_dimensions(file.try_clone().ok()?, cancelled))
             .flatten();
+        let location_state = if kind.dimension_probe && eligible_size && dimensions.is_none() {
+            "unreadable"
+        } else {
+            "present"
+        };
         let grid_servable = kind.grid_candidate
             && dimensions.is_some_and(|value| valid_dimensions(value.width, value.height));
         let (pixel_width, pixel_height) = dimensions
@@ -1082,6 +1084,7 @@ impl FileCandidate {
             platform_file_id,
             platform_file_id_kind,
             platform_link_count,
+            location_state,
             mime_type: kind.mime_type.into(),
             media_family: kind.media_family.into(),
             preview_kind: kind.preview_kind.into(),

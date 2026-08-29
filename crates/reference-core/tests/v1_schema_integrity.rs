@@ -128,6 +128,11 @@ fn sequential_migrations_preserve_existing_jobs_and_match_the_embedded_ledger() 
                 3,
                 "v1_async_rendition_jobs".into(),
                 "6670bc4e3fc09b0489f8c1f35611df625f5d5b69c394a8ff7fa7576933132c94".into()
+            ),
+            (
+                4,
+                "asset_browser_feature_parity".into(),
+                "0ea805d7e80ba293de0a86c40ea4a13d67feddcbfe3f725062e49fbce45249cb".into()
             )
         ]
     );

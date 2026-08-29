@@ -96,6 +96,7 @@ fn named_curation_is_durable_optimistic_and_normalizes_text_consistently() {
                 custom_title: TextPatch::Set(" \t\n ".into()),
                 review_state: None,
                 note: TextPatch::Set(" \n ".into()),
+                ..AssetPatch::default()
             },
         )
         .unwrap();
@@ -271,6 +272,7 @@ fn typed_filters_compose_and_each_asset_is_projected_once() {
                 collection_id: Some(collection.collection_id),
                 root_id: None,
                 sort: AssetSort::NameDescending,
+                ..AssetQuery::default()
             },
         )
         .unwrap();
@@ -369,6 +371,7 @@ fn composed_query_filters_and_sort_page_without_duplicates_or_gaps() {
         collection_id: Some(collection.collection_id),
         root_id: Some(original_root_id),
         sort: AssetSort::NameDescending,
+        ..AssetQuery::default()
     };
     let mut offset = 0;
     let mut snapshot = None;
@@ -415,11 +418,12 @@ fn every_availability_filter_projects_durable_root_and_location_truth() {
         .remove(0);
     let root_id = session.query_roots().unwrap()[0].root_id.clone();
     let connection = rusqlite::Connection::open(project.library.join("library.sqlite")).unwrap();
-    for (root_state, location_state, mime, filter, expected) in [
+    for (root_state, location_state, mime, preview_kind, filter, expected) in [
         (
             "ready",
             "present",
             "image/png",
+            "image",
             AvailabilityFilter::Present,
             "present",
         ),
@@ -427,6 +431,7 @@ fn every_availability_filter_projects_durable_root_and_location_truth() {
             "ready",
             "missing",
             "image/png",
+            "image",
             AvailabilityFilter::Missing,
             "missing",
         ),
@@ -434,6 +439,7 @@ fn every_availability_filter_projects_durable_root_and_location_truth() {
             "ready",
             "permission_denied",
             "image/png",
+            "image",
             AvailabilityFilter::NeedsPermission,
             "needs_permission",
         ),
@@ -441,6 +447,7 @@ fn every_availability_filter_projects_durable_root_and_location_truth() {
             "unavailable",
             "present",
             "image/png",
+            "image",
             AvailabilityFilter::Unavailable,
             "unavailable",
         ),
@@ -448,6 +455,7 @@ fn every_availability_filter_projects_durable_root_and_location_truth() {
             "offline_volume",
             "present",
             "image/png",
+            "image",
             AvailabilityFilter::OfflineVolume,
             "offline_volume",
         ),
@@ -455,13 +463,15 @@ fn every_availability_filter_projects_durable_root_and_location_truth() {
             "ready",
             "unreadable",
             "image/png",
+            "image",
             AvailabilityFilter::Unreadable,
             "unreadable",
         ),
         (
             "ready",
-            "unreadable",
-            "image/gif",
+            "present",
+            "image/vnd.adobe.photoshop",
+            "none",
             AvailabilityFilter::Unsupported,
             "unsupported",
         ),
@@ -474,10 +484,15 @@ fn every_availability_filter_projects_durable_root_and_location_truth() {
             .unwrap();
         connection
             .execute(
-                "UPDATE source_revisions SET mime_detected=?1 WHERE id=(
+                "UPDATE source_revisions
+                 SET mime_detected=?1,
+                     media_metadata_json=json_set(
+                         media_metadata_json, '$.previewKind', ?2
+                     )
+                 WHERE id=(
                    SELECT current_revision_id FROM sources LIMIT 1
                  )",
-                [mime],
+                params![mime, preview_kind],
             )
             .unwrap();
         connection
@@ -750,6 +765,7 @@ fn maximum_note_never_inflates_the_maximum_contact_sheet_page_frame() {
         items: vec![summary; 250],
         next_offset: None,
         library_revision: 1,
+        facets: Default::default(),
     };
     let bytes = serde_json::to_vec(&page).unwrap();
     assert!(bytes.len() < MAX_FRAME_BYTES);

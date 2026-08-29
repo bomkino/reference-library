@@ -17,6 +17,7 @@ use uuid::Uuid;
 const MIGRATION_0001: &str = include_str!("../../../migrations/0001_t01.sql");
 const MIGRATION_0002: &str = include_str!("../../../migrations/0002_v1_domain.sql");
 const MIGRATION_0003: &str = include_str!("../../../migrations/0003_rendition_jobs.sql");
+const MIGRATION_0004: &str = include_str!("../../../migrations/0004_asset_browser_parity.sql");
 
 struct CoreProcess {
     child: Child,
@@ -585,6 +586,7 @@ fn create_schema(connection: &Connection) {
         .unwrap();
     connection.execute_batch(MIGRATION_0002).unwrap();
     connection.execute_batch(MIGRATION_0003).unwrap();
+    connection.execute_batch(MIGRATION_0004).unwrap();
 }
 
 fn insert_semantic_fixture(connection: &Connection) {

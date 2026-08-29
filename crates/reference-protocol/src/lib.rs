@@ -88,7 +88,7 @@ pub enum Command {
         offset: u64,
         limit: u32,
         projection: AssetProjection,
-        query: AssetQuery,
+        query: Box<AssetQuery>,
         #[serde(default)]
         expected_library_revision: Option<u64>,
     },

@@ -63,7 +63,7 @@ impl TestProject {
         self.directory.join("Source Root")
     }
 
-    fn write_common_stills(&self) {
+    fn write_common_catalogue(&self) {
         let root = self.root_path();
         fs::create_dir_all(root.join("nested")).unwrap();
         fs::write(root.join("alpha.png"), decode_hex(PNG_HEX)).unwrap();
@@ -115,9 +115,9 @@ fn package_lock_manifest_and_reopen_are_publicly_safe() {
 }
 
 #[test]
-fn stills_progress_page_preview_reveal_missing_and_round_trip() {
+fn catalogue_progress_page_preview_reveal_missing_and_round_trip() {
     let project = TestProject::new();
-    project.write_common_stills();
+    project.write_common_catalogue();
     let mut session = LibrarySession::create(project.library_path(), "Project".into()).unwrap();
     let plan = session
         .add_root(project.root_path(), "Source Root".into())
@@ -134,14 +134,21 @@ fn stills_progress_page_preview_reveal_missing_and_round_trip() {
     let first_page = session
         .query_assets(0, 2, AssetProjection::ContactSheetStandard)
         .unwrap();
-    assert_eq!(first_page.total, 3);
+    assert_eq!(first_page.total, 4);
     assert_eq!(first_page.items.len(), 2);
     assert_eq!(first_page.next_offset, Some(2));
     let second_page = session
         .query_assets(2, 2, AssetProjection::ContactSheetStandard)
         .unwrap();
-    assert_eq!(second_page.items.len(), 1);
+    assert_eq!(second_page.items.len(), 2);
     assert_eq!(second_page.next_offset, None);
+    assert!(
+        first_page
+            .items
+            .iter()
+            .chain(&second_page.items)
+            .any(|item| item.extension.as_deref() == Some("txt"))
+    );
     let all_ids = first_page
         .items
         .iter()
@@ -191,7 +198,7 @@ fn stills_progress_page_preview_reveal_missing_and_round_trip() {
     let after_missing = reopened
         .query_assets(0, 10, AssetProjection::ContactSheetStandard)
         .unwrap();
-    assert_eq!(after_missing.total, 3);
+    assert_eq!(after_missing.total, 4);
     assert_eq!(
         after_missing
             .items

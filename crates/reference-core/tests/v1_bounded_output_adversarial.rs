@@ -11,6 +11,7 @@ use rusqlite::{Connection, params};
 const MIGRATION_0001: &str = include_str!("../../../migrations/0001_t01.sql");
 const MIGRATION_0002: &str = include_str!("../../../migrations/0002_v1_domain.sql");
 const MIGRATION_0003: &str = include_str!("../../../migrations/0003_rendition_jobs.sql");
+const MIGRATION_0004: &str = include_str!("../../../migrations/0004_asset_browser_parity.sql");
 
 #[test]
 fn worst_case_canonical_asset_pages_fit_the_public_frame_without_gaps() {
@@ -26,6 +27,7 @@ fn worst_case_canonical_asset_pages_fit_the_public_frame_without_gaps() {
         .unwrap();
     connection.execute_batch(MIGRATION_0002).unwrap();
     connection.execute_batch(MIGRATION_0003).unwrap();
+    connection.execute_batch(MIGRATION_0004).unwrap();
 
     let note = "🧪".repeat(MAX_NOTE_CHARS);
     let title = "界".repeat(MAX_TITLE_CHARS);

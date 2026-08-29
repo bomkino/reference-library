@@ -53,7 +53,9 @@ pub fn query_assets(
                      WHEN l.state = 'permission_denied' THEN 'needs_permission'
                      WHEN l.state = 'offline_root' THEN 'offline_volume'
                      WHEN l.state = 'moved_candidate' THEN 'unavailable'
-                     WHEN l.state = 'unreadable' THEN 'unsupported'
+                     WHEN l.state = 'unreadable' THEN 'unreadable'
+                     WHEN json_extract(sr.media_metadata_json, '$.previewKind') = 'none'
+                          THEN 'unsupported'
                      ELSE l.state
                    END AS state,
                    s.media_family, sr.mime_detected, sr.extension_observed,
@@ -666,7 +668,9 @@ fn asset_detail(
                      WHEN l.state = 'permission_denied' THEN 'needs_permission'
                      WHEN l.state = 'offline_root' THEN 'offline_volume'
                      WHEN l.state = 'moved_candidate' THEN 'unavailable'
-                     WHEN l.state = 'unreadable' THEN 'unsupported'
+                     WHEN l.state = 'unreadable' THEN 'unreadable'
+                     WHEN json_extract(sr.media_metadata_json, '$.previewKind') = 'none'
+                          THEN 'unsupported'
                      ELSE l.state
                    END AS state,
                    s.media_family, sr.mime_detected, sr.extension_observed,

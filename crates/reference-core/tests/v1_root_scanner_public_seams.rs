@@ -183,7 +183,7 @@ fn jobs_are_bounded_filterable_and_recovery_is_terminal() {
 }
 
 #[test]
-fn unsupported_and_corrupt_stills_remain_catalogued_with_distinct_truth() {
+fn broad_catalogue_preserves_supported_unsupported_and_corrupt_truth() {
     let project = Project::new();
     let root = project.root("Root");
     fs::create_dir(&root).unwrap();
@@ -195,23 +195,24 @@ fn unsupported_and_corrupt_stills_remain_catalogued_with_distinct_truth() {
     )
     .unwrap();
     fs::write(root.join("extension-only.png"), b"not image bytes").unwrap();
+    fs::write(root.join("layout.psd"), b"8BPS catalogue-only payload").unwrap();
     let mut session = LibrarySession::create(&project.library, "Catalogue".into()).unwrap();
     let plan = session.add_root(&root, "Root".into()).unwrap();
     let root_id = plan.root_id.clone();
     run(plan);
     let root_summary = session.query_roots().unwrap().remove(0);
-    assert_eq!(root_summary.observed_count, 4);
-    assert_eq!(root_summary.unsupported_count, 3);
+    assert_eq!(root_summary.observed_count, 5);
+    assert_eq!(root_summary.unsupported_count, 1);
     let page = session
         .query_assets(0, 10, AssetProjection::ContactSheetStandard)
         .unwrap();
-    assert_eq!(page.total, 4);
+    assert_eq!(page.total, 5);
     assert_eq!(
         page.items
             .iter()
             .filter(|asset| asset.availability == "unreadable")
             .count(),
-        2
+        1
     );
     assert_eq!(
         page.items
@@ -220,13 +221,20 @@ fn unsupported_and_corrupt_stills_remain_catalogued_with_distinct_truth() {
             .count(),
         1
     );
+    assert_eq!(
+        page.items
+            .iter()
+            .filter(|asset| asset.availability == "present")
+            .count(),
+        3
+    );
 
     fs::write(root.join("good.png"), b"formerly valid, now corrupt").unwrap();
     run(session.rescan_root(&root_id).unwrap());
     let page = session
         .query_assets(0, 10, AssetProjection::ContactSheetStandard)
         .unwrap();
-    assert_eq!(page.total, 4);
+    assert_eq!(page.total, 5);
     let formerly_valid = page
         .items
         .iter()
@@ -309,7 +317,7 @@ fn catalogue_only_oversized_sources_detect_bounded_middle_mutations() {
         .unwrap()
         .items
         .remove(0);
-    assert_eq!(asset.availability, "unreadable");
+    assert_eq!(asset.availability, "present");
     session.close().unwrap();
 }
 

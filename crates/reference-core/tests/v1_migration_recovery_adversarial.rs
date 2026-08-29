@@ -7,8 +7,7 @@ use uuid::Uuid;
 const MIGRATION_0001: &str = include_str!("../../../migrations/0001_t01.sql");
 const MIGRATION_0002: &str = include_str!("../../../migrations/0002_v1_domain.sql");
 const MIGRATION_0003: &str = include_str!("../../../migrations/0003_rendition_jobs.sql");
-const MIGRATION_0004: &str =
-    include_str!("../../../migrations/0004_asset_browser_parity.sql");
+const MIGRATION_0004: &str = include_str!("../../../migrations/0004_asset_browser_parity.sql");
 
 struct PopulatedPackage {
     directory: PathBuf,
@@ -196,10 +195,7 @@ fn populated_schema_one_migrates_without_rekeying_canonical_identity() {
         single_id(&connection, "asset_origins"),
         expected.asset_origin
     );
-    assert_eq!(
-        single_id(&connection, "renditions"),
-        expected.rendition
-    );
+    assert_eq!(single_id(&connection, "renditions"), expected.rendition);
     assert_eq!(single_id(&connection, "jobs"), expected.job);
     assert_eq!(
         connection
