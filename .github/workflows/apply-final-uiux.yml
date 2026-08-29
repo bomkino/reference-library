@@ -90,6 +90,21 @@ jobs:
           source, replacements = query_ref_block.subn(replacement, source, count=1)
           if replacements != 1:
               raise SystemExit(f"expected one local query composition block, found {replacements}")
+
+          event_replacements = {
+              'onChange={(event) => emitChange((current) => ({ ...current, sort: event.target.value as AssetQuery["sort"] }))}':
+                  'onChange={(event) => { const sort = event.target.value as AssetQuery["sort"]; emitChange((current) => ({ ...current, sort })); }}',
+              'onChange={(event) => emitChange((current) => ({ ...current, rootId: event.target.value || null }))}':
+                  'onChange={(event) => { const rootId = event.target.value || null; emitChange((current) => ({ ...current, rootId })); }}',
+              'onChange={(event) => emitChange((current) => ({ ...current, reviewStates: event.target.value ? [event.target.value as ReviewState] : [] }))}':
+                  'onChange={(event) => { const reviewState = event.target.value as ReviewState | ""; emitChange((current) => ({ ...current, reviewStates: reviewState ? [reviewState] : [] })); }}',
+              'onChange={(event) => emitChange((current) => ({ ...current, availability: event.target.value ? [event.target.value as Availability] : [] }))}':
+                  'onChange={(event) => { const availability = event.target.value as Availability | ""; emitChange((current) => ({ ...current, availability: availability ? [availability] : [] })); }}',
+          }
+          for old_event, new_event in event_replacements.items():
+              if source.count(old_event) != 1:
+                  raise SystemExit(f"expected one captured filter event seam, found {source.count(old_event)} for {old_event}")
+              source = source.replace(old_event, new_event, 1)
           toolbar.write_text(source)
 
           app = Path("packages/workspace/src/app.tsx")
