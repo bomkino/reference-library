@@ -359,7 +359,7 @@ app.whenReady().then(async () => {
     await evaluate(window, "close view settings", `document.querySelector('.view-settings > summary').click()`);
 
     await clickText(window, ".query-commandbar button", "Filters");
-    await waitFor(window, "filter panel", "document.querySelector('.query-surface--filters-open') && document.querySelector('.filter-panel')");
+    await waitFor(window, "filter panel", "document.querySelector('.query-commandbar__filters[aria-expanded=\"true\"]') && document.querySelector('.filter-panel')");
     await capture(window, "06-filter-drawer");
     await clickText(window, ".query-commandbar button", "Filters");
 

@@ -105,7 +105,7 @@ jobs:
       - name: Capture and audit representative workspace layouts
         run: npm run audit:visual
       - name: Upload failed visual-audit evidence
-        if: failure() && startsWith(github.ref, 'refs/heads/') && hashFiles('release/visual-audit/report.json') != ''
+        if: failure() && hashFiles('release/visual-audit/report.json') != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: reference-library-visual-audit-${{ github.sha }}
