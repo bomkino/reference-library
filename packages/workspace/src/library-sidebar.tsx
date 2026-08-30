@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { FolderPlus, PencilSimple, Trash } from "@phosphor-icons/react";
 import {
   MAX_COLLECTION_NAME_SCALARS,
   type CollectionSummary,
@@ -10,6 +11,7 @@ import {
 import { textLimitError } from "./text-boundaries";
 import { handleDialogKey } from "./dialog-keys";
 import { safeErrorMessage } from "./safe-errors";
+import { UiIcon } from "./ui-icon";
 
 export function LibrarySidebar(props: {
   bridge: ReferenceWorkspaceBridge;
@@ -145,6 +147,11 @@ export function LibrarySidebar(props: {
       className={`sidebar${props.drawerOpen ? " sidebar--drawer-open" : ""}`}
       id="library-navigation"
       aria-label="Library navigation"
+      aria-modal={props.drawerOpen || undefined}
+      role={props.drawerOpen ? "dialog" : undefined}
+      onKeyDown={(event) => {
+        if (props.drawerOpen && !deleting) handleDialogKey(event, props.onClose);
+      }}
       onKeyDownCapture={(event) => {
         if (deleting && event.key === "Escape") {
           event.preventDefault();
@@ -164,7 +171,7 @@ export function LibrarySidebar(props: {
       <section aria-labelledby="roots-heading">
         <div className="section-heading">
           <h2 id="roots-heading">Roots</h2>
-          <button className="button--quiet" data-add-root disabled={props.disabled || authorityBusy} onClick={props.onAddRoot}>Add Root</button>
+          <button className="button--quiet" data-add-root disabled={props.disabled || authorityBusy} onClick={props.onAddRoot}><UiIcon icon={FolderPlus} />{" "}Add Root</button>
         </div>
         {roots.length === 0 ? <p className="muted">No Root authorized.</p> : (
           <ul className="plain-list">
@@ -209,8 +216,8 @@ export function LibrarySidebar(props: {
               ) : (
                 <>
                   <button className={props.selectedCollectionId === collection.collectionId ? "nav-choice nav-choice--active" : "nav-choice"} disabled={props.disabled} onClick={() => { props.onCollectionChange(collection.collectionId); props.onClose(); }}>{collection.name}<span>{collection.assetCount}</span></button>
-                  <button className="icon-button" aria-label={`Rename ${collection.name}`} title={`Rename ${collection.name}`} disabled={props.disabled} onClick={(event) => { returnFocus.current = event.currentTarget; setEditing(collection); setRename(collection.name); }}><span className="ui-icon ui-icon--edit" aria-hidden="true" /></button>
-                  <button className="icon-button" aria-label={`Delete ${collection.name}`} title={`Delete ${collection.name}`} disabled={props.disabled} onClick={(event) => { returnFocus.current = event.currentTarget; setDeleting(collection); }}><span className="ui-icon ui-icon--trash" aria-hidden="true" /></button>
+                  <button className="icon-button" aria-label={`Rename ${collection.name}`} title={`Rename ${collection.name}`} disabled={props.disabled} onClick={(event) => { returnFocus.current = event.currentTarget; setEditing(collection); setRename(collection.name); }}><UiIcon icon={PencilSimple} /></button>
+                  <button className="icon-button" aria-label={`Delete ${collection.name}`} title={`Delete ${collection.name}`} disabled={props.disabled} onClick={(event) => { returnFocus.current = event.currentTarget; setDeleting(collection); }}><UiIcon icon={Trash} /></button>
                 </>
               )}
             </li>

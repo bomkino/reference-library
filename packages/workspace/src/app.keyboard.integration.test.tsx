@@ -153,6 +153,35 @@ describe("V1 keyboard daily-use seams", () => {
     expect(harness.calls.revealLocation).toBe(1);
   });
 
+  it("moves focus into responsive drawers, traps it there, and restores the invoking control", async () => {
+    await focusAndPress(button("New Library"), "Enter");
+    await waitFor(() => expect(host.querySelector('[data-asset-id="asset-1"]')).not.toBeNull());
+    await focusAndPress(host.querySelector<HTMLElement>('[data-asset-id="asset-1"]')!, " ");
+    await waitFor(() => expect(input("Title")).not.toBeNull());
+
+    const libraryTrigger = button("Library");
+    await focusAndPress(libraryTrigger, "Enter");
+    const libraryDrawer = host.querySelector<HTMLElement>("#library-navigation")!;
+    expect(libraryDrawer.getAttribute("role")).toBe("dialog");
+    expect(libraryDrawer.getAttribute("aria-modal")).toBe("true");
+    await waitFor(() => expect(document.activeElement).toBe(button("Close", libraryDrawer)));
+    await press("Tab", true);
+    expect(libraryDrawer.contains(document.activeElement)).toBe(true);
+    await press("Escape");
+    expect(libraryDrawer.getAttribute("role")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(libraryTrigger));
+
+    const inspectorTrigger = button("Selected Reference");
+    await focusAndPress(inspectorTrigger, "Enter");
+    const inspectorDrawer = host.querySelector<HTMLElement>("#asset-inspector")!;
+    expect(inspectorDrawer.getAttribute("role")).toBe("dialog");
+    expect(inspectorDrawer.getAttribute("aria-modal")).toBe("true");
+    await waitFor(() => expect(document.activeElement).toBe(button("Close", inspectorDrawer)));
+    await press("Escape");
+    expect(inspectorDrawer.getAttribute("role")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(inspectorTrigger));
+  });
+
   it("saves a dirty Inspector draft before rapid review and refreshes the revision before the second write", async () => {
     await focusAndPress(button("New Library"), "Enter");
     await waitFor(() => expect(host.querySelector('[data-asset-id="asset-1"]')).not.toBeNull());

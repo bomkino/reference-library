@@ -1,4 +1,5 @@
 import { useState, type KeyboardEvent } from "react";
+import { ArrowSquareOut, CaretDown, Copy, FolderOpen, X } from "@phosphor-icons/react";
 import {
   MAX_ASSET_NOTE_SCALARS,
   MAX_ASSET_TITLE_SCALARS,
@@ -12,6 +13,8 @@ import type { AssetDraft } from "./use-asset-editor";
 import { normalizeTokens } from "./use-asset-editor";
 import { safeRelativeDisplayPath, textLimitError } from "./text-boundaries";
 import { safeErrorMessage } from "./safe-errors";
+import { handleDialogKey } from "./dialog-keys";
+import { UiIcon } from "./ui-icon";
 
 export function AssetInspector(props: {
   bridge: ReferenceWorkspaceBridge;
@@ -37,11 +40,16 @@ export function AssetInspector(props: {
   const noteError = props.draft ? textLimitError(props.draft.note, MAX_ASSET_NOTE_SCALARS, "Note") : null;
   const tokenErrors = props.draft ? tokenFieldErrors(props.draft) : { tags: null, usedIn: null };
   const cannotSave = Boolean(titleError || noteError || tokenErrors.tags || tokenErrors.usedIn || props.saving);
+  const drawerDialog = props.drawerOpen ? {
+    "aria-modal": true,
+    onKeyDown: (event: KeyboardEvent<HTMLElement>) => handleDialogKey(event, props.onClose),
+    role: "dialog" as const,
+  } : {};
 
-  if (props.loading) return <aside className={`inspector${props.drawerOpen ? " inspector--drawer-open" : ""}`} id="asset-inspector" aria-label="Inspector" aria-busy="true"><div className="inspector-empty"><p className="eyebrow">Inspector</p><h2>Loading reference…</h2></div></aside>;
+  if (props.loading) return <aside {...drawerDialog} className={`inspector${props.drawerOpen ? " inspector--drawer-open" : ""}`} id="asset-inspector" aria-label="Inspector" aria-busy="true"><div className="inspector-empty"><p className="eyebrow">Inspector</p><h2>Loading reference…</h2></div></aside>;
   if (!props.detail || !props.draft) {
     return (
-      <aside className={`inspector inspector--empty${props.drawerOpen ? " inspector--drawer-open" : ""}`} id="asset-inspector" aria-label="Inspector">
+      <aside {...drawerDialog} className={`inspector inspector--empty${props.drawerOpen ? " inspector--drawer-open" : ""}`} id="asset-inspector" aria-label="Inspector">
         <div className="inspector-empty">
           <div className="section-heading">
             <p className="eyebrow">Inspector</p>
@@ -84,7 +92,7 @@ export function AssetInspector(props: {
   };
 
   return (
-    <aside className={`inspector inspector--active${props.drawerOpen ? " inspector--drawer-open" : ""}`} id="asset-inspector" aria-label="Inspector">
+    <aside {...drawerDialog} className={`inspector inspector--active${props.drawerOpen ? " inspector--drawer-open" : ""}`} id="asset-inspector" aria-label="Inspector">
       <InspectorVisual bridge={props.bridge} sessionId={props.sessionId} detail={detail} onPreview={() => props.onPreview(detail)} />
 
       <div className="inspector__identity">
@@ -100,9 +108,9 @@ export function AssetInspector(props: {
       </div>
 
       <div className="inspector__source-actions">
-        <button disabled={!sourceAvailable} onClick={() => void nativeAction("open")}>Open Original</button>
-        <button className="button--secondary" disabled={!sourceAvailable} onClick={() => void nativeAction("reveal")}>Reveal</button>
-        <button className="button--quiet" disabled={!sourceAvailable} onClick={() => void nativeAction("copy")}>Copy path</button>
+        <button disabled={!sourceAvailable} onClick={() => void nativeAction("open")}><UiIcon icon={ArrowSquareOut} />{" "}Open Original</button>
+        <button className="button--secondary" disabled={!sourceAvailable} onClick={() => void nativeAction("reveal")}><UiIcon icon={FolderOpen} />{" "}Reveal</button>
+        <button className="button--quiet" disabled={!sourceAvailable} onClick={() => void nativeAction("copy")}><UiIcon icon={Copy} />{" "}Copy path</button>
       </div>
       {actionStatus && <p className="inline-status" role="status">{actionStatus}</p>}
 
@@ -168,7 +176,7 @@ export function AssetInspector(props: {
       </section>
 
       <details className="inspector__disclosure">
-        <summary>File details <span>{detail.availability}</span></summary>
+        <summary><span className="inspector__disclosure-label"><span className="disclosure-icon"><UiIcon icon={CaretDown} /></span>File details</span><span>{detail.availability}</span></summary>
         <dl>
           <dt>Original</dt><dd>{detail.originalDisplayName}</dd>
           <dt>Category</dt><dd>{detail.category}</dd>
@@ -182,7 +190,7 @@ export function AssetInspector(props: {
       </details>
 
       <details className="inspector__disclosure">
-        <summary>Collections <span>{detail.collectionIds.length}</span></summary>
+        <summary><span className="inspector__disclosure-label"><span className="disclosure-icon"><UiIcon icon={CaretDown} /></span>Collections</span><span>{detail.collectionIds.length}</span></summary>
         <fieldset className="membership" disabled={props.dirty || props.saving}>
           <legend className="visually-hidden">Collections</legend>
           {props.collections.length === 0 ? <p className="muted">No Collections yet.</p> : props.collections.map((collection) => {
@@ -270,7 +278,7 @@ function TokenEditor(props: {
       <span className="token-field__label">{props.label}</span>
       <div className="token-field__box" data-invalid={Boolean(props.error) || undefined}>
         {props.values.map((value) => (
-          <span className="token" key={value}>{value}<button aria-label={`Remove ${value}`} type="button" onClick={() => props.onChange(props.values.filter((item) => item !== value))}>×</button></span>
+          <span className="token" key={value}>{value}<button aria-label={`Remove ${value}`} title={`Remove ${value}`} type="button" onClick={() => props.onChange(props.values.filter((item) => item !== value))}><UiIcon icon={X} /></button></span>
         ))}
         <input
           aria-label={props.label}

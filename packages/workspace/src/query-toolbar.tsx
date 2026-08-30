@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { FunnelSimple, MagnifyingGlass, X } from "@phosphor-icons/react";
 import {
   MAX_SEARCH_SCALARS,
   type AssetFacets,
@@ -9,6 +10,7 @@ import {
   type RootSummary,
 } from "@pitchdog/reference-bridge";
 import { textLimitError } from "./text-boundaries";
+import { UiIcon } from "./ui-icon";
 
 export function QueryToolbar(props: {
   query: AssetQuery;
@@ -70,7 +72,7 @@ export function QueryToolbar(props: {
             onChange={(event) => setSearch(event.target.value)}
           />
         </label>
-        <button disabled={props.disabled || Boolean(searchError)} type="submit">Search</button>
+        <button disabled={props.disabled || Boolean(searchError)} type="submit"><UiIcon icon={MagnifyingGlass} />{" "}Search</button>
         <label className="query-commandbar__sort">
           <span className="visually-hidden">Sort Assets</span>
           <select
@@ -97,7 +99,7 @@ export function QueryToolbar(props: {
           type="button"
           onClick={() => setFiltersOpen((open) => !open)}
         >
-          Filters{activeCount > 0 ? ` · ${activeCount}` : ""}
+          <UiIcon icon={FunnelSimple} />{" "}Filters{activeCount > 0 ? ` · ${activeCount}` : ""}
         </button>
         {searchError && <p className="field-error" id="search-limit-error" role="alert">{searchError}</p>}
       </form>
@@ -108,6 +110,7 @@ export function QueryToolbar(props: {
           <div className="active-filter-strip__chips">
             {activeFilters.map((filter) => (
               <button
+                aria-label={`Remove ${filter.label}`}
                 className="active-filter-chip"
                 disabled={props.disabled}
                 key={filter.key}
@@ -118,7 +121,7 @@ export function QueryToolbar(props: {
                   emitChange(filter.clear);
                 }}
               >
-                <span>{filter.label}</span><span aria-hidden>×</span>
+                <span>{filter.label}</span><UiIcon icon={X} />
               </button>
             ))}
           </div>

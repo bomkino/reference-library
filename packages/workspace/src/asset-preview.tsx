@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ArrowSquareOut, Copy, FolderOpen, Minus, Plus } from "@phosphor-icons/react";
 import type { AssetSummary, ReferenceWorkspaceBridge } from "@pitchdog/reference-bridge";
 import { handleDialogKey } from "./dialog-keys";
 import { safeErrorMessage } from "./safe-errors";
+import { UiIcon } from "./ui-icon";
 
 const ZOOM_LEVELS = [0.25, 0.5, 1, 2, 4] as const;
 
@@ -81,9 +83,9 @@ export function AssetPreview(props: {
           <p className="preview__subhead">{formatBytes(props.asset.byteSize)} · {props.asset.reviewState}</p>
         </div>
         <div className="preview__header-actions">
-          <button disabled={!sourceAvailable} onClick={() => void nativeAction("open")}>Open Original</button>
-          <button className="button--secondary" disabled={!sourceAvailable} onClick={() => void nativeAction("reveal")}>Reveal</button>
-          <button className="button--secondary" disabled={!sourceAvailable} onClick={() => void nativeAction("copy")}>Copy Path</button>
+          <button disabled={!sourceAvailable} onClick={() => void nativeAction("open")}><UiIcon icon={ArrowSquareOut} />{" "}Open Original</button>
+          <button className="button--secondary" disabled={!sourceAvailable} onClick={() => void nativeAction("reveal")}><UiIcon icon={FolderOpen} />{" "}Reveal</button>
+          <button className="button--secondary" disabled={!sourceAvailable} onClick={() => void nativeAction("copy")}><UiIcon icon={Copy} />{" "}Copy Path</button>
           <button ref={close} className="button--secondary" onClick={props.onClose}>Close</button>
         </div>
       </header>
@@ -91,9 +93,9 @@ export function AssetPreview(props: {
       {imagePreview && previewAvailable && (
         <div className="preview__toolbar" aria-label="Preview zoom">
           <button aria-pressed={fit} onClick={() => setFit(true)}>Fit</button>
-          <button aria-label="Zoom out" disabled={!fit && zoom === ZOOM_LEVELS[0]} onClick={() => stepZoom(-1)}>−</button>
+          <button aria-label="Zoom out" title="Zoom out" disabled={!fit && zoom === ZOOM_LEVELS[0]} onClick={() => stepZoom(-1)}><UiIcon icon={Minus} /></button>
           <output aria-live="polite">{fit ? "Fit" : `${Math.round(zoom * 100)}%`}</output>
-          <button aria-label="Zoom in" disabled={!fit && zoom === ZOOM_LEVELS.at(-1)} onClick={() => stepZoom(1)}>+</button>
+          <button aria-label="Zoom in" title="Zoom in" disabled={!fit && zoom === ZOOM_LEVELS.at(-1)} onClick={() => stepZoom(1)}><UiIcon icon={Plus} /></button>
         </div>
       )}
 

@@ -5,6 +5,7 @@ import {
   useState,
   type UIEvent,
 } from "react";
+import { ArrowLeft, ArrowRight, ArrowSquareOut, Copy, FolderOpen, X } from "@phosphor-icons/react";
 import type {
   AssetSummary,
   ReferenceWorkspaceBridge,
@@ -12,6 +13,7 @@ import type {
 } from "@pitchdog/reference-bridge";
 import { handleDialogKey } from "./dialog-keys";
 import { safeErrorMessage } from "./safe-errors";
+import { UiIcon } from "./ui-icon";
 
 type CompareZoom = "fit" | "fill" | 1 | 2;
 
@@ -158,9 +160,9 @@ export function CompareBoard(props: {
                   </span>
                 </div>
                 <div className="compare-card__order" role="group" aria-label={`Reorder ${asset.displayName}`}>
-                  <button className="button--quiet" aria-label={`Move ${asset.displayName} earlier`} disabled={busy || index === 0} onClick={() => props.onMove(asset.assetId, -1)}>←</button>
-                  <button className="button--quiet" aria-label={`Move ${asset.displayName} later`} disabled={busy || index === props.assets.length - 1} onClick={() => props.onMove(asset.assetId, 1)}>→</button>
-                  <button className="button--quiet" aria-label={`Remove ${asset.displayName} from comparison`} disabled={busy} onClick={() => props.onRemove(asset.assetId)}>×</button>
+                  <button className="button--quiet" aria-label={`Move ${asset.displayName} earlier`} title={`Move ${asset.displayName} earlier`} disabled={busy || index === 0} onClick={() => props.onMove(asset.assetId, -1)}><UiIcon icon={ArrowLeft} /></button>
+                  <button className="button--quiet" aria-label={`Move ${asset.displayName} later`} title={`Move ${asset.displayName} later`} disabled={busy || index === props.assets.length - 1} onClick={() => props.onMove(asset.assetId, 1)}><UiIcon icon={ArrowRight} /></button>
+                  <button className="button--quiet" aria-label={`Remove ${asset.displayName} from comparison`} title={`Remove ${asset.displayName} from comparison`} disabled={busy} onClick={() => props.onRemove(asset.assetId)}><UiIcon icon={X} /></button>
                 </div>
               </header>
 
@@ -195,9 +197,9 @@ export function CompareBoard(props: {
                   ))}
                 </div>
                 <div className="compare-card__native-actions">
-                  <button disabled={!sourceAvailable || busy} onClick={() => void nativeAction(asset, "open")}>Open</button>
-                  <button className="button--secondary" disabled={!sourceAvailable || busy} onClick={() => void nativeAction(asset, "reveal")}>Reveal</button>
-                  <button className="button--quiet" disabled={!sourceAvailable || busy} onClick={() => void nativeAction(asset, "copy")}>Copy path</button>
+                  <button disabled={!sourceAvailable || busy} onClick={() => void nativeAction(asset, "open")}><UiIcon icon={ArrowSquareOut} />{" "}Open</button>
+                  <button className="button--secondary" disabled={!sourceAvailable || busy} onClick={() => void nativeAction(asset, "reveal")}><UiIcon icon={FolderOpen} />{" "}Reveal</button>
+                  <button className="button--quiet" disabled={!sourceAvailable || busy} onClick={() => void nativeAction(asset, "copy")}><UiIcon icon={Copy} />{" "}Copy path</button>
                 </div>
               </footer>
             </article>

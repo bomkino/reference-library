@@ -24,6 +24,7 @@ jobs:
           python-version: "3.12"
       - run: python3 scripts/check_repository.py
       - run: node scripts/generate-product-icon.mjs --check
+      - run: npm run check:interface-system
       - run: node scripts/check-release-metadata.mjs
 
   rust-core:
@@ -75,6 +76,23 @@ jobs:
         with:
           node-version-file: ".node-version"
           cache: npm
+      - name: Read Linux release artifact names
+        id: release
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"
+          import { readFileSync } from "node:fs";
+
+          const metadata = JSON.parse(readFileSync("release-metadata.json", "utf8"));
+          const artifacts = metadata.targets?.["linux-x86_64"]?.artifacts;
+          if (!Array.isArray(artifacts) || artifacts.length !== 3) {
+            throw new Error("release metadata must declare exactly three Linux artifacts");
+          }
+          const [pacman, appimage, tarball] = artifacts;
+          console.log(`pacman=${pacman}`);
+          console.log(`appimage=${appimage}`);
+          console.log(`tarball=${tarball}`);
+          NODE
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
         with:
           toolchain: "1.90.0"
@@ -84,6 +102,16 @@ jobs:
       - run: npm ci
       - run: cargo build --release --locked -p reference-core
       - run: npm run build -w @pitchdog/reference-workspace
+      - name: Capture and audit representative workspace layouts
+        run: npm run audit:visual
+      - name: Upload failed visual-audit evidence
+        if: failure() && hashFiles('release/visual-audit/report.json') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: reference-library-visual-audit-${{ github.sha }}
+          path: release/visual-audit/
+          if-no-files-found: warn
+          retention-days: 14
       - run: npm run package -w @pitchdog/reference-linux
       - name: Validate exact extracted Linux artifacts
         run: >-
@@ -143,9 +171,9 @@ jobs:
           node scripts/write-artifact-checksums.mjs \
             --source "$GITHUB_SHA" --repository "$GITHUB_WORKSPACE" \
             --target linux-x86_64 --output release/linux/SHA256SUMS \
-            release/linux/reference-library-0.2.0-x64.pacman \
-            release/linux/reference-library-0.2.0-x86_64.AppImage \
-            release/linux/reference-library-0.2.0-x64.tar.gz
+            "release/linux/${{ steps.release.outputs.pacman }}" \
+            "release/linux/${{ steps.release.outputs.appimage }}" \
+            "release/linux/${{ steps.release.outputs.tarball }}"
           node scripts/verify-artifact-checksums.mjs \
             --require-clean-source --repository "$GITHUB_WORKSPACE" \
             release/linux/SHA256SUMS
@@ -155,9 +183,9 @@ jobs:
           --target linux-x86_64
           --checksums release/linux/SHA256SUMS
           --output release/linux/V1_BUILD_RECEIPT.json
-          release/linux/reference-library-0.2.0-x64.pacman
-          release/linux/reference-library-0.2.0-x86_64.AppImage
-          release/linux/reference-library-0.2.0-x64.tar.gz
+          "release/linux/${{ steps.release.outputs.pacman }}"
+          "release/linux/${{ steps.release.outputs.appimage }}"
+          "release/linux/${{ steps.release.outputs.tarball }}"
       - run: >-
           node scripts/verify-artifact-receipt.mjs
           --require-current-target --require-clean-source --repository "$GITHUB_WORKSPACE"
@@ -167,9 +195,9 @@ jobs:
         with:
           name: reference-library-linux-x86_64-${{ github.sha }}
           path: |
-            release/linux/reference-library-0.2.0-x64.pacman
-            release/linux/reference-library-0.2.0-x86_64.AppImage
-            release/linux/reference-library-0.2.0-x64.tar.gz
+            release/linux/${{ steps.release.outputs.pacman }}
+            release/linux/${{ steps.release.outputs.appimage }}
+            release/linux/${{ steps.release.outputs.tarball }}
             release/linux/SHA256SUMS
             release/linux/V1_BUILD_RECEIPT.json
             release/linux/LINUX_ARTIFACT_VALIDATION.json
@@ -177,6 +205,7 @@ jobs:
             release/linux/LINUX_X11_RUNTIME.json
             release/linux/LINUX_WAYLAND_SESSION.json
             release/linux/LINUX_WAYLAND_RUNTIME.json
+            release/visual-audit/
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
@@ -190,6 +219,20 @@ jobs:
         with:
           node-version-file: ".node-version"
           cache: npm
+      - name: Read macOS release artifact name
+        id: release
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"
+          import { readFileSync } from "node:fs";
+
+          const metadata = JSON.parse(readFileSync("release-metadata.json", "utf8"));
+          const artifacts = metadata.targets?.["macos-arm64"]?.artifacts;
+          if (!Array.isArray(artifacts) || artifacts.length !== 1) {
+            throw new Error("release metadata must declare exactly one macOS artifact");
+          }
+          console.log(`artifact=${artifacts[0]}`);
+          NODE
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
         with:
           toolchain: "1.90.0"
@@ -213,7 +256,7 @@ jobs:
           node scripts/write-artifact-checksums.mjs \
             --source "$GITHUB_SHA" --repository "$GITHUB_WORKSPACE" \
             --target macos-arm64 --output release/macos/SHA256SUMS \
-            release/macos/reference-library-0.2.0-macos-arm64.app.zip
+            "release/macos/${{ steps.release.outputs.artifact }}"
           node scripts/verify-artifact-checksums.mjs \
             --require-clean-source --repository "$GITHUB_WORKSPACE" \
             release/macos/SHA256SUMS
@@ -223,7 +266,7 @@ jobs:
           --target macos-arm64
           --checksums release/macos/SHA256SUMS
           --output release/macos/V1_BUILD_RECEIPT.json
-          release/macos/reference-library-0.2.0-macos-arm64.app.zip
+          "release/macos/${{ steps.release.outputs.artifact }}"
       - run: >-
           node scripts/verify-artifact-receipt.mjs
           --require-current-target --require-clean-source --repository "$GITHUB_WORKSPACE"
@@ -233,7 +276,7 @@ jobs:
         with:
           name: reference-library-macos-arm64-${{ github.sha }}
           path: |
-            release/macos/reference-library-0.2.0-macos-arm64.app.zip
+            release/macos/${{ steps.release.outputs.artifact }}
             release/macos/SHA256SUMS
             release/macos/V1_BUILD_RECEIPT.json
             release/macos/MACOS_ARTIFACT_VALIDATION.json

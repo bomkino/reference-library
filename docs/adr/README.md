@@ -1,5 +1,7 @@
 # Architecture Decision Records
 
+ADR numbers are durable identifiers. Gaps are not reused; the table lists the records that exist in this repository without inventing a reason for a missing number.
+
 | ADR | Status | Decision |
 |---|---|---|
 | 001 | Accepted | Asset identity independent of path |

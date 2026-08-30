@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Books, CaretDown, Keyboard, SidebarSimple, SlidersHorizontal, X } from "@phosphor-icons/react";
 import {
   BRIDGE_VERSION,
   DEFAULT_ASSET_QUERY,
@@ -40,6 +41,7 @@ import { useAssetPager } from "./use-asset-pager";
 import { handleDialogKey } from "./dialog-keys";
 import { safeErrorMessage } from "./safe-errors";
 import { useModalIsolation } from "./modal-isolation";
+import { UiIcon } from "./ui-icon";
 import {
   WorkspaceEventInvalidator,
   applyInvalidationBatch,
@@ -234,6 +236,22 @@ function OpenWorkspace(props: {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const workspace = useRef<HTMLElement>(null);
+  const libraryDrawerTrigger = useRef<HTMLButtonElement>(null);
+  const inspectorDrawerTrigger = useRef<HTMLButtonElement>(null);
+  const closeLibraryDrawer = useCallback(() => {
+    setLibraryDrawerOpen(false);
+    requestAnimationFrame(() => {
+      const trigger = libraryDrawerTrigger.current;
+      if (trigger?.isConnected) trigger.focus();
+    });
+  }, []);
+  const closeInspectorDrawer = useCallback(() => {
+    setInspectorDrawerOpen(false);
+    requestAnimationFrame(() => {
+      const trigger = inspectorDrawerTrigger.current;
+      if (trigger?.isConnected) trigger.focus();
+    });
+  }, []);
   useModalIsolation(workspace, Boolean(preview || compareOpen || pending || sidebarModalOpen || shortcutsOpen));
   const pager = useAssetPager(
     props.bridge,
@@ -303,19 +321,24 @@ function OpenWorkspace(props: {
         ? document.getElementById("asset-inspector")
         : null;
     if (!drawer) return;
-    requestAnimationFrame(() => { drawer.scrollLeft = 0; });
+    requestAnimationFrame(() => {
+      drawer.scrollLeft = 0;
+      const close = drawer.querySelector<HTMLElement>(".sidebar__close, .inspector__close");
+      const firstControl = drawer.querySelector<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled)");
+      (close ?? firstControl)?.focus();
+    });
   }, [inspectorDrawerOpen, libraryDrawerOpen]);
 
   useEffect(() => {
     if (!libraryDrawerOpen && !inspectorDrawerOpen) return;
     const closeDrawer = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (inspectorDrawerOpen) setInspectorDrawerOpen(false);
-      else setLibraryDrawerOpen(false);
+      if (event.defaultPrevented || event.key !== "Escape") return;
+      if (inspectorDrawerOpen) closeInspectorDrawer();
+      else closeLibraryDrawer();
     };
     window.addEventListener("keydown", closeDrawer);
     return () => window.removeEventListener("keydown", closeDrawer);
-  }, [inspectorDrawerOpen, libraryDrawerOpen]);
+  }, [closeInspectorDrawer, closeLibraryDrawer, inspectorDrawerOpen, libraryDrawerOpen]);
 
   useEffect(() => {
     if (!autoRescan || props.needsRestart || roots.length === 0) return;
@@ -605,7 +628,7 @@ function OpenWorkspace(props: {
     setInspectorDrawerOpen(false);
     setPreview(asset);
   };
-  const closeInspector = () => setInspectorDrawerOpen(false);
+  const closeInspector = closeInspectorDrawer;
 
   return (
     <main ref={workspace} className="workspace-shell">
@@ -620,26 +643,45 @@ function OpenWorkspace(props: {
         </div>
         <div className="topbar__primary-actions">
           <button
+            ref={libraryDrawerTrigger}
             className="button--quiet topbar__drawer-toggle topbar__library-toggle"
             aria-controls="library-navigation"
             aria-expanded={libraryDrawerOpen}
-            onClick={() => { setInspectorDrawerOpen(false); setLibraryDrawerOpen((open) => !open); }}
-          >Library</button>
+            onClick={() => {
+              setInspectorDrawerOpen(false);
+              if (libraryDrawerOpen) closeLibraryDrawer();
+              else setLibraryDrawerOpen(true);
+            }}
+          ><UiIcon icon={Books} />{" "}Library</button>
           <button
+            ref={inspectorDrawerTrigger}
             className="button--quiet topbar__drawer-toggle topbar__inspector-toggle"
             aria-controls="asset-inspector"
             aria-expanded={inspectorDrawerOpen}
             disabled={!selected}
-            onClick={() => { setLibraryDrawerOpen(false); setInspectorDrawerOpen((open) => !open); }}
-          >Selected Reference</button>
+            onClick={() => {
+              setLibraryDrawerOpen(false);
+              if (inspectorDrawerOpen) closeInspectorDrawer();
+              else setInspectorDrawerOpen(true);
+            }}
+          ><UiIcon icon={SidebarSimple} />{" "}Selected Reference</button>
           <div className="view-switcher topbar__view-switcher" role="group" aria-label="Asset view">
             {(["grid", "compact", "list"] as AssetViewMode[]).map((mode) => (
               <button className="button--secondary" aria-pressed={viewMode === mode} key={mode} onClick={() => { setViewMode(mode); writePreferences({ viewMode: mode }); }}>{mode}</button>
             ))}
           </div>
           <details className="view-settings">
-            <summary>View &amp; sync</summary>
+            <summary>
+              <UiIcon icon={SlidersHorizontal} />
+              <span>View &amp; sync</span>
+              <span className="view-settings__chevron"><UiIcon icon={CaretDown} /></span>
+            </summary>
             <div className="view-settings__panel">
+              <button
+                className="button--secondary view-settings__done"
+                type="button"
+                onClick={(event) => event.currentTarget.closest("details")?.removeAttribute("open")}
+              ><UiIcon icon={X} />{" "}Done</button>
               <div className="view-switcher view-settings__view-switcher" role="group" aria-label="Asset view in settings">
                 {(["grid", "compact", "list"] as AssetViewMode[]).map((mode) => (
                   <button className="button--secondary" aria-pressed={viewMode === mode} key={mode} onClick={() => { setViewMode(mode); writePreferences({ viewMode: mode }); }}>{mode}</button>
@@ -652,8 +694,8 @@ function OpenWorkspace(props: {
               <button className="button--secondary view-settings__close" disabled={busy} onClick={closeLibrary}>Close Library</button>
             </div>
           </details>
-          <button className="button--quiet topbar__shortcuts" aria-label="Keyboard shortcuts" onClick={() => setShortcutsOpen(true)}>Shortcuts</button>
-          <button className="button--quiet topbar__close" disabled={busy} onClick={closeLibrary}>Close</button>
+          <button className="button--quiet topbar__shortcuts" aria-label="Keyboard shortcuts" onClick={() => setShortcutsOpen(true)}><UiIcon icon={Keyboard} />{" "}Shortcuts</button>
+          <button className="button--quiet topbar__close" disabled={busy} onClick={closeLibrary}><UiIcon icon={X} />{" "}Close</button>
         </div>
         <QueryToolbar query={query} roots={roots} facets={pager.facets} disabled={busy || props.needsRestart} onChange={applyQuery} />
       </header>
@@ -661,7 +703,10 @@ function OpenWorkspace(props: {
         <button
           className="workspace-drawer-backdrop"
           aria-label="Close open panel"
-          onClick={() => { setLibraryDrawerOpen(false); setInspectorDrawerOpen(false); }}
+          onClick={() => {
+            if (inspectorDrawerOpen) closeInspectorDrawer();
+            else closeLibraryDrawer();
+          }}
         />
       )}
       <LibrarySidebar
@@ -674,8 +719,8 @@ function OpenWorkspace(props: {
         collectionRevision={props.invalidations.collections}
         disabled={busy || props.needsRestart}
         onAddRoot={() => void addRoot()}
-        onCollectionChange={(collectionId) => { applyQuery((current) => ({ ...current, collectionId })); setLibraryDrawerOpen(false); }}
-        onClose={() => setLibraryDrawerOpen(false)}
+        onCollectionChange={(collectionId) => { applyQuery((current) => ({ ...current, collectionId })); closeLibraryDrawer(); }}
+        onClose={closeLibraryDrawer}
         onDeleteActiveCollection={(label, action) => requestTransition(label, async () => {
           await action();
           setQuery((current) => ({ ...current, collectionId: null }));
@@ -710,6 +755,7 @@ function OpenWorkspace(props: {
                 total={pager.total}
                 items={pager.items}
                 thumbnailSize={thumbnailSize}
+                interfaceScale={interfaceScale}
                 viewMode={viewMode}
                 multiThumbnailPreviews={multiThumbnailPreviews}
                 selectedAssetId={selected?.assetId ?? null}

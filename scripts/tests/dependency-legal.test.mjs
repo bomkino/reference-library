@@ -27,4 +27,15 @@ test("inventory separates shipped targets and retains Electron legal scope", asy
     (item) => item.ecosystem === "npm" && item.name === "electron",
   );
   assert.deepEqual(electron.shippedIn, ["electron-runtime"]);
+  const phosphor = inventory.packages.find(
+    (item) => item.ecosystem === "npm" && item.name === "@phosphor-icons/react",
+  );
+  assert.deepEqual(phosphor, {
+    ecosystem: "npm",
+    name: "@phosphor-icons/react",
+    version: "2.1.10",
+    license: "MIT",
+    source: "https://registry.npmjs.org/@phosphor-icons/react/-/react-2.1.10.tgz",
+    shippedIn: ["npm-production"],
+  });
 });

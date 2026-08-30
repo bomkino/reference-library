@@ -10,7 +10,7 @@ const repository = path.resolve(import.meta.dirname, "../..");
 
 test("release metadata agrees with every source version surface", async () => {
   const metadata = await verifyReleaseMetadata(repository);
-  assert.equal(metadata.version, "0.2.0");
+  assert.equal(metadata.version, "0.3.0");
   assert.equal(metadata.targets["macos-arm64"].arch, "arm64");
 });
 
@@ -38,7 +38,7 @@ test("release metadata rejects a stale native bundle version", async () => {
     }
     const plistPath = path.join(temporary, "apps/macos/Info.plist");
     const plist = await readFile(plistPath, "utf8");
-    await writeFile(plistPath, plist.replace("<string>0.2.0</string>", "<string>9.9.9</string>"));
+    await writeFile(plistPath, plist.replace("<string>0.3.0</string>", "<string>9.9.9</string>"));
     await assert.rejects(verifyReleaseMetadata(temporary), /Info\.plist CFBundleShortVersionString drift/);
   } finally {
     await rm(temporary, { recursive: true, force: true });
