@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.1 — 2026-08-30
+
+### Alignment and containment
+
+- Rebalances icons, labels, carets and text inside buttons, disclosure headers, toolbars, panels and drawers.
+- Normalizes caret size and the gap between disclosure icons and their labels.
+- Keeps control heights, panel insets and cross-axis alignment coherent across wide, medium and narrow layouts.
+- Contains long labels and constrained content without horizontal page overflow or clipped interactive controls.
+
+### Interaction polish
+
+- Keeps overlay surfaces from reflowing the canvas and gives local disclosures a measured open/close transition instead of an abrupt jump.
+- Uses restrained, intent-led transitions and preserves immediate state changes under reduced motion.
+- Extends visual QA around container balance, clipping, overflow, target size and expanded/collapsed layout states.
+- Changes no `.pitchlibrary` schema, protocol or canonical document meaning.
+
+### Release discipline
+
+- Advances the release line to 0.3.1 / build 4 with self-consistent release notes and exact artifact names.
+- Rejects a pre-existing version tag unless it resolves to the exact verified `main` source commit.
+- Corrects stale candidate-only wording in the already-published 0.3.0 documentation without changing its feature history.
+
 ## 0.3.0 — 2026-08-30
 
 ### Typography and iconography

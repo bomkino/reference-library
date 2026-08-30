@@ -51,6 +51,83 @@ async function waitForViewport(window, width, height) {
   );
 }
 
+async function waitForPaint(window) {
+  await evaluate(window, "React paint", `Promise.race([
+    new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve('painted')))),
+    new Promise((resolve) => setTimeout(() => resolve('paint-timeout'), 500)),
+  ])`);
+}
+
+async function geometrySnapshot(window) {
+  return evaluate(window, "workspace geometry", `(() => {
+    const rounded = (value) => Math.round(value * 10) / 10;
+    const measure = (selector) => {
+      const node = document.querySelector(selector);
+      if (!node) return null;
+      const rect = node.getBoundingClientRect();
+      return {
+        left: rounded(rect.left),
+        top: rounded(rect.top),
+        width: rounded(rect.width),
+        height: rounded(rect.height),
+        scrollLeft: rounded(node.scrollLeft || 0),
+        scrollTop: rounded(node.scrollTop || 0),
+      };
+    };
+    return Object.fromEntries([
+      '.workspace-main',
+      '.workspace-main__surface',
+      '.contact-sheet',
+      '.selection-tray',
+    ].map((selector) => [selector, measure(selector)]));
+  })()`);
+}
+
+function recordGeometryStability(interaction, before, after, tolerance = 1) {
+  const drift = [];
+  for (const selector of Object.keys(before)) {
+    const prior = before[selector];
+    const next = after[selector];
+    if (!prior || !next) {
+      if (prior !== next) drift.push({ selector, before: prior, after: next });
+      continue;
+    }
+    const changed = {};
+    for (const property of ["left", "top", "width", "height", "scrollLeft", "scrollTop"]) {
+      if (Math.abs(prior[property] - next[property]) > tolerance) {
+        changed[property] = { before: prior[property], after: next[property] };
+      }
+    }
+    if (Object.keys(changed).length) drift.push({ selector, changed });
+  }
+  if (drift.length) journeyViolations.push({ type: "layout-geometry-drift", interaction, drift });
+}
+
+async function recordOverlayHitTest(window, interaction, overlaySelector) {
+  const occluded = await evaluate(window, `${interaction} hit testing`, `(() => {
+    const overlay = document.querySelector(${JSON.stringify(overlaySelector)});
+    if (!overlay) return [{ issue: 'missing-overlay', selector: ${JSON.stringify(overlaySelector)} }];
+    const controls = [...overlay.querySelectorAll('button, input, select, textarea, summary, [tabindex="0"]')]
+      .filter((node) => {
+        if (!node.getClientRects().length || node.closest('[inert], [aria-hidden="true"]')) return false;
+        const style = getComputedStyle(node);
+        return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) !== 0;
+      });
+    return controls.flatMap((control) => {
+      const rect = control.getBoundingClientRect();
+      const x = Math.min(innerWidth - 1, Math.max(0, rect.left + rect.width / 2));
+      const y = Math.min(innerHeight - 1, Math.max(0, rect.top + rect.height / 2));
+      const hit = document.elementFromPoint(x, y);
+      return hit && overlay.contains(hit) ? [] : [{
+        control: (control.getAttribute('aria-label') || control.textContent || control.tagName).trim().slice(0, 80),
+        hit: hit ? hit.tagName.toLowerCase() + (hit.className ? '.' + String(hit.className).trim().replace(/\\s+/g, '.') : '') : null,
+        point: { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 },
+      }];
+    });
+  })()`);
+  if (occluded.length) journeyViolations.push({ type: "overlay-target-occlusion", interaction, occluded });
+}
+
 async function waitForFonts(window) {
   return evaluate(window, "Pitchdog fonts", `(async () => {
     const requests = [
@@ -107,10 +184,18 @@ async function collectMetrics(window, fonts) {
     const rendered = (node) => {
       if (!node.getClientRects().length) return false;
       for (let current = node; current instanceof Element; current = current.parentElement) {
+        if (current.hasAttribute("inert")) return false;
         const style = getComputedStyle(current);
         if (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse" || Number(style.opacity) === 0) return false;
       }
       return true;
+    };
+    const effectiveTarget = (node) => {
+      if (node.matches('input[type="checkbox"], input[type="radio"]')) {
+        const label = node.closest('label');
+        if (label && rendered(label)) return label;
+      }
+      return node;
     };
     const visibleBounds = (node) => {
       const rect = node.getBoundingClientRect();
@@ -158,19 +243,114 @@ async function collectMetrics(window, fonts) {
     const clippedTargets = [];
     const smallTargets = [];
     for (const node of targets) {
-      const visible = visibleBounds(node);
+      const target = effectiveTarget(node);
+      const visible = visibleBounds(target);
       if (!visible) continue;
       // Contact-sheet virtualization deliberately renders overscan cards across the scrollport edge.
       const virtualizedContactSheetCard = node.matches('.asset-card') && Boolean(node.closest('.contact-sheet'));
       if (visible.causes.length && !virtualizedContactSheetCard) {
         clippedTargets.push({ ...describe(node), bounds: bounds(visible.rect), causes: visible.causes });
       }
-      if (node.matches('button:not([hidden]), summary')) {
-        const rect = visible.rect;
-        if (rect.width < minimumTarget || rect.height < minimumTarget) {
-          smallTargets.push({ ...describe(node), bounds: bounds(rect) });
-        }
+      const rect = target.getBoundingClientRect();
+      if (rect.width < minimumTarget || rect.height < minimumTarget) {
+        smallTargets.push({
+          ...describe(node),
+          measuredElement: target === node ? describe(node).tag : describe(target).tag,
+          bounds: bounds(rect),
+        });
       }
+    }
+
+    const iconMetrics = [];
+    const iconIssues = [];
+    for (const icon of [...document.querySelectorAll('svg.ui-icon')].filter(rendered)) {
+      const owner = icon.closest('.asset-card__shortlist-toggle, button, summary, [role="button"]');
+      if (!owner || !rendered(owner)) {
+        iconIssues.push({ ...describe(icon), issue: 'missing-visible-container' });
+        continue;
+      }
+      const iconRect = icon.getBoundingClientRect();
+      const ownerRect = owner.getBoundingClientRect();
+      const centerOffset = {
+        x: Math.round(Math.abs((iconRect.left + iconRect.width / 2) - (ownerRect.left + ownerRect.width / 2)) * 10) / 10,
+        y: Math.round(Math.abs((iconRect.top + iconRect.height / 2) - (ownerRect.top + ownerRect.height / 2)) * 10) / 10,
+      };
+      const iconOnly = !(owner.textContent || '').trim();
+      const contained =
+        iconRect.left >= ownerRect.left - tolerance
+        && iconRect.top >= ownerRect.top - tolerance
+        && iconRect.right <= ownerRect.right + tolerance
+        && iconRect.bottom <= ownerRect.bottom + tolerance;
+      const metric = {
+        owner: describe(owner),
+        icon: bounds(iconRect),
+        container: bounds(ownerRect),
+        centerOffset,
+        iconOnly,
+        contained,
+      };
+      iconMetrics.push(metric);
+      if (!contained) iconIssues.push({ ...metric, issue: 'icon-outside-container' });
+      if (centerOffset.y > 2) iconIssues.push({ ...metric, issue: 'icon-not-vertically-centered' });
+      if (iconOnly && centerOffset.x > 2) iconIssues.push({ ...metric, issue: 'icon-only-control-not-centered' });
+    }
+
+    const caretMetrics = [];
+    const caretIssues = [];
+    const expectedGap = parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.5;
+    for (const wrapper of [...document.querySelectorAll(
+      '.button-caret, .selection-tray__batch-caret, .view-settings__chevron, .disclosure-icon',
+    )].filter(rendered)) {
+      const icon = wrapper.querySelector('svg.ui-icon');
+      const control = wrapper.closest('button, summary');
+      if (!icon || !control) {
+        caretIssues.push({ ...describe(wrapper), issue: 'missing-caret-icon-or-control' });
+        continue;
+      }
+      const iconRect = icon.getBoundingClientRect();
+      const controlRect = control.getBoundingClientRect();
+      const expectedBox = parseFloat(getComputedStyle(control).fontSize) * 1.15;
+      let textRect = null;
+      if (wrapper.classList.contains('disclosure-icon')) {
+        const textNode = [...wrapper.parentElement.childNodes]
+          .find((node) => node.nodeType === Node.TEXT_NODE && (node.textContent || '').trim());
+        if (textNode) {
+          const range = document.createRange();
+          range.selectNodeContents(textNode);
+          textRect = range.getBoundingClientRect();
+        }
+      } else {
+        textRect = wrapper.previousElementSibling?.getBoundingClientRect() || null;
+      }
+      const textGap = textRect
+        ? wrapper.classList.contains('disclosure-icon')
+          ? textRect.left - iconRect.right
+          : iconRect.left - textRect.right
+        : null;
+      const centerOffsetY = Math.round(Math.abs(
+        (iconRect.top + iconRect.height / 2) - (controlRect.top + controlRect.height / 2),
+      ) * 10) / 10;
+      const metric = {
+        control: describe(control),
+        icon: bounds(iconRect),
+        expectedBox: Math.round(expectedBox * 10) / 10,
+        centerOffsetY,
+        textGap: textGap === null ? null : Math.round(textGap * 10) / 10,
+      };
+      caretMetrics.push(metric);
+      if (Math.abs(iconRect.width - expectedBox) > 1.5 || Math.abs(iconRect.height - expectedBox) > 1.5) {
+        caretIssues.push({ ...metric, issue: 'caret-box-size' });
+      }
+      if (centerOffsetY > 2) caretIssues.push({ ...metric, issue: 'caret-not-centered' });
+      if (textGap === null || textGap < expectedGap - tolerance) {
+        caretIssues.push({ ...metric, expectedMinimumGap: Math.round(expectedGap * 10) / 10, issue: 'caret-text-gap' });
+      }
+      if (
+        iconRect.left < controlRect.left - tolerance
+        || iconRect.top < controlRect.top - tolerance
+        || iconRect.right > controlRect.right + tolerance
+        || iconRect.bottom > controlRect.bottom + tolerance
+      ) caretIssues.push({ ...metric, issue: 'caret-outside-control' });
     }
 
     const scrollingElement = document.scrollingElement || document.documentElement;
@@ -193,6 +373,10 @@ async function collectMetrics(window, fonts) {
       interactiveTargetCount: targets.length,
       clippedTargets,
       smallTargets,
+      iconMetrics,
+      iconIssues,
+      caretMetrics,
+      caretIssues,
     };
   })()`);
 }
@@ -215,7 +399,13 @@ function violationsFor(name, metrics) {
     violations.push({ type: "clipped-interactive-targets", state: name, targets: metrics.clippedTargets });
   }
   if (metrics.smallTargets.length) {
-    violations.push({ type: "small-button-or-summary", state: name, targets: metrics.smallTargets });
+    violations.push({ type: "small-interactive-targets", state: name, targets: metrics.smallTargets });
+  }
+  if (metrics.iconIssues.length) {
+    violations.push({ type: "icon-containment-or-alignment", state: name, icons: metrics.iconIssues });
+  }
+  if (metrics.caretIssues.length) {
+    violations.push({ type: "caret-box-gap-or-alignment", state: name, carets: metrics.caretIssues });
   }
   return violations;
 }
@@ -234,6 +424,7 @@ async function capture(window, name, settle = 500) {
       }))
   ).then(() => true)`);
   const fonts = await waitForFonts(window);
+  await waitForPaint(window);
   const metrics = await collectMetrics(window, fonts);
   const screenshotName = `${name}.png`;
   const image = await window.webContents.capturePage();
@@ -282,7 +473,7 @@ function writeReport() {
     schemaVersion: 1,
     sourceSha: process.env.GITHUB_SHA || null,
     indexHtml: relativeToRepository(indexHtml),
-    minimumButtonAndSummarySizeCssPixels: 44,
+    minimumInteractiveTargetSizeCssPixels: 44,
     passed: violations.length === 0,
     summary: {
       statesCaptured: states.length,
@@ -309,6 +500,7 @@ app.whenReady().then(async () => {
     backgroundColor: "#eef2ff",
     webPreferences: {
       preload,
+      backgroundThrottling: false,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -336,6 +528,22 @@ app.whenReady().then(async () => {
     await waitFor(window, "active inspector", "document.querySelector('.inspector--active')");
     await capture(window, "02-wide-inspector");
 
+    await evaluate(window, "open Inspector disclosures", `(() => {
+      const disclosures = [...document.querySelectorAll('.inspector__disclosure')];
+      if (disclosures.length !== 2) throw new Error('Expected two Inspector disclosures');
+      disclosures.forEach((disclosure) => { disclosure.open = true; });
+      const inspector = document.querySelector('.inspector');
+      inspector.scrollTop = Math.max(0, disclosures[0].offsetTop - 16);
+      return true;
+    })()`);
+    await waitFor(window, "Inspector disclosures", "[...document.querySelectorAll('.inspector__disclosure')].every((node) => node.open)");
+    await capture(window, "02a-wide-inspector-disclosures");
+    await evaluate(window, "close Inspector disclosures", `(() => {
+      document.querySelectorAll('.inspector__disclosure').forEach((disclosure) => { disclosure.open = false; });
+      document.querySelector('.inspector').scrollTop = 0;
+      return true;
+    })()`);
+
     for (const assetId of ["asset-1", "asset-2", "asset-3", "asset-4"]) {
       await evaluate(window, `shortlist ${assetId}`, `(() => {
         const toggle = document.querySelector('[data-asset-id="${assetId}"] [data-shortlist-toggle]');
@@ -348,33 +556,72 @@ app.whenReady().then(async () => {
     await waitFor(window, "shortlist tray", "document.querySelector('.selection-tray')");
     await capture(window, "03-wide-shortlist");
 
+    const batchToolsBefore = await geometrySnapshot(window);
+    await clickText(window, ".selection-tray button", "Batch edit");
+    await waitFor(window, "expanded Batch edit", "document.querySelector('.selection-tray--expanded') && document.querySelector('#shortlist-batch-tools[aria-hidden=\"false\"]')");
+    await waitForPaint(window);
+    recordGeometryStability("batch-tools-open", batchToolsBefore, await geometrySnapshot(window));
+    await recordOverlayHitTest(window, "batch-tools-open", "#shortlist-batch-tools");
+    await capture(window, "03a-wide-shortlist-batch");
+    await clickText(window, ".selection-tray button", "Done");
+    await waitFor(window, "collapsed Batch edit", "!document.querySelector('.selection-tray--expanded') && document.querySelector('#shortlist-batch-tools[aria-hidden=\"true\"]')");
+    await waitForPaint(window);
+    recordGeometryStability("batch-tools-close", batchToolsBefore, await geometrySnapshot(window));
+
     await clickText(window, ".selection-tray button", "Compare");
     await waitFor(window, "compare board", "document.querySelector('.compare-board')");
     await capture(window, "04-compare-board");
     await clickText(window, ".compare-board button", "Close");
     await waitFor(window, "compare board close", "!document.querySelector('.compare-board')");
 
+    const viewSettingsBefore = await geometrySnapshot(window);
     await evaluate(window, "open view settings", `document.querySelector('.view-settings > summary').click()`);
     await waitFor(window, "view settings panel", "document.querySelector('.view-settings[open]')");
+    await waitForPaint(window);
+    recordGeometryStability("view-settings-open", viewSettingsBefore, await geometrySnapshot(window));
+    await recordOverlayHitTest(window, "view-settings-open", ".view-settings__panel");
     await capture(window, "05-view-settings");
     await setSelect(window, '.view-settings__panel select[aria-label="Interface"]', "0.8");
     await capture(window, "05a-view-settings-80-percent");
     await setSelect(window, '.view-settings__panel select[aria-label="Interface"]', "1.5");
     await capture(window, "05b-view-settings-150-percent");
     await setSelect(window, '.view-settings__panel select[aria-label="Interface"]', "1");
-    await evaluate(window, "close view settings", `document.querySelector('.view-settings').removeAttribute('open')`);
+    await evaluate(window, "close view settings", `document.querySelector('.view-settings > summary').click()`);
     await waitFor(window, "view settings close", "!document.querySelector('.view-settings[open]')");
+    await waitForPaint(window);
+    recordGeometryStability("view-settings-close", viewSettingsBefore, await geometrySnapshot(window));
 
+    const filtersBefore = await geometrySnapshot(window);
     await clickText(window, ".query-commandbar button", "Filters");
     await waitFor(window, "filter panel", "document.querySelector('.query-commandbar__filters[aria-expanded=\"true\"]') && document.querySelector('.filter-panel')");
+    await waitForPaint(window);
+    recordGeometryStability("filters-open", filtersBefore, await geometrySnapshot(window));
+    await recordOverlayHitTest(window, "filters-open", ".filter-panel");
     await capture(window, "06-filter-drawer");
     await clickText(window, ".query-commandbar button", "Filters");
+    await waitFor(window, "filter panel close", "document.querySelector('.query-commandbar__filters[aria-expanded=\"false\"]')");
+    await waitForPaint(window);
+    recordGeometryStability("filters-close", filtersBefore, await geometrySnapshot(window));
 
     await waitForViewport(window, 1024, 768);
     await capture(window, "07-medium-canvas");
 
     await waitForViewport(window, 760, 900);
     await capture(window, "08-narrow-canvas");
+
+    await clickText(window, ".selection-tray button", "Compare");
+    await waitFor(window, "narrow Compare Board", "document.querySelector('.compare-board')");
+    await capture(window, "08a-narrow-compare");
+    await clickText(window, ".compare-board button", "Close");
+    await waitFor(window, "narrow Compare Board close", "!document.querySelector('.compare-board')");
+
+    await evaluate(window, "open narrow View settings", `document.querySelector('.view-settings > summary').click()`);
+    await waitFor(window, "narrow View settings", "document.querySelector('.view-settings[open]')");
+    await clickText(window, ".view-settings__panel button", "Keyboard shortcuts");
+    await waitFor(window, "narrow Shortcuts", "document.querySelector('.shortcut-dialog') && !document.querySelector('.view-settings[open]')");
+    await capture(window, "08b-narrow-shortcuts");
+    await clickText(window, ".shortcut-dialog button", "Close");
+    await waitFor(window, "narrow Shortcuts close", "!document.querySelector('.shortcut-dialog')");
 
     await evaluate(window, "open Library drawer", `document.querySelector('.topbar__library-toggle').click()`);
     await waitFor(window, "Library drawer", "document.querySelector('.sidebar--drawer-open')");
@@ -387,6 +634,11 @@ app.whenReady().then(async () => {
     await waitFor(window, "Inspector drawer", "document.querySelector('.inspector--drawer-open')");
     await evaluate(window, "reset Inspector drawer scroll", `document.querySelector('.inspector').scrollTop = 0`);
     await capture(window, "10-narrow-inspector");
+    await evaluate(window, "close Inspector drawer", `document.querySelector('.inspector__close').click()`);
+    await waitFor(window, "Inspector drawer close", "!document.querySelector('.inspector--drawer-open')");
+
+    await waitForViewport(window, 320, 900);
+    await capture(window, "11-minimum-width-canvas");
   } catch (error) {
     const detail = error instanceof Error ? error.stack || error.message : String(error);
     journeyViolations.push({ type: "journey-error", detail });

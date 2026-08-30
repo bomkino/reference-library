@@ -16,9 +16,9 @@
 
 ## Current source line
 
-Reference Library 0.3.0 (build 3) is the version declared by this source line. A matching public tag and GitHub Release—not source metadata by itself—establish release status.
+Reference Library 0.3.1 (build 4) is the version declared by this source line. A matching public tag and GitHub Release—not source metadata by itself—establish release status.
 
-0.3.0 retains broad honest cataloguing, Grid/Compact/List modes, optional related-thumbnail mosaics, Tags, Used In, category/file/media facets, file-size sorting, native Open/Reveal/Copy Path, opt-in Root rescanning, an ordered bounded Shortlist, a synchronized four-up Compare Board, rapid review shortcuts and conflict-aware batch curation. It adds the locally bundled pitch.dog Type System v13 fonts, Phosphor iconography and a normalized spacing/target foundation. No `.pitchlibrary` schema or canonical document meaning changes.
+0.3.1 retains broad honest cataloguing, the editorial decision loop, locally bundled pitch.dog Type System v13 fonts, Phosphor iconography and the normalized spacing/target foundation. It refines container balance, icon/label/caret alignment, control and panel geometry, constrained overflow and intent-led expansion motion. No `.pitchlibrary` schema or canonical document meaning changes.
 
 Catalogue support and preview support are separate truths. A readable catalogue-only source is `unsupported`, not `unreadable`. Original sources remain in place; absolute paths remain inside native hosts.
 

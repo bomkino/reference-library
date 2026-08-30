@@ -46,14 +46,26 @@ export function AssetInspector(props: {
     role: "dialog" as const,
   } : {};
 
-  if (props.loading) return <aside {...drawerDialog} className={`inspector${props.drawerOpen ? " inspector--drawer-open" : ""}`} id="asset-inspector" aria-label="Inspector" aria-busy="true"><div className="inspector-empty"><p className="eyebrow">Inspector</p><h2>Loading reference…</h2></div></aside>;
+  if (props.loading) {
+    return (
+      <aside {...drawerDialog} className={`inspector${props.drawerOpen ? " inspector--drawer-open" : ""}`} id="asset-inspector" aria-label="Inspector" aria-busy="true">
+        <div className="inspector-empty">
+          <div className="section-heading">
+            <p className="eyebrow">Inspector</p>
+            <InspectorCloseButton onClose={props.onClose} />
+          </div>
+          <h2>Loading reference…</h2>
+        </div>
+      </aside>
+    );
+  }
   if (!props.detail || !props.draft) {
     return (
       <aside {...drawerDialog} className={`inspector inspector--empty${props.drawerOpen ? " inspector--drawer-open" : ""}`} id="asset-inspector" aria-label="Inspector">
         <div className="inspector-empty">
           <div className="section-heading">
             <p className="eyebrow">Inspector</p>
-            <button className="button--quiet inspector__close" onClick={props.onClose}>Close</button>
+            <InspectorCloseButton onClose={props.onClose} />
           </div>
           <h2>{props.error ? "Reference unavailable" : "Choose a reference."}</h2>
           {props.error ? (
@@ -103,14 +115,14 @@ export function AssetInspector(props: {
         </div>
         <div className="inspector__heading-actions">
           {props.dirty && <span className="draft-mark" role="status">Unsaved</span>}
-          <button className="button--quiet inspector__close" onClick={props.onClose}>Close</button>
+          <InspectorCloseButton onClose={props.onClose} />
         </div>
       </div>
 
       <div className="inspector__source-actions">
-        <button disabled={!sourceAvailable} onClick={() => void nativeAction("open")}><UiIcon icon={ArrowSquareOut} />{" "}Open Original</button>
-        <button className="button--secondary" disabled={!sourceAvailable} onClick={() => void nativeAction("reveal")}><UiIcon icon={FolderOpen} />{" "}Reveal</button>
-        <button className="button--quiet" disabled={!sourceAvailable} onClick={() => void nativeAction("copy")}><UiIcon icon={Copy} />{" "}Copy path</button>
+        <button disabled={!sourceAvailable} onClick={() => void nativeAction("open")}><UiIcon icon={ArrowSquareOut} /><span>Open Original</span></button>
+        <button className="button--secondary" disabled={!sourceAvailable} onClick={() => void nativeAction("reveal")}><UiIcon icon={FolderOpen} /><span>Reveal</span></button>
+        <button className="button--quiet" disabled={!sourceAvailable} onClick={() => void nativeAction("copy")}><UiIcon icon={Copy} /><span>Copy path</span></button>
       </div>
       {actionStatus && <p className="inline-status" role="status">{actionStatus}</p>}
 
@@ -214,6 +226,10 @@ export function AssetInspector(props: {
       </div>
     </aside>
   );
+}
+
+function InspectorCloseButton(props: { onClose(): void }) {
+  return <button className="button--quiet inspector__close" type="button" onClick={props.onClose}><UiIcon icon={X} /><span>Close</span></button>;
 }
 
 function InspectorVisual(props: {

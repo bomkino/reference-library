@@ -332,11 +332,12 @@ function contactSheetLayout(view: AssetViewMode, thumbnailSize: number, width: n
   const rootSize = 15 * interfaceScale;
   const gap = view === "list" ? rootSize * 0.5 : rootSize;
   if (view === "list") {
-    return { columns: 1, cardHeight: 96, gap, template: "minmax(0, 1fr)" };
+    return { columns: 1, cardHeight: Math.round(rootSize * 6.4), gap, template: "minmax(0, 1fr)" };
   }
   const cardWidth = view === "compact" ? Math.max(132, Math.round(thumbnailSize * 0.72)) : thumbnailSize;
   const imageHeight = view === "compact" ? cardWidth : Math.round(cardWidth * 0.72);
-  const cardHeight = imageHeight + (view === "compact" ? 72 : 92);
+  const chromeHeight = Math.round(rootSize * (view === "compact" ? 4.8 : 6.15));
+  const cardHeight = imageHeight + chromeHeight;
   const columns = Math.max(1, Math.floor((width - gap) / (cardWidth + gap)));
   return {
     columns,

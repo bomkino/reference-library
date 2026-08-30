@@ -197,9 +197,9 @@ export function CompareBoard(props: {
                   ))}
                 </div>
                 <div className="compare-card__native-actions">
-                  <button disabled={!sourceAvailable || busy} onClick={() => void nativeAction(asset, "open")}><UiIcon icon={ArrowSquareOut} />{" "}Open</button>
-                  <button className="button--secondary" disabled={!sourceAvailable || busy} onClick={() => void nativeAction(asset, "reveal")}><UiIcon icon={FolderOpen} />{" "}Reveal</button>
-                  <button className="button--quiet" disabled={!sourceAvailable || busy} onClick={() => void nativeAction(asset, "copy")}><UiIcon icon={Copy} />{" "}Copy path</button>
+                  <button disabled={!sourceAvailable || busy} onClick={() => void nativeAction(asset, "open")}><UiIcon icon={ArrowSquareOut} /><span>Open</span></button>
+                  <button className="button--secondary" disabled={!sourceAvailable || busy} onClick={() => void nativeAction(asset, "reveal")}><UiIcon icon={FolderOpen} /><span>Reveal</span></button>
+                  <button className="button--quiet" disabled={!sourceAvailable || busy} onClick={() => void nativeAction(asset, "copy")}><UiIcon icon={Copy} /><span>Copy path</span></button>
                 </div>
               </footer>
             </article>

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { FunnelSimple, MagnifyingGlass, X } from "@phosphor-icons/react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { CaretDown, FunnelSimple, MagnifyingGlass, X } from "@phosphor-icons/react";
 import {
   MAX_SEARCH_SCALARS,
   type AssetFacets,
@@ -21,7 +21,19 @@ export function QueryToolbar(props: {
 }) {
   const [search, setSearch] = useState(props.query.search ?? "");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const filterTrigger = useRef<HTMLButtonElement>(null);
   useEffect(() => setSearch(props.query.search ?? ""), [props.query.search]);
+  useEffect(() => {
+    if (!filtersOpen) return;
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.defaultPrevented || event.key !== "Escape") return;
+      event.preventDefault();
+      setFiltersOpen(false);
+      requestAnimationFrame(() => filterTrigger.current?.focus());
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [filtersOpen]);
   const emitChange = (update: (query: AssetQuery) => AssetQuery) => props.onChange(update);
   const searchError = textLimitError(search, MAX_SEARCH_SCALARS, "Search", true);
   const activeFilters = useMemo(
@@ -72,7 +84,7 @@ export function QueryToolbar(props: {
             onChange={(event) => setSearch(event.target.value)}
           />
         </label>
-        <button disabled={props.disabled || Boolean(searchError)} type="submit"><UiIcon icon={MagnifyingGlass} />{" "}Search</button>
+        <button disabled={props.disabled || Boolean(searchError)} type="submit"><UiIcon icon={MagnifyingGlass} /><span>Search</span></button>
         <label className="query-commandbar__sort">
           <span className="visually-hidden">Sort Assets</span>
           <select
@@ -91,6 +103,7 @@ export function QueryToolbar(props: {
           </select>
         </label>
         <button
+          ref={filterTrigger}
           className="button--secondary query-commandbar__filters"
           aria-label="Filters"
           aria-expanded={filtersOpen}
@@ -99,7 +112,9 @@ export function QueryToolbar(props: {
           type="button"
           onClick={() => setFiltersOpen((open) => !open)}
         >
-          <UiIcon icon={FunnelSimple} />{" "}Filters{activeCount > 0 ? ` · ${activeCount}` : ""}
+          <UiIcon icon={FunnelSimple} />
+          <span>Filters{activeCount > 0 ? ` · ${activeCount}` : ""}</span>
+          <span className="button-caret"><UiIcon icon={CaretDown} /></span>
         </button>
         {searchError && <p className="field-error" id="search-limit-error" role="alert">{searchError}</p>}
       </form>
@@ -129,8 +144,27 @@ export function QueryToolbar(props: {
         </div>
       )}
 
-      {filtersOpen && (
-        <section className="filter-panel" id="asset-filter-panel" aria-label="Asset filters">
+      <section
+        className={`filter-panel${filtersOpen ? " filter-panel--open" : ""}`}
+        id="asset-filter-panel"
+        aria-labelledby="asset-filter-title"
+        aria-hidden={!filtersOpen}
+        inert={!filtersOpen}
+      >
+          <header className="filter-panel__header">
+            <div>
+              <p className="eyebrow">Refine view</p>
+              <h2 id="asset-filter-title">Filters</h2>
+            </div>
+            <button
+              className="button--quiet"
+              type="button"
+              onClick={() => {
+                setFiltersOpen(false);
+                requestAnimationFrame(() => filterTrigger.current?.focus());
+              }}
+            ><UiIcon icon={X} /><span>Close</span></button>
+          </header>
           <div className="filter-panel__primary">
             <label>
               <span>Root</span>
@@ -213,8 +247,7 @@ export function QueryToolbar(props: {
               onChange={(usedIn) => emitChange((current) => ({ ...current, usedIn }))}
             />
           </div>
-        </section>
-      )}
+      </section>
     </div>
   );
 }

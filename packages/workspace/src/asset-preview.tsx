@@ -83,9 +83,9 @@ export function AssetPreview(props: {
           <p className="preview__subhead">{formatBytes(props.asset.byteSize)} · {props.asset.reviewState}</p>
         </div>
         <div className="preview__header-actions">
-          <button disabled={!sourceAvailable} onClick={() => void nativeAction("open")}><UiIcon icon={ArrowSquareOut} />{" "}Open Original</button>
-          <button className="button--secondary" disabled={!sourceAvailable} onClick={() => void nativeAction("reveal")}><UiIcon icon={FolderOpen} />{" "}Reveal</button>
-          <button className="button--secondary" disabled={!sourceAvailable} onClick={() => void nativeAction("copy")}><UiIcon icon={Copy} />{" "}Copy Path</button>
+          <button disabled={!sourceAvailable} onClick={() => void nativeAction("open")}><UiIcon icon={ArrowSquareOut} /><span>Open Original</span></button>
+          <button className="button--secondary" disabled={!sourceAvailable} onClick={() => void nativeAction("reveal")}><UiIcon icon={FolderOpen} /><span>Reveal</span></button>
+          <button className="button--secondary" disabled={!sourceAvailable} onClick={() => void nativeAction("copy")}><UiIcon icon={Copy} /><span>Copy Path</span></button>
           <button ref={close} className="button--secondary" onClick={props.onClose}>Close</button>
         </div>
       </header>

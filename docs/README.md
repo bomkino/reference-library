@@ -33,7 +33,8 @@ Never rewrite `evidence/DECISION_EVIDENCE_LOG.md`. Add a dated entry or a new so
 Files under [`releases/`](releases/) describe one version and remain fixed after publication except for an explicit correction. The presence of a release-note file does not prove publication; only the matching immutable tag and public GitHub Release do.
 
 - [`releases/0.2.0.md`](releases/0.2.0.md) — published 0.2.0 notes.
-- [`releases/0.3.0.md`](releases/0.3.0.md) — 0.3.0 candidate notes until the matching release is public.
+- [`releases/0.3.0.md`](releases/0.3.0.md) — published 0.3.0 notes with an explicit post-publication status correction.
+- [`releases/0.3.1.md`](releases/0.3.1.md) — 0.3.1 interface-refinement release notes; publication status remains authoritative on GitHub Releases.
 
 ## Legal and dependency authority
 

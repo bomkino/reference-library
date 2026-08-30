@@ -51,6 +51,7 @@ describe("V1 keyboard daily-use seams", () => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} } as typeof ResizeObserver;
     globalThis.requestAnimationFrame = (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0) as unknown as number;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1024 });
     Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, value: 900 });
     Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, value: 600 });
     host = document.createElement("div");
@@ -162,13 +163,40 @@ describe("V1 keyboard daily-use seams", () => {
     const libraryTrigger = button("Library");
     await focusAndPress(libraryTrigger, "Enter");
     const libraryDrawer = host.querySelector<HTMLElement>("#library-navigation")!;
+    const backdrop = host.querySelector<HTMLElement>(".workspace-drawer-backdrop")!;
     expect(libraryDrawer.getAttribute("role")).toBe("dialog");
     expect(libraryDrawer.getAttribute("aria-modal")).toBe("true");
+    expect(host.querySelector(".topbar")?.hasAttribute("inert")).toBe(true);
+    expect(host.querySelector(".workspace-main")?.hasAttribute("inert")).toBe(true);
+    expect(backdrop.hasAttribute("inert")).toBe(false);
     await waitFor(() => expect(document.activeElement).toBe(button("Close", libraryDrawer)));
     await press("Tab", true);
     expect(libraryDrawer.contains(document.activeElement)).toBe(true);
     await press("Escape");
     expect(libraryDrawer.getAttribute("role")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(libraryTrigger));
+    expect(host.querySelector(".topbar")?.hasAttribute("inert")).toBe(false);
+    expect(backdrop.hasAttribute("inert")).toBe(true);
+
+    await focusAndPress(libraryTrigger, "Enter");
+    await waitFor(() => expect(document.activeElement).toBe(button("Close", libraryDrawer)));
+    await act(async () => {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: 1400 });
+      window.dispatchEvent(new Event("resize"));
+      await settle();
+    });
+    expect(libraryDrawer.getAttribute("role")).toBeNull();
+    expect(libraryTrigger.getAttribute("aria-expanded")).toBe("false");
+    expect(host.querySelector(".topbar")?.hasAttribute("inert")).toBe(false);
+    expect(backdrop.hasAttribute("inert")).toBe(true);
+    expect(libraryDrawer.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).not.toBe(button("Close", libraryDrawer));
+
+    await act(async () => {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: 1024 });
+      window.dispatchEvent(new Event("resize"));
+      await settle();
+    });
     await waitFor(() => expect(document.activeElement).toBe(libraryTrigger));
 
     const inspectorTrigger = button("Selected Reference");
@@ -180,6 +208,27 @@ describe("V1 keyboard daily-use seams", () => {
     await press("Escape");
     expect(inspectorDrawer.getAttribute("role")).toBeNull();
     await waitFor(() => expect(document.activeElement).toBe(inspectorTrigger));
+  });
+
+  it("restores shortcut-dialog focus to View and sync after its details surface closes", async () => {
+    await focusAndPress(button("New Library"), "Enter");
+    await waitFor(() => expect(host.querySelector('[data-asset-id="asset-1"]')).not.toBeNull());
+    const viewSettings = host.querySelector<HTMLDetailsElement>(".view-settings")!;
+    const viewSettingsSummary = viewSettings.querySelector<HTMLElement>("summary")!;
+
+    await act(async () => { viewSettingsSummary.focus(); viewSettingsSummary.click(); await settle(); });
+    expect(viewSettings.open).toBe(true);
+    await focusAndPress(button("Keyboard shortcuts", viewSettings), "Enter");
+    await waitFor(() => expect(host.querySelector(".shortcut-dialog")).not.toBeNull());
+    await press("Escape");
+    expect(host.querySelector(".shortcut-dialog")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(viewSettingsSummary));
+
+    await act(async () => { viewSettingsSummary.click(); await settle(); });
+    await focusAndPress(button("Keyboard shortcuts", viewSettings), "Enter");
+    await focusAndPress(button("Close", host.querySelector(".shortcut-dialog")!), "Enter");
+    expect(host.querySelector(".shortcut-dialog")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(viewSettingsSummary));
   });
 
   it("saves a dirty Inspector draft before rapid review and refreshes the revision before the second write", async () => {
@@ -207,11 +256,15 @@ describe("V1 keyboard daily-use seams", () => {
   it("shortlists across the virtual grid, compares four-or-fewer candidates and batch-curates without losing active selection", async () => {
     await focusAndPress(button("New Library"), "Enter");
     await waitFor(() => expect(host.querySelector('[data-asset-id="asset-1"]')).not.toBeNull());
-    expect(host.querySelector("#asset-filter-panel")).toBeNull();
+    const filterPanel = host.querySelector<HTMLElement>("#asset-filter-panel")!;
+    expect(filterPanel.getAttribute("aria-hidden")).toBe("true");
+    expect(filterPanel.hasAttribute("inert")).toBe(true);
     await focusAndPress(button("Filters"), "Enter");
-    expect(host.querySelector("#asset-filter-panel")).not.toBeNull();
+    expect(filterPanel.getAttribute("aria-hidden")).toBe("false");
+    expect(filterPanel.hasAttribute("inert")).toBe(false);
     await focusAndPress(button("Filters"), "Enter");
-    expect(host.querySelector("#asset-filter-panel")).toBeNull();
+    expect(filterPanel.getAttribute("aria-hidden")).toBe("true");
+    expect(filterPanel.hasAttribute("inert")).toBe(true);
 
     const first = host.querySelector<HTMLElement>('[data-asset-id="asset-1"]')!;
     first.focus();
@@ -224,7 +277,9 @@ describe("V1 keyboard daily-use seams", () => {
     expect(host.querySelector('[data-asset-id="asset-2"]')?.getAttribute("aria-pressed")).toBe("true");
     expect(host.querySelector(".selection-announcer")?.textContent).toContain("2 Assets shortlisted");
 
-    expect(host.querySelector("#shortlist-batch-tools")).toBeNull();
+    const batchTools = host.querySelector<HTMLElement>("#shortlist-batch-tools")!;
+    expect(batchTools.getAttribute("aria-hidden")).toBe("true");
+    expect(batchTools.hasAttribute("inert")).toBe(true);
     await press("c");
     expect(host.querySelector(".compare-board")?.getAttribute("role")).toBe("dialog");
     expect(host.querySelectorAll(".compare-card")).toHaveLength(2);
@@ -234,9 +289,18 @@ describe("V1 keyboard daily-use seams", () => {
     await focusAndPress(button("Close", host.querySelector(".compare-board")!), "Escape");
     expect(host.querySelector(".compare-board")).toBeNull();
 
-    await focusAndPress(button("Batch edit", host.querySelector(".selection-tray")!), "Enter");
+    const batchTrigger = button("Batch edit", host.querySelector(".selection-tray")!);
+    await focusAndPress(batchTrigger, "Enter");
     expect(host.querySelector(".selection-tray")?.classList.contains("selection-tray--expanded")).toBe(true);
-    expect(host.querySelector("#shortlist-batch-tools")).not.toBeNull();
+    expect(batchTools.getAttribute("aria-hidden")).toBe("false");
+    expect(batchTools.hasAttribute("inert")).toBe(false);
+    await press("Escape");
+    expect(host.querySelector(".selection-tray")?.classList.contains("selection-tray--expanded")).toBe(false);
+    expect(batchTools.getAttribute("aria-hidden")).toBe("true");
+    expect(batchTools.hasAttribute("inert")).toBe(true);
+    await waitFor(() => expect(document.activeElement).toBe(batchTrigger));
+
+    await focusAndPress(batchTrigger, "Enter");
     await focusAndPress(button("Maybe", host.querySelector(".selection-tray")!), "Enter");
     await waitFor(() => expect(harness.calls.updateAsset).toBe(2));
     expect(host.querySelector(".selection-tray")?.textContent).toContain("Updated 2");
