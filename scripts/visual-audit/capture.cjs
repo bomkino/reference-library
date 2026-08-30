@@ -107,6 +107,13 @@ async function recordOverlayHitTest(window, interaction, overlaySelector) {
   const occluded = await evaluate(window, `${interaction} hit testing`, `(() => {
     const overlay = document.querySelector(${JSON.stringify(overlaySelector)});
     if (!overlay) return [{ issue: 'missing-overlay', selector: ${JSON.stringify(overlaySelector)} }];
+    const overlayRect = overlay.getBoundingClientRect();
+    const visibleOverlay = {
+      left: Math.max(0, overlayRect.left + overlay.clientLeft),
+      top: Math.max(0, overlayRect.top + overlay.clientTop),
+      right: Math.min(innerWidth, overlayRect.left + overlay.clientLeft + overlay.clientWidth),
+      bottom: Math.min(innerHeight, overlayRect.top + overlay.clientTop + overlay.clientHeight),
+    };
     const controls = [...overlay.querySelectorAll('button, input, select, textarea, summary, [tabindex="0"]')]
       .filter((node) => {
         if (!node.getClientRects().length || node.closest('[inert], [aria-hidden="true"]')) return false;
@@ -115,8 +122,15 @@ async function recordOverlayHitTest(window, interaction, overlaySelector) {
       });
     return controls.flatMap((control) => {
       const rect = control.getBoundingClientRect();
-      const x = Math.min(innerWidth - 1, Math.max(0, rect.left + rect.width / 2));
-      const y = Math.min(innerHeight - 1, Math.max(0, rect.top + rect.height / 2));
+      const visible = {
+        left: Math.max(visibleOverlay.left, rect.left),
+        top: Math.max(visibleOverlay.top, rect.top),
+        right: Math.min(visibleOverlay.right, rect.right),
+        bottom: Math.min(visibleOverlay.bottom, rect.bottom),
+      };
+      if (visible.right <= visible.left || visible.bottom <= visible.top) return [];
+      const x = Math.min(innerWidth - 1, Math.max(0, visible.left + (visible.right - visible.left) / 2));
+      const y = Math.min(innerHeight - 1, Math.max(0, visible.top + (visible.bottom - visible.top) / 2));
       const hit = document.elementFromPoint(x, y);
       return hit && overlay.contains(hit) ? [] : [{
         control: (control.getAttribute('aria-label') || control.textContent || control.tagName).trim().slice(0, 80),
