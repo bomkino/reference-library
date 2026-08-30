@@ -205,10 +205,17 @@ jobs:
             release/linux/LINUX_X11_RUNTIME.json
             release/linux/LINUX_WAYLAND_SESSION.json
             release/linux/LINUX_WAYLAND_RUNTIME.json
-            release/visual-audit/
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
+      - name: Upload successful visual-audit evidence
+        if: startsWith(github.ref, 'refs/heads/')
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: reference-library-visual-audit-${{ github.sha }}
+          path: release/visual-audit/
+          if-no-files-found: error
+          retention-days: 30
 
   macos-arm64-package:
     runs-on: macos-26

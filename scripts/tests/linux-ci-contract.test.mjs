@@ -35,6 +35,11 @@ test("Ubuntu package CI extracts every format and rehearses hardened X11 and Way
   assert.doesNotMatch(linux, /--minimum-ms/);
   assert.doesNotMatch(linux, /--no-sandbox|--disable-setuid-sandbox/);
   assert.match(linux, /actions\/upload-artifact@[0-9a-f]{40}/);
+
+  const packageArtifact = linux.match(/name: reference-library-linux-x86_64-[\s\S]*?compression-level: 0/)?.[0];
+  assert.ok(packageArtifact, "Linux package artifact upload is missing");
+  assert.doesNotMatch(packageArtifact, /release\/visual-audit\//);
+  assert.match(linux, /name: Upload successful visual-audit evidence[\s\S]*?name: reference-library-visual-audit-/);
 });
 
 function escapeRegExp(value) {
