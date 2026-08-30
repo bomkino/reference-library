@@ -6,21 +6,17 @@ interface ElementState {
   ariaHidden: string | null;
 }
 
-function isModal(element: HTMLElement): boolean {
-  const role = element.getAttribute("role");
-  return role === "dialog" || role === "alertdialog";
-}
-
 export function useModalIsolation(
   root: RefObject<HTMLElement | null>,
   active: boolean,
+  exemptSelector: string,
 ): void {
   useEffect(() => {
     const container = root.current;
     if (!container || !active) return;
     const states = Array.from(container.children)
       .filter((element): element is HTMLElement => (
-        element instanceof HTMLElement && !isModal(element)
+        element instanceof HTMLElement && !(exemptSelector && element.matches(exemptSelector))
       ))
       .map((element): ElementState => ({
         element,
@@ -40,5 +36,5 @@ export function useModalIsolation(
         else element.setAttribute("aria-hidden", ariaHidden);
       }
     };
-  }, [active, root]);
+  }, [active, exemptSelector, root]);
 }

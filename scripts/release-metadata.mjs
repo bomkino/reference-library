@@ -82,6 +82,16 @@ export async function verifyReleaseMetadata(repository) {
 
   const cargo = await readFile(path.join(repository, "Cargo.toml"), "utf8");
   assert.match(cargo, new RegExp(`\\[workspace\\.package\\][\\s\\S]*?version = "${escapeRegExp(metadata.version)}"`));
+  const cargoLock = await readFile(path.join(repository, "Cargo.lock"), "utf8");
+  for (const packageName of ["reference-core", "reference-protocol"]) {
+    assert.match(
+      cargoLock,
+      new RegExp(
+        `\\[\\[package\\]\\]\\s+name = "${escapeRegExp(packageName)}"\\s+version = "${escapeRegExp(metadata.version)}"`,
+      ),
+      `Cargo.lock ${packageName} version drift`,
+    );
+  }
   const pkgbuild = await readFile(path.join(repository, "apps/linux/packaging/PKGBUILD"), "utf8");
   assert.match(pkgbuild, new RegExp(`^pkgver=${escapeRegExp(metadata.version)}$`, "m"));
 

@@ -7,9 +7,16 @@ export function handleDialogKey(event: KeyboardEvent<HTMLElement>, onEscape: () 
     return;
   }
   if (event.key !== "Tab") return;
+  const layoutAvailable = event.currentTarget.getClientRects().length > 0;
   const controls = [...event.currentTarget.querySelectorAll<HTMLElement>(
-    "button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex='0']",
-  )];
+    "button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex='0']",
+  )].filter((control) => {
+    if (control.closest("[inert], [aria-hidden='true']")) return false;
+    if (control.tagName !== "SUMMARY" && control.closest("details:not([open])")) return false;
+    if (layoutAvailable && control.getClientRects().length === 0) return false;
+    const style = getComputedStyle(control);
+    return style.display !== "none" && style.visibility !== "hidden";
+  });
   if (controls.length === 0) return;
   const current = controls.indexOf(document.activeElement as HTMLElement);
   const next = event.shiftKey

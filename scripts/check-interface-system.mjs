@@ -58,6 +58,7 @@ export const FONT_MANIFEST = Object.freeze([
 ]);
 
 const APPROVED_RUNTIME_WEIGHTS = new Set(["400", "500", "600"]);
+const MAX_UI_TRANSITION_MS = 300;
 const SPACE_SCALE = Object.freeze({
   "--space-1": "0.25rem",
   "--space-2": "0.5rem",
@@ -268,6 +269,9 @@ function inspectStylesheet(source, problems) {
       ) {
         problems.push(`styles.css:${declaration.line} prohibited visual effect: ${declaration.property}: ${declaration.value}`);
       }
+      if (/^transition(?:-(?:property|duration|delay))?$/.test(declaration.property)) {
+        inspectTransition(declaration, problems);
+      }
     }
   }
 
@@ -287,6 +291,145 @@ function inspectStylesheet(source, problems) {
       "min-width": "var(--target-min)",
     })) {
       problems.push(`${selector} must have min-height and min-width floors of var(--target-min)`);
+    }
+  }
+
+  requireInterfaceGeometry(rules, problems);
+  requireDrawerMotion(rules, problems);
+}
+
+function inspectTransition(declaration, problems) {
+  const value = declaration.value.trim();
+  if (value === "none") return;
+  const shorthandItems = declaration.property === "transition" ? splitCssList(value) : [];
+  if (
+    (declaration.property === "transition" && shorthandItems.some((item) => (
+      /^(?:all)(?:\s|$)/.test(item) || !transitionItemStartsWithProperty(item)
+    )))
+    || (declaration.property === "transition-property" && splitCssList(value).includes("all"))
+  ) {
+    problems.push(`styles.css:${declaration.line} transition must name exact properties, found ${value}`);
+  }
+  for (const token of value.match(/(?:^|[\s,(])(-?(?:\d*\.)?\d+)(ms|s)\b/g) ?? []) {
+    const match = token.match(/(-?(?:\d*\.)?\d+)(ms|s)\b/);
+    if (!match) continue;
+    const milliseconds = Number(match[1]) * (match[2] === "s" ? 1000 : 1);
+    if (milliseconds > MAX_UI_TRANSITION_MS) {
+      problems.push(
+        `styles.css:${declaration.line} UI transition timing must be ${MAX_UI_TRANSITION_MS}ms or less, found ${match[0]}`,
+      );
+    }
+  }
+}
+
+function requireInterfaceGeometry(rules, problems) {
+  const baseRule = (rule) => rule.atRules.length === 0;
+  for (const selector of [".ui-icon", "button > svg", "summary svg"]) {
+    if (!selectorEndsWithDeclarations(rules, selector, {
+      width: "1.15em",
+      height: "1.15em",
+      flex: "0 0 auto",
+    }, baseRule)) {
+      problems.push(`${selector} must keep a fixed 1.15em icon box with flex: 0 0 auto`);
+    }
+  }
+  for (const selector of ["button", ".view-settings > summary", ".inspector__disclosure-label"]) {
+    if (!selectorEndsWithDeclarations(rules, selector, { gap: "var(--space-2)" }, baseRule)) {
+      problems.push(`${selector} must keep a --space-2 icon/text gap`);
+    }
+  }
+  for (const selector of [
+    ".button-caret",
+    ".selection-tray__batch-caret",
+    ".view-settings__chevron",
+    ".disclosure-icon",
+  ]) {
+    if (!selectorEndsWithDeclarations(rules, selector, {
+      "inline-size": "1.5rem",
+      "block-size": "1.5rem",
+      flex: "0 0 1.5rem",
+      "place-items": "center",
+    }, baseRule)) {
+      problems.push(`${selector} must keep a fixed centered 1.5rem caret box`);
+    }
+  }
+  for (const selector of [
+    '.query-commandbar__filters[aria-expanded="true"] .button-caret',
+    ".selection-tray__batch-caret--open",
+    ".view-settings[open] .view-settings__chevron",
+    ".inspector__disclosure[open] .disclosure-icon",
+  ]) {
+    if (!selectorEndsWithDeclarations(rules, selector, { transform: "rotate(180deg)" }, baseRule)) {
+      problems.push(`${selector} must rotate its caret 180deg`);
+    }
+  }
+  for (const selector of [
+    ".button-caret",
+    ".selection-tray__batch-caret",
+    ".view-settings__chevron",
+    ".disclosure-icon",
+  ]) {
+    if (!rules.some((rule) => (
+      splitSelectors(rule.selector).includes(selector)
+      && declarationMap(rule).get("transition")?.value === "none"
+      && rule.atRules.some((atRule) => /^@media\s+.*prefers-reduced-motion\s*:\s*reduce/i.test(atRule))
+    ))) {
+      problems.push(`${selector} must disable its transition under reduced motion`);
+    }
+  }
+
+  const filterPosition = lastDeclarationForSelector(rules, ".filter-panel", "position", baseRule)?.value;
+  if (filterPosition !== "absolute" && filterPosition !== "fixed") {
+    problems.push(".filter-panel must be an absolute or fixed overlay so expansion cannot move the Contact Sheet");
+  }
+}
+
+function requireDrawerMotion(rules, problems) {
+  const drawerBreakpoint = (rule) => rule.atRules.some((atRule) => /^@media\s*\(max-width:\s*1320px\)/i.test(atRule));
+  for (const selector of [".sidebar", ".inspector"]) {
+    if (
+      lastDeclarationForSelector(rules, selector, "visibility", drawerBreakpoint)?.value !== "hidden"
+      || lastDeclarationForSelector(rules, selector, "pointer-events", drawerBreakpoint)?.value !== "none"
+    ) {
+      problems.push(`${selector} must remain hidden and non-interactive while its drawer is closed`);
+    }
+    const delayedVisibility = rules.some((rule) => {
+      if (!drawerBreakpoint(rule) || !splitSelectors(rule.selector).includes(selector)) return false;
+      const declarations = declarationMap(rule);
+      const transition = declarations.get("transition")?.value;
+      if (!transition) return false;
+      const items = splitCssList(transition);
+      const transform = items.find((item) => /^transform(?:\s|$)/.test(item));
+      const visibility = items.find((item) => /^visibility(?:\s|$)/.test(item));
+      if (!transform || !visibility) return false;
+      const transformTimes = cssTimes(transform);
+      const visibilityTimes = cssTimes(visibility);
+      return transformTimes.length >= 1
+        && visibilityTimes.length >= 2
+        && visibilityTimes[0] === 0
+        && visibilityTimes[1] === transformTimes[0]
+        && transformTimes[0] > 0
+        && transformTimes[0] <= MAX_UI_TRANSITION_MS;
+    });
+    if (!delayedVisibility) {
+      problems.push(`${selector} must delay hidden visibility until its exit transform duration finishes`);
+    }
+  }
+
+  for (const selector of [".sidebar--drawer-open", ".inspector--drawer-open"]) {
+    const visible = rules.some((rule) => (
+      drawerBreakpoint(rule)
+      &&
+      splitSelectors(rule.selector).includes(selector)
+      && declarationMap(rule).get("visibility")?.value === "visible"
+    ));
+    const immediate = rules.some((rule) => {
+      if (!drawerBreakpoint(rule) || !splitSelectors(rule.selector).includes(selector)) return false;
+      const delay = declarationMap(rule).get("transition-delay")?.value;
+      return delay !== undefined && splitCssList(delay).every((value) => cssTimeMilliseconds(value) === 0);
+    });
+    if (!visible || !immediate) {
+      problems.push(`${selector} must become visible immediately with transition-delay: 0s`);
     }
   }
 }
@@ -343,6 +486,7 @@ async function inspectPhosphor(repository, workspace, source, problems) {
     for (const [label, pattern] of [
       ["import the Phosphor Icon type", /import\s+type\s+\{\s*Icon\s*}\s+from\s+["']@phosphor-icons\/react["']/],
       ["render the supplied Phosphor component", /<IconComponent\b/],
+      ["expose the shared ui-icon class", /\bclassName\s*=\s*["']ui-icon["']/],
       ["use the bold icon weight", /\bweight\s*=\s*["']bold["']/],
       ["size icons at 1em", /\bsize\s*=\s*["']1em["']/],
       ["hide decorative icons from accessibility APIs", /\baria-hidden\s*=\s*["']true["']/],
@@ -423,16 +567,74 @@ function requireCustomProperty(rules, property, expected, problems) {
   }
 }
 
-function selectorEndsWithDeclarations(rules, expectedSelector, expectedDeclarations) {
+function selectorEndsWithDeclarations(rules, expectedSelector, expectedDeclarations, rulePredicate = () => true) {
   return Object.entries(expectedDeclarations).every(([property, expectedValue]) => {
     for (let index = rules.length - 1; index >= 0; index -= 1) {
       const rule = rules[index];
+      if (!rulePredicate(rule)) continue;
       if (!splitSelectors(rule.selector).includes(expectedSelector)) continue;
       const declaration = declarationMap(rule).get(property);
       if (declaration) return declaration.value === expectedValue;
     }
     return false;
   });
+}
+
+function lastDeclarationForSelector(rules, expectedSelector, property, rulePredicate = () => true) {
+  for (let index = rules.length - 1; index >= 0; index -= 1) {
+    const rule = rules[index];
+    if (!rulePredicate(rule)) continue;
+    if (!splitSelectors(rule.selector).includes(expectedSelector)) continue;
+    const declaration = declarationMap(rule).get(property);
+    if (declaration) return declaration;
+  }
+  return null;
+}
+
+function splitCssList(value) {
+  const items = [];
+  let start = 0;
+  let depth = 0;
+  let quote = null;
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (quote) {
+      if (character === "\\") index += 1;
+      else if (character === quote) quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'") quote = character;
+    else if (character === "(") depth += 1;
+    else if (character === ")") depth = Math.max(0, depth - 1);
+    else if (character === "," && depth === 0) {
+      items.push(value.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  items.push(value.slice(start).trim());
+  return items.filter(Boolean);
+}
+
+function cssTimeMilliseconds(value) {
+  const match = value.trim().match(/^(-?(?:\d*\.)?\d+)(ms|s)$/);
+  if (!match) return null;
+  return Number(match[1]) * (match[2] === "s" ? 1000 : 1);
+}
+
+function cssTimes(value) {
+  return [...value.matchAll(/(-?(?:\d*\.)?\d+)(ms|s)\b/g)]
+    .map((match) => Number(match[1]) * (match[2] === "s" ? 1000 : 1));
+}
+
+function transitionItemStartsWithProperty(item) {
+  const first = item.trim().match(/^([^\s]+)/)?.[1]?.toLowerCase();
+  if (!first) return false;
+  return !(
+    /^-?(?:\d*\.)?\d+(?:ms|s)$/.test(first)
+    || /^(?:ease|ease-in|ease-out|ease-in-out|linear|step-start|step-end)$/.test(first)
+    || /^(?:cubic-bezier|steps|linear)\(/.test(first)
+    || /^(?:normal|allow-discrete)$/.test(first)
+  );
 }
 
 function declarationMap(rule) {
@@ -452,7 +654,7 @@ function parseDeclarations(rule) {
   return declarations;
 }
 
-function collectRules(source, offset = 0, original = source) {
+function collectRules(source, offset = 0, original = source, atRules = []) {
   const rules = [];
   let cursor = 0;
   while (cursor < source.length) {
@@ -480,11 +682,12 @@ function collectRules(source, offset = 0, original = source) {
     const body = source.slice(open + 1, close);
     const bodyOffset = offset + open + 1;
     if (/^@(media|supports|layer|container|scope|document)\b/.test(selector)) {
-      rules.push(...collectRules(body, bodyOffset, original));
+      rules.push(...collectRules(body, bodyOffset, original, [...atRules, selector]));
     } else {
       rules.push({
         selector,
         body,
+        atRules,
         bodyLine: 1 + lineCount(original.slice(0, bodyOffset)),
         line: 1 + lineCount(original.slice(0, offset + start)),
       });

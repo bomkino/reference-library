@@ -83,6 +83,69 @@ test("runtime type, token spacing, effects and control floors cannot regress", a
   });
 });
 
+test("icon geometry, overlay stability and bounded motion cannot regress", async () => {
+  await withFixture(async (fixture) => {
+    const stylesheetPath = path.join(fixture, "packages/workspace/src/styles.css");
+    const stylesheet = await readFile(stylesheetPath, "utf8");
+    const withoutReducedCaretMotion = stylesheet
+      .replace(
+        /@media \(prefers-reduced-motion: reduce\) \{\s*\.view-settings__chevron,\s*\.disclosure-icon \{ transition: none; \}\s*\}/,
+        "",
+      )
+      .replace(
+        "  .button-caret,\n  .view-settings__chevron,\n  .disclosure-icon,\n  .selection-tray__batch-caret,\n  .filter-panel,",
+        "  .filter-panel,",
+      );
+    await writeFile(
+      stylesheetPath,
+      `${withoutReducedCaretMotion
+        .replaceAll(/visibility\s+0s\s+[^,;]+?\s+(?:\d*\.?\d+)(?:ms|s)/g, "visibility 0s linear 0s")
+        .replaceAll("transition-delay: 0s;", "transition-delay: 170ms;")}
+.filter-panel { position: static; }
+.ui-icon,
+button > svg,
+summary svg { width: 2em; height: 2em; flex: 1 1 auto; }
+.button-caret,
+.selection-tray__batch-caret,
+.view-settings__chevron,
+.disclosure-icon { inline-size: 2rem; block-size: 2rem; flex: 1 1 2rem; place-items: start; }
+button,
+.view-settings > summary,
+.inspector__disclosure-label { gap: var(--space-1); }
+.query-commandbar__filters[aria-expanded="true"] .button-caret,
+.selection-tray__batch-caret--open,
+.view-settings[open] .view-settings__chevron,
+.inspector__disclosure[open] .disclosure-icon { transform: rotate(90deg); }
+.contract-regression { transition: all 450ms ease; }
+.implicit-transition-regression { transition: 200ms ease; }
+@media (max-width: 1320px) {
+  .sidebar,
+  .inspector { visibility: visible; pointer-events: auto; }
+}
+`,
+    );
+
+    const wrapperPath = path.join(fixture, "packages/workspace/src/ui-icon.tsx");
+    const wrapper = await readFile(wrapperPath, "utf8");
+    await writeFile(wrapperPath, wrapper.replace('className="ui-icon" ', ""));
+
+    const problems = await inspectInterfaceSystem(fixture);
+    assert.ok(problems.some((problem) => problem.includes("fixed 1.15em icon box")));
+    assert.ok(problems.some((problem) => problem.includes("--space-2 icon/text gap")));
+    assert.ok(problems.some((problem) => problem.includes("fixed centered 1.5rem caret box")));
+    assert.ok(problems.some((problem) => problem.includes("rotate its caret 180deg")));
+    assert.ok(problems.some((problem) => problem.includes("disable its transition under reduced motion")));
+    assert.ok(problems.some((problem) => problem.includes("filter-panel must be an absolute or fixed overlay")));
+    assert.ok(problems.some((problem) => problem.includes("must remain hidden and non-interactive")));
+    assert.ok(problems.some((problem) => problem.includes("delay hidden visibility")));
+    assert.ok(problems.some((problem) => problem.includes("become visible immediately")));
+    assert.ok(problems.some((problem) => problem.includes("transition must name exact properties")));
+    assert.ok(problems.some((problem) => problem.includes("transition must name exact properties") && problem.includes("found 200ms ease")));
+    assert.ok(problems.some((problem) => problem.includes("transition timing must be 300ms or less")));
+    assert.ok(problems.some((problem) => problem.includes("UiIcon must expose the shared ui-icon class")));
+  });
+});
+
 test("the Phosphor pin, decorative wrapper and glyph ban cannot regress", async () => {
   await withFixture(async (fixture) => {
     const packagePath = path.join(fixture, "packages/workspace/package.json");

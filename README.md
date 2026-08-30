@@ -8,21 +8,21 @@ One project gets one `.pitchlibrary` package. Apple-Silicon macOS is primary. Ga
 
 ## Status
 
-**This source tree targets Reference Library 0.3.0 (build 3).** GitHub Releases is the authority for whether a version is public; source version metadata or a green branch run alone is not a release.
+**This source tree targets Reference Library 0.3.1 (build 4).** GitHub Releases is the authority for whether a version is public; source version metadata or a green branch run alone is not a release.
 
-0.3.0 keeps the 0.2.0 catalogue and editorial-decision work, then replaces the interface typography and icon foundation: locally bundled pitch.dog Type System v13 fonts, Phosphor icons, anchor-locked font weights and a coherent spacing/target system. It changes no `.pitchlibrary` schema or canonical document meaning.
+0.3.1 is a visual-craft patch over 0.3.0. It keeps the locally bundled pitch.dog Type System v13 fonts and Phosphor icons, then tightens container alignment, caret and icon rhythm, control heights, clipping, overflow and expansion motion. It changes no `.pitchlibrary` schema or canonical document meaning.
 
 Public binaries are built from exact `main`, validated by the five-job CI matrix, and published with SHA-256 checksums and source-bound build receipts. Representative Apple-Silicon, Garuda/KDE and Mac → Garuda → Mac target-machine journeys remain open evidence gates; publication does not close them.
 
-See the [0.3.0 release notes](docs/releases/0.3.0.md), [interface system](docs/product/BRUTALIST_INTERFACE_SYSTEM.md), [Asset Browser parity](docs/product/ASSET_BROWSER_PARITY.md), [Editorial Shortlist and Compare](docs/product/EDITORIAL_SHORTLIST_AND_COMPARE.md), and [documentation map](docs/README.md).
+See the [0.3.1 release notes](docs/releases/0.3.1.md), [interface system](docs/product/BRUTALIST_INTERFACE_SYSTEM.md), [Asset Browser parity](docs/product/ASSET_BROWSER_PARITY.md), [Editorial Shortlist and Compare](docs/product/EDITORIAL_SHORTLIST_AND_COMPARE.md), and [documentation map](docs/README.md).
 
 ## Download and install
 
-Download the newest published version from [GitHub Releases](https://github.com/bomkino/reference-library/releases/latest). Verify the downloaded file against `SHA256SUMS` from the same release before opening it. The filenames below apply only when 0.3.0 appears on that page.
+Download the newest published version from [GitHub Releases](https://github.com/bomkino/reference-library/releases/latest). Verify the downloaded file against `SHA256SUMS` from the same release before opening it. For 0.3.1, use the filenames below from the matching `v0.3.1` release.
 
 ### Apple-Silicon macOS
 
-1. Download `reference-library-0.3.0-macos-arm64.app.zip` and expand it.
+1. Download `reference-library-0.3.1-macos-arm64.app.zip` and expand it.
 2. Move `Reference Library.app` to `/Applications`.
 3. On first launch, Control-click the app in Finder and choose **Open**. If macOS still blocks it, use **System Settings → Privacy & Security → Open Anyway**.
 
@@ -30,21 +30,20 @@ The app is ad-hoc signed but not notarized because this project does not use a p
 
 ### Linux x86_64
 
-- AppImage: make `reference-library-0.3.0-x86_64.AppImage` executable, then run it.
-- Arch/Garuda: install `reference-library-0.3.0-x64.pacman` with `sudo pacman -U`.
-- Portable fallback: expand `reference-library-0.3.0-x64.tar.gz` and run the bundled executable.
+- AppImage: make `reference-library-0.3.1-x86_64.AppImage` executable, then run it.
+- Arch/Garuda: install `reference-library-0.3.1-x64.pacman` with `sudo pacman -U`.
+- Portable fallback: expand `reference-library-0.3.1-x64.tar.gz` and run the bundled executable.
 
 Ubuntu CI validates the packages and packaged X11/Wayland journeys. This is compatible-runner evidence, not a claim that representative Garuda/KDE hardware integration is complete.
 
-## What 0.3.0 changes
+## What 0.3.1 changes
 
-- Makes **PD Body** the default interface family, **PD Head** the major editorial-display family and **PD Eyebrow** the metadata/data family.
-- Bundles the seven CC0 v13 WOFF2 files locally. Fonts work offline and never depend on GitHub or another runtime network request.
-- Pins font provenance to [`bomkino/pitchdog-type-system` v13.0.0](https://github.com/bomkino/pitchdog-type-system/tree/v13.0.0), commit `786b4a2b671182319320f922b8de8f927ea3a002`.
-- Replaces improvised icon masks and icon-like control glyphs with the pinned MIT-licensed Phosphor React package.
-- Uses authentic variable-font anchors instead of arbitrary in-between weights.
-- Establishes one spacing scale, consistent control padding and a 44 px minimum interactive-target floor at every Interface Scale.
-- Keeps narrow-window Library and Inspector access in explicit, focus-managed drawers without removing their capabilities.
+- Rebalances icons, labels and carets inside controls and disclosure headers.
+- Normalizes caret size, icon/label gaps, control heights and panel insets.
+- Contains constrained text and controls without page-level overflow or clipped actions.
+- Keeps drawers, filters and batch tools from reflowing the canvas; local disclosures expand with measured motion instead of an abrupt jump.
+- Keeps transitions restrained, intent-led and compatible with reduced motion.
+- Retains the locally bundled pitch.dog Type System v13 fonts, pinned Phosphor icons and 44 px minimum interactive-target floor introduced in 0.3.0.
 
 ## Product capabilities
 

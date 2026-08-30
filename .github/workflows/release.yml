@@ -46,6 +46,18 @@ jobs:
           if [[ "$current_main" != "$SOURCE_SHA" ]]; then
             echo "publish=false" >> "$GITHUB_OUTPUT"
             echo "CI source $SOURCE_SHA is stale; current main is $current_main. No release."
+          elif gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+            existing_tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq '.sha')"
+            if [[ "$existing_tag_sha" != "$SOURCE_SHA" ]]; then
+              echo "::error::Existing tag $tag resolves to $existing_tag_sha, not verified source $SOURCE_SHA."
+              exit 1
+            elif gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              echo "Release $tag already exists at verified source $SOURCE_SHA; no-op."
+            else
+              echo "publish=true" >> "$GITHUB_OUTPUT"
+              echo "Existing tag $tag matches verified source $SOURCE_SHA; publication may continue."
+            fi
           elif gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "publish=false" >> "$GITHUB_OUTPUT"
             echo "Release $tag already exists; no-op."

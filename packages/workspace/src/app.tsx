@@ -50,6 +50,7 @@ import {
 } from "./workspace-events";
 
 const INTERFACE_SCALES: InterfaceScale[] = [0.8, 1, 1.25, 1.5];
+const DRAWER_MODAL_QUERY = "(max-width: 1320px)";
 
 export function App() {
   const bridge = window.referenceLibrary;
@@ -233,11 +234,19 @@ function OpenWorkspace(props: {
   const [sidebarModalOpen, setSidebarModalOpen] = useState(false);
   const [libraryDrawerOpen, setLibraryDrawerOpen] = useState(false);
   const [inspectorDrawerOpen, setInspectorDrawerOpen] = useState(false);
+  const [drawersAreModal, setDrawersAreModal] = useState(() => (
+    typeof window.matchMedia === "function"
+      ? window.matchMedia(DRAWER_MODAL_QUERY).matches
+      : window.innerWidth <= 1320
+  ));
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const workspace = useRef<HTMLElement>(null);
   const libraryDrawerTrigger = useRef<HTMLButtonElement>(null);
   const inspectorDrawerTrigger = useRef<HTMLButtonElement>(null);
+  const viewSettings = useRef<HTMLDetailsElement>(null);
+  const compareReturnFocus = useRef<HTMLElement | null>(null);
+  const shortcutsReturnFocus = useRef<HTMLElement | null>(null);
   const closeLibraryDrawer = useCallback(() => {
     setLibraryDrawerOpen(false);
     requestAnimationFrame(() => {
@@ -252,7 +261,93 @@ function OpenWorkspace(props: {
       if (trigger?.isConnected) trigger.focus();
     });
   }, []);
-  useModalIsolation(workspace, Boolean(preview || compareOpen || pending || sidebarModalOpen || shortcutsOpen));
+  const closeViewSettings = useCallback((restoreFocus = true) => {
+    const details = viewSettings.current;
+    if (!details) return;
+    details.open = false;
+    if (restoreFocus) requestAnimationFrame(() => details.querySelector<HTMLElement>("summary")?.focus());
+  }, []);
+  const closeCompare = useCallback(() => {
+    setCompareOpen(false);
+    requestAnimationFrame(() => {
+      const target = compareReturnFocus.current?.isConnected
+        ? compareReturnFocus.current
+        : document.querySelector<HTMLElement>("[data-compare-trigger], [data-asset-id][aria-selected='true']");
+      target?.focus({ preventScroll: true });
+    });
+  }, []);
+  const openShortcuts = useCallback(() => {
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const owningSettings = active?.closest<HTMLDetailsElement>(".view-settings");
+    shortcutsReturnFocus.current = owningSettings?.querySelector<HTMLElement>("summary") ?? active;
+    closeViewSettings(false);
+    setShortcutsOpen(true);
+  }, [closeViewSettings]);
+  const closeShortcuts = useCallback(() => {
+    setShortcutsOpen(false);
+    requestAnimationFrame(() => {
+      if (shortcutsReturnFocus.current?.isConnected) shortcutsReturnFocus.current.focus({ preventScroll: true });
+    });
+  }, []);
+  const libraryDrawerModalOpen = drawersAreModal && libraryDrawerOpen;
+  const inspectorDrawerModalOpen = drawersAreModal && inspectorDrawerOpen;
+  const modalIsolationActive = Boolean(
+    preview || compareOpen || pending || sidebarModalOpen || shortcutsOpen ||
+    libraryDrawerModalOpen || inspectorDrawerModalOpen
+  );
+  const modalIsolationExemptions = sidebarModalOpen
+    ? ""
+    : preview
+      ? ".preview"
+      : compareOpen
+        ? ".compare-board"
+        : pending
+          ? ".confirmation"
+          : shortcutsOpen
+            ? ".shortcut-dialog"
+            : libraryDrawerModalOpen
+              ? "#library-navigation, .workspace-drawer-backdrop"
+              : inspectorDrawerModalOpen
+                ? "#asset-inspector, .workspace-drawer-backdrop"
+                : "";
+  useEffect(() => {
+    const media = typeof window.matchMedia === "function" ? window.matchMedia(DRAWER_MODAL_QUERY) : null;
+    const synchronize = () => {
+      const modal = media?.matches ?? window.innerWidth <= 1320;
+      const focused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setDrawersAreModal(modal);
+      if (modal) {
+        const library = document.getElementById("library-navigation");
+        const inspector = document.getElementById("asset-inspector");
+        const returnTarget = focused && library?.contains(focused)
+          ? libraryDrawerTrigger.current
+          : focused && inspector?.contains(focused)
+            ? inspectorDrawerTrigger.current
+            : null;
+        if (returnTarget) requestAnimationFrame(() => returnTarget.focus({ preventScroll: true }));
+        return;
+      }
+
+      const openDrawer = document.querySelector<HTMLElement>(".sidebar--drawer-open, .inspector--drawer-open");
+      setLibraryDrawerOpen(false);
+      setInspectorDrawerOpen(false);
+      if (!openDrawer || !focused || !openDrawer.contains(focused)) return;
+      requestAnimationFrame(() => {
+        openDrawer.querySelector<HTMLElement>(
+          "button:not(:disabled):not(.sidebar__close):not(.inspector__close), input:not(:disabled), select:not(:disabled), textarea:not(:disabled)",
+        )?.focus({ preventScroll: true });
+      });
+    };
+
+    synchronize();
+    if (media) media.addEventListener("change", synchronize);
+    else window.addEventListener("resize", synchronize);
+    return () => {
+      if (media) media.removeEventListener("change", synchronize);
+      else window.removeEventListener("resize", synchronize);
+    };
+  }, []);
+  useModalIsolation(workspace, modalIsolationActive, modalIsolationExemptions);
   const pager = useAssetPager(
     props.bridge,
     props.session.sessionId,
@@ -307,17 +402,17 @@ function OpenWorkspace(props: {
   }, [pager.items, preview, selected]);
 
   useEffect(() => {
-    if (compareOpen && comparedAssets.length < 2) setCompareOpen(false);
-  }, [compareOpen, comparedAssets.length]);
+    if (compareOpen && comparedAssets.length < 2) closeCompare();
+  }, [closeCompare, compareOpen, comparedAssets.length]);
 
   useEffect(() => {
     if (!selected) setInspectorDrawerOpen(false);
   }, [selected]);
 
   useEffect(() => {
-    const drawer = libraryDrawerOpen
+    const drawer = libraryDrawerModalOpen
       ? document.getElementById("library-navigation")
-      : inspectorDrawerOpen
+      : inspectorDrawerModalOpen
         ? document.getElementById("asset-inspector")
         : null;
     if (!drawer) return;
@@ -327,18 +422,18 @@ function OpenWorkspace(props: {
       const firstControl = drawer.querySelector<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled)");
       (close ?? firstControl)?.focus();
     });
-  }, [inspectorDrawerOpen, libraryDrawerOpen]);
+  }, [inspectorDrawerModalOpen, libraryDrawerModalOpen]);
 
   useEffect(() => {
-    if (!libraryDrawerOpen && !inspectorDrawerOpen) return;
+    if (!libraryDrawerModalOpen && !inspectorDrawerModalOpen) return;
     const closeDrawer = (event: globalThis.KeyboardEvent) => {
       if (event.defaultPrevented || event.key !== "Escape") return;
-      if (inspectorDrawerOpen) closeInspectorDrawer();
+      if (inspectorDrawerModalOpen) closeInspectorDrawer();
       else closeLibraryDrawer();
     };
     window.addEventListener("keydown", closeDrawer);
     return () => window.removeEventListener("keydown", closeDrawer);
-  }, [closeInspectorDrawer, closeLibraryDrawer, inspectorDrawerOpen, libraryDrawerOpen]);
+  }, [closeInspectorDrawer, closeLibraryDrawer, inspectorDrawerModalOpen, libraryDrawerModalOpen]);
 
   useEffect(() => {
     if (!autoRescan || props.needsRestart || roots.length === 0) return;
@@ -433,6 +528,7 @@ function OpenWorkspace(props: {
       setPreview(null);
       setLibraryDrawerOpen(false);
       setInspectorDrawerOpen(false);
+      compareReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setCompareOpen(true);
     });
   };
@@ -580,7 +676,6 @@ function OpenWorkspace(props: {
     const next = shortlisted.filter((asset) => asset.assetId !== assetId);
     setShortlisted(next);
     setShortlistStatus(null);
-    if (compareOpen && compareAssets(next).length < 2) setCompareOpen(false);
   };
 
   const clearShortlist = () => {
@@ -588,7 +683,7 @@ function OpenWorkspace(props: {
     setShortlisted([]);
     setShortlistAnchorIndex(null);
     setShortlistStatus(null);
-    setCompareOpen(false);
+    if (compareOpen) closeCompare();
   };
 
   const applyQuery = (update: (query: AssetQuery) => AssetQuery) => requestTransition(
@@ -631,7 +726,7 @@ function OpenWorkspace(props: {
   const closeInspector = closeInspectorDrawer;
 
   return (
-    <main ref={workspace} className="workspace-shell">
+    <main ref={workspace} className={`workspace-shell workspace-shell--scale-${Math.round(interfaceScale * 100)}`}>
       <header className="topbar">
         <div className="topbar__identity">
           <ProductMark variant="compact" />
@@ -646,31 +741,40 @@ function OpenWorkspace(props: {
             ref={libraryDrawerTrigger}
             className="button--quiet topbar__drawer-toggle topbar__library-toggle"
             aria-controls="library-navigation"
-            aria-expanded={libraryDrawerOpen}
+            aria-expanded={libraryDrawerModalOpen}
             onClick={() => {
               setInspectorDrawerOpen(false);
-              if (libraryDrawerOpen) closeLibraryDrawer();
+              if (libraryDrawerModalOpen) closeLibraryDrawer();
               else setLibraryDrawerOpen(true);
             }}
-          ><UiIcon icon={Books} />{" "}Library</button>
+          ><UiIcon icon={Books} /><span>Library</span></button>
           <button
             ref={inspectorDrawerTrigger}
             className="button--quiet topbar__drawer-toggle topbar__inspector-toggle"
             aria-controls="asset-inspector"
-            aria-expanded={inspectorDrawerOpen}
+            aria-expanded={inspectorDrawerModalOpen}
             disabled={!selected}
             onClick={() => {
               setLibraryDrawerOpen(false);
-              if (inspectorDrawerOpen) closeInspectorDrawer();
+              if (inspectorDrawerModalOpen) closeInspectorDrawer();
               else setInspectorDrawerOpen(true);
             }}
-          ><UiIcon icon={SidebarSimple} />{" "}Selected Reference</button>
+          ><UiIcon icon={SidebarSimple} /><span>Selected Reference</span></button>
           <div className="view-switcher topbar__view-switcher" role="group" aria-label="Asset view">
             {(["grid", "compact", "list"] as AssetViewMode[]).map((mode) => (
               <button className="button--secondary" aria-pressed={viewMode === mode} key={mode} onClick={() => { setViewMode(mode); writePreferences({ viewMode: mode }); }}>{mode}</button>
             ))}
           </div>
-          <details className="view-settings">
+          <details
+            ref={viewSettings}
+            className="view-settings"
+            onKeyDown={(event) => {
+              if (event.key !== "Escape" || !event.currentTarget.open) return;
+              event.preventDefault();
+              event.stopPropagation();
+              closeViewSettings();
+            }}
+          >
             <summary>
               <UiIcon icon={SlidersHorizontal} />
               <span>View &amp; sync</span>
@@ -680,8 +784,8 @@ function OpenWorkspace(props: {
               <button
                 className="button--secondary view-settings__done"
                 type="button"
-                onClick={(event) => event.currentTarget.closest("details")?.removeAttribute("open")}
-              ><UiIcon icon={X} />{" "}Done</button>
+                onClick={() => closeViewSettings()}
+              ><UiIcon icon={X} /><span>Done</span></button>
               <div className="view-switcher view-settings__view-switcher" role="group" aria-label="Asset view in settings">
                 {(["grid", "compact", "list"] as AssetViewMode[]).map((mode) => (
                   <button className="button--secondary" aria-pressed={viewMode === mode} key={mode} onClick={() => { setViewMode(mode); writePreferences({ viewMode: mode }); }}>{mode}</button>
@@ -691,29 +795,32 @@ function OpenWorkspace(props: {
               <label>Thumbnail size<input aria-label="Thumbnail size" max="340" min="140" step="20" type="range" value={thumbnailSize} onChange={(event) => { const value = Number(event.target.value); setThumbnailSize(value); writePreferences({ thumbnailDensity: value }); }} /></label>
               <label className="toggle-control"><input type="checkbox" checked={multiThumbnailPreviews} onChange={(event) => { setMultiThumbnailPreviews(event.target.checked); writePreferences({ multiThumbnailPreviews: event.target.checked }); }} /><span>Related thumbnails</span></label>
               <label className="toggle-control"><input type="checkbox" checked={autoRescan} onChange={(event) => { setAutoRescan(event.target.checked); writePreferences({ autoRescan: event.target.checked }); }} /><span>Auto-rescan every 60 s</span></label>
+              <button className="button--secondary view-settings__shortcuts" type="button" onClick={openShortcuts}><UiIcon icon={Keyboard} /><span>Keyboard shortcuts</span></button>
               <button className="button--secondary view-settings__close" disabled={busy} onClick={closeLibrary}>Close Library</button>
             </div>
           </details>
-          <button className="button--quiet topbar__shortcuts" aria-label="Keyboard shortcuts" onClick={() => setShortcutsOpen(true)}><UiIcon icon={Keyboard} />{" "}Shortcuts</button>
-          <button className="button--quiet topbar__close" disabled={busy} onClick={closeLibrary}><UiIcon icon={X} />{" "}Close</button>
+          <button className="button--quiet topbar__shortcuts" aria-label="Keyboard shortcuts" onClick={openShortcuts}><UiIcon icon={Keyboard} /><span>Shortcuts</span></button>
+          <button className="button--quiet topbar__close" disabled={busy} onClick={closeLibrary}><UiIcon icon={X} /><span>Close</span></button>
         </div>
         <QueryToolbar query={query} roots={roots} facets={pager.facets} disabled={busy || props.needsRestart} onChange={applyQuery} />
       </header>
-      {(libraryDrawerOpen || inspectorDrawerOpen) && (
-        <button
-          className="workspace-drawer-backdrop"
-          aria-label="Close open panel"
-          onClick={() => {
-            if (inspectorDrawerOpen) closeInspectorDrawer();
-            else closeLibraryDrawer();
-          }}
-        />
-      )}
+      <button
+        className={`workspace-drawer-backdrop${libraryDrawerModalOpen || inspectorDrawerModalOpen ? " workspace-drawer-backdrop--open" : ""}`}
+        aria-label="Close open panel"
+        aria-hidden={!(libraryDrawerModalOpen || inspectorDrawerModalOpen)}
+        inert={!(libraryDrawerModalOpen || inspectorDrawerModalOpen)}
+        tabIndex={libraryDrawerModalOpen || inspectorDrawerModalOpen ? 0 : -1}
+        type="button"
+        onClick={() => {
+          if (inspectorDrawerModalOpen) closeInspectorDrawer();
+          else closeLibraryDrawer();
+        }}
+      />
       <LibrarySidebar
         bridge={props.bridge}
         sessionId={props.session.sessionId}
         total={pager.total}
-        drawerOpen={libraryDrawerOpen}
+        drawerOpen={libraryDrawerModalOpen}
         selectedCollectionId={query.collectionId}
         rootRevision={props.invalidations.roots}
         collectionRevision={props.invalidations.collections}
@@ -792,7 +899,7 @@ function OpenWorkspace(props: {
         sessionId={props.session.sessionId}
         detail={editor.detail}
         draft={editor.draft}
-        drawerOpen={inspectorDrawerOpen}
+        drawerOpen={inspectorDrawerModalOpen}
         collections={collections}
         loading={editor.loading}
         saving={editor.saving}
@@ -826,10 +933,10 @@ function OpenWorkspace(props: {
         onMove={moveShortlist}
         onRemove={removeFromShortlist}
         onError={props.setShellError}
-        onClose={() => { setCompareOpen(false); requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-compare-trigger]")?.focus()); }}
+        onClose={closeCompare}
       />}
       {pending && <TransitionDialog label={pending.label} dirty={pending.dirty} canSave={assetDraftErrors(editor.draft).length === 0} onChoice={(choice) => void resolveTransition(choice)} />}
-      {shortcutsOpen && <KeyboardShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
+      {shortcutsOpen && <KeyboardShortcutsDialog onClose={closeShortcuts} />}
     </main>
   );
 }

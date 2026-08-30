@@ -10,7 +10,7 @@ const repository = path.resolve(import.meta.dirname, "../..");
 
 test("release metadata agrees with every source version surface", async () => {
   const metadata = await verifyReleaseMetadata(repository);
-  assert.equal(metadata.version, "0.3.0");
+  assert.equal(metadata.version, "0.3.1");
   assert.equal(metadata.targets["macos-arm64"].arch, "arm64");
 });
 
@@ -22,6 +22,7 @@ test("release metadata rejects a stale native bundle version", async () => {
       "package.json",
       "package-lock.json",
       "Cargo.toml",
+      "Cargo.lock",
       "apps/linux/package.json",
       "apps/linux/packaging/PKGBUILD",
       "apps/linux/packaging/io.pitchdog.ReferenceLibrary.desktop",
@@ -38,9 +39,22 @@ test("release metadata rejects a stale native bundle version", async () => {
     }
     const plistPath = path.join(temporary, "apps/macos/Info.plist");
     const plist = await readFile(plistPath, "utf8");
-    await writeFile(plistPath, plist.replace("<string>0.3.0</string>", "<string>9.9.9</string>"));
+    await writeFile(plistPath, plist.replace("<string>0.3.1</string>", "<string>9.9.9</string>"));
     await assert.rejects(verifyReleaseMetadata(temporary), /Info\.plist CFBundleShortVersionString drift/);
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }
+});
+
+test("release publisher rejects a pre-existing tag on another commit", async () => {
+  const workflow = await readFile(path.join(repository, ".github/workflows/release.yml"), "utf8");
+  const tagLookup = workflow.indexOf('git/ref/tags/$tag');
+  const tagResolution = workflow.indexOf('commits/$tag');
+  const mismatchGuard = workflow.indexOf('[[ "$existing_tag_sha" != "$SOURCE_SHA" ]]');
+  const releaseLookup = workflow.indexOf('gh release view "$tag"');
+
+  assert.ok(tagLookup >= 0, "release workflow must inspect a pre-existing version tag");
+  assert.ok(tagResolution > tagLookup, "release workflow must resolve the tag to a commit");
+  assert.ok(mismatchGuard > tagResolution, "release workflow must reject a wrong-source tag");
+  assert.ok(releaseLookup > mismatchGuard, "tag identity must be verified before release idempotency");
 });

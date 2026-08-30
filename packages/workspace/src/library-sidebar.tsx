@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { FolderPlus, PencilSimple, Trash } from "@phosphor-icons/react";
+import { FolderPlus, PencilSimple, Trash, X } from "@phosphor-icons/react";
 import {
   MAX_COLLECTION_NAME_SCALARS,
   type CollectionSummary,
@@ -165,13 +165,13 @@ export function LibrarySidebar(props: {
           <p className="eyebrow">Library</p>
           <p className="sidebar__count">{props.total.toLocaleString()} {props.total === 1 ? "Asset" : "Assets"}</p>
         </div>
-        <button className="button--quiet sidebar__close" onClick={props.onClose}>Close</button>
+        <button className="button--quiet sidebar__close" type="button" onClick={props.onClose}><UiIcon icon={X} /><span>Close</span></button>
       </header>
 
       <section aria-labelledby="roots-heading">
         <div className="section-heading">
           <h2 id="roots-heading">Roots</h2>
-          <button className="button--quiet" data-add-root disabled={props.disabled || authorityBusy} onClick={props.onAddRoot}><UiIcon icon={FolderPlus} />{" "}Add Root</button>
+          <button className="button--quiet" data-add-root disabled={props.disabled || authorityBusy} onClick={props.onAddRoot}><UiIcon icon={FolderPlus} /><span>Add Root</span></button>
         </div>
         {roots.length === 0 ? <p className="muted">No Root authorized.</p> : (
           <ul className="plain-list">

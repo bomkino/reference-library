@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from "react";
-import { ArrowLeft, ArrowRight, Columns, X } from "@phosphor-icons/react";
+import { useRef, useState, type FormEvent } from "react";
+import { ArrowLeft, ArrowRight, CaretDown, Columns, X } from "@phosphor-icons/react";
 import type {
   AssetSummary,
   CollectionSummary,
@@ -30,6 +30,12 @@ export function SelectionTray(props: {
   const [tagInput, setTagInput] = useState("");
   const [usedInInput, setUsedInInput] = useState("");
   const [collectionId, setCollectionId] = useState("");
+  const batchTrigger = useRef<HTMLButtonElement>(null);
+
+  const closeBatchTools = () => {
+    setExpanded(false);
+    requestAnimationFrame(() => batchTrigger.current?.focus({ preventScroll: true }));
+  };
 
   const submitTags = (event: FormEvent) => {
     event.preventDefault();
@@ -41,7 +47,17 @@ export function SelectionTray(props: {
   };
 
   return (
-    <aside className={`selection-tray${expanded ? " selection-tray--expanded" : ""}`} aria-label={`Shortlist, ${props.assets.length} assets`} aria-busy={props.busy}>
+    <aside
+      className={`selection-tray${expanded ? " selection-tray--expanded" : ""}`}
+      aria-label={`Shortlist, ${props.assets.length} assets`}
+      aria-busy={props.busy}
+      onKeyDown={(event) => {
+        if (event.defaultPrevented || !expanded || event.key !== "Escape") return;
+        event.preventDefault();
+        event.stopPropagation();
+        closeBatchTools();
+      }}
+    >
       <header className="selection-tray__header">
         <div className="selection-tray__title">
           <p className="eyebrow">Shortlist</p>
@@ -54,16 +70,23 @@ export function SelectionTray(props: {
             disabled={props.busy || props.assets.length < 2}
             onClick={props.onCompare}
           >
-            <UiIcon icon={Columns} />{" "}Compare {props.assets.length > MAX_COMPARE_ASSETS ? `first ${MAX_COMPARE_ASSETS}` : ""}
+            <UiIcon icon={Columns} /><span>Compare {props.assets.length > MAX_COMPARE_ASSETS ? `first ${MAX_COMPARE_ASSETS}` : ""}</span>
           </button>
           <button
+            ref={batchTrigger}
             className="button--secondary"
             aria-expanded={expanded}
             aria-controls="shortlist-batch-tools"
             disabled={props.busy}
-            onClick={() => setExpanded((open) => !open)}
+            onClick={() => {
+              if (expanded) closeBatchTools();
+              else setExpanded(true);
+            }}
           >
-            {expanded ? "Done" : "Batch edit"}
+            <span>{expanded ? "Done" : "Batch edit"}</span>
+            <span aria-hidden="true" className={`selection-tray__batch-caret${expanded ? " selection-tray__batch-caret--open" : ""}`}>
+              <UiIcon icon={CaretDown} />
+            </span>
           </button>
           <button className="button--quiet" disabled={props.busy} onClick={props.onClear}>Clear</button>
         </div>
@@ -102,8 +125,12 @@ export function SelectionTray(props: {
         ))}
       </div>
 
-      {expanded && (
-        <div className="selection-tray__actions" id="shortlist-batch-tools">
+      <div
+        className={`selection-tray__actions selection-tray__actions--${expanded ? "open" : "closed"}`}
+        id="shortlist-batch-tools"
+        aria-hidden={!expanded}
+        inert={!expanded}
+      >
           <fieldset disabled={props.busy}>
             <legend>Batch review</legend>
             <div className="selection-tray__review-buttons">
@@ -152,8 +179,7 @@ export function SelectionTray(props: {
               </button>
             </span>
           </label>
-        </div>
-      )}
+      </div>
 
       {props.status && (
         <footer className="selection-tray__footer">

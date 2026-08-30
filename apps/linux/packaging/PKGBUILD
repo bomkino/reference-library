@@ -1,5 +1,5 @@
 pkgname=reference-library
-pkgver=0.3.0
+pkgver=0.3.1
 pkgrel=1
 pkgdesc='Private project visual research library'
 arch=('x86_64' 'aarch64')

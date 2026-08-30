@@ -2,7 +2,7 @@
 
 ## Canonical status
 
-The daily-use Library and editorial decision loop are canonical on `main`. The current source line declares 0.3.0 / build 3. GitHub Releases—not source metadata or a workflow artifact—is the authority for the latest public version.
+The daily-use Library and editorial decision loop are canonical on `main`. The current source line declares 0.3.1 / build 4. GitHub Releases—not source metadata or a workflow artifact—is the authority for the latest public version.
 
 Compatible CI packages Apple arm64 and Linux x86_64 artifacts and exercises the extracted Linux application under X11 and a real headless Wayland compositor. That evidence does not by itself prove installed Apple-Silicon or Garuda integration. Public release, compatible-runner packaging and target integration remain separate states.
 
@@ -27,6 +27,10 @@ Broad catalogue recognition, three browse modes, category/file/media facets, Tag
 ### 0.3 interface foundation
 
 Locally bundled CC0 pitch.dog Type System v13 fonts establish PD Body, PD Head and PD Eyebrow roles. Pinned Phosphor icons replace improvised utility marks. A discrete spacing scale, target floors and focus-managed narrow-window Library and Inspector drawers make the editorial interface consistent without changing canonical Library meaning.
+
+### 0.3.1 alignment and motion refinement
+
+Container geometry, control heights, icon/label/caret rhythm and panel insets are balanced across wide and constrained layouts. Drawers, filters and batch tools use stable overlay layers; local disclosures use restrained expansion motion with an immediate reduced-motion path. Canonical Library meaning remains unchanged.
 
 ## Active target frontier
 

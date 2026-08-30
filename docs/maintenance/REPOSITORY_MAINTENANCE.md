@@ -8,7 +8,7 @@ This file describes how Reference Library stays reproducible, reviewable and hon
 
 GitHub Releases is the publication authority. A version in source, a tag without a release, a workflow artifact or a green branch run is not by itself a public release. Published packages must come from the exact `main` revision named by the tag and release receipt. Never move an existing release tag to newer source.
 
-The historical 0.1.0 and 0.2.0 notes and receipts describe their own release decisions. They remain frozen evidence, not the maintenance policy for later versions.
+The historical 0.1.0, 0.2.0 and 0.3.0 notes and receipts describe their own release decisions. They remain frozen evidence, not the maintenance policy for later versions. A factual post-publication status correction must label itself explicitly and must not rewrite feature history.
 
 ## Toolchain policy
 
@@ -39,7 +39,7 @@ Every job has a hard timeout. Superseded branch runs cancel automatically; `main
 4. Regenerate dependency licences and notices whenever a shipped dependency or bundled third-party asset changes.
 5. Run repository, Rust, shared workspace, native-host and packaging checks on the candidate branch.
 6. Merge the reviewed candidate to `main`, then require the full five-job workflow on that exact commit.
-7. Create the immutable version tag and deliberate GitHub Release only after explicit publication authority. Attach checksums and source-bound receipts to the public artifacts.
+7. Create the immutable version tag and deliberate GitHub Release only after explicit publication authority. A pre-existing version tag must resolve to the exact verified source commit or publication fails. Attach checksums and source-bound receipts to the public artifacts.
 8. Record the exact commit, workflow, artifacts and checksums in a release receipt. Do not describe publication as complete before the tag and GitHub Release are observable.
 
 When changing bundled fonts, preserve the upstream tag, full commit, licence and SHA-256 for every binary in `THIRD_PARTY.md`. Fonts must be served from local application resources; runtime GitHub fetches, authentication and client-side tokens are prohibited. Do not copy upstream CSS, tokens or documentation unless their licence independently permits it.
