@@ -160,7 +160,9 @@ async function collectMetrics(window, fonts) {
     for (const node of targets) {
       const visible = visibleBounds(node);
       if (!visible) continue;
-      if (visible.causes.length) {
+      // Contact-sheet virtualization deliberately renders overscan cards across the scrollport edge.
+      const virtualizedContactSheetCard = node.matches('.asset-card') && Boolean(node.closest('.contact-sheet'));
+      if (visible.causes.length && !virtualizedContactSheetCard) {
         clippedTargets.push({ ...describe(node), bounds: bounds(visible.rect), causes: visible.causes });
       }
       if (node.matches('button:not([hidden]), summary')) {
