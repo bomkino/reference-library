@@ -60,6 +60,7 @@ test("runtime type, token spacing, effects and control floors cannot regress", a
     const stylesheet = await readFile(stylesheetPath, "utf8");
     const withoutFloorCoverage = stylesheet
       .replace("--space-4: 1rem;", "--space-4: 13px;")
+      .replace(".view-settings:not([open]) > .view-settings__panel { display: none; }", "")
       .replace(
         ".icon-button,\n.token button,\n.selection-chip__order button,",
         ".token button,\n.selection-chip__order button,",
@@ -75,6 +76,7 @@ test("runtime type, token spacing, effects and control floors cannot regress", a
     assert.ok(problems.some((problem) => problem.includes("runtime font-weight 700")));
     assert.ok(problems.some((problem) => problem.includes("runtime wght axis 700")));
     assert.ok(problems.some((problem) => problem.includes("must define --space-4 once")));
+    assert.ok(problems.some((problem) => problem.includes("closed view settings must explicitly hide")));
     assert.ok(problems.filter((problem) => problem.includes("prohibited visual effect")).length >= 3);
     assert.ok(problems.some((problem) => problem.includes(".facet-chip must have a min-height floor")));
     assert.ok(problems.some((problem) => problem.includes(".icon-button must have min-height and min-width floors")));

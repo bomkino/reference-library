@@ -273,6 +273,9 @@ function inspectStylesheet(source, problems) {
 
   requireCustomProperty(roots, "--control-size", /^max\(44px,\s*3\.5rem\)$/, problems);
   requireCustomProperty(roots, "--target-min", /^max\(44px,\s*2\.75rem\)$/, problems);
+  if (!selectorEndsWithDeclarations(rules, ".view-settings:not([open]) > .view-settings__panel", { display: "none" })) {
+    problems.push("closed view settings must explicitly hide their panel");
+  }
   for (const selector of CONTROL_FLOOR_SELECTORS) {
     if (!selectorEndsWithDeclarations(rules, selector, { "min-height": "var(--control-size)" })) {
       problems.push(`${selector} must have a min-height floor of var(--control-size)`);

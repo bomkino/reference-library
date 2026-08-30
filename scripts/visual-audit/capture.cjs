@@ -116,6 +116,8 @@ async function collectMetrics(window, fonts) {
       const rect = node.getBoundingClientRect();
       let clipped = { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
       const causes = [];
+      let scrollClippedX = false;
+      let scrollClippedY = false;
       for (let ancestor = node.parentElement; ancestor; ancestor = ancestor.parentElement) {
         const style = getComputedStyle(ancestor);
         const overflowX = style.overflowX;
@@ -135,10 +137,12 @@ async function collectMetrics(window, fonts) {
         if (clipped.right <= clipped.left || clipped.bottom <= clipped.top) return null;
         const scrollX = overflowX === "auto" || overflowX === "scroll";
         const scrollY = overflowY === "auto" || overflowY === "scroll";
-        if (clipsX && !scrollX && (before.left < clientRect.left - tolerance || before.right > clientRect.right + tolerance)) {
+        if (clipsX && scrollX && (before.left < clientRect.left - tolerance || before.right > clientRect.right + tolerance)) scrollClippedX = true;
+        if (clipsY && scrollY && (before.top < clientRect.top - tolerance || before.bottom > clientRect.bottom + tolerance)) scrollClippedY = true;
+        if (clipsX && !scrollX && !scrollClippedX && (before.left < clientRect.left - tolerance || before.right > clientRect.right + tolerance)) {
           causes.push({ axis: "horizontal", ancestor: ancestor.tagName.toLowerCase(), overflow: overflowX });
         }
-        if (clipsY && !scrollY && (before.top < clientRect.top - tolerance || before.bottom > clientRect.bottom + tolerance)) {
+        if (clipsY && !scrollY && !scrollClippedY && (before.top < clientRect.top - tolerance || before.bottom > clientRect.bottom + tolerance)) {
           causes.push({ axis: "vertical", ancestor: ancestor.tagName.toLowerCase(), overflow: overflowY });
         }
       }
@@ -356,7 +360,8 @@ app.whenReady().then(async () => {
     await setSelect(window, '.view-settings__panel select[aria-label="Interface"]', "1.5");
     await capture(window, "05b-view-settings-150-percent");
     await setSelect(window, '.view-settings__panel select[aria-label="Interface"]', "1");
-    await evaluate(window, "close view settings", `document.querySelector('.view-settings > summary').click()`);
+    await evaluate(window, "close view settings", `document.querySelector('.view-settings').removeAttribute('open')`);
+    await waitFor(window, "view settings close", "!document.querySelector('.view-settings[open]')");
 
     await clickText(window, ".query-commandbar button", "Filters");
     await waitFor(window, "filter panel", "document.querySelector('.query-commandbar__filters[aria-expanded=\"true\"]') && document.querySelector('.filter-panel')");
