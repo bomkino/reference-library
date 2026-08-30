@@ -11,7 +11,7 @@
     "check:interface-system": "node scripts/check-interface-system.mjs",
     "check:product-icon": "node scripts/generate-product-icon.mjs --check",
     "check:release-metadata": "node scripts/check-release-metadata.mjs",
-    "audit:visual": "xvfb-run -a -s '-screen 0 1600x1200x24' electron scripts/visual-audit/capture.cjs",
+    "audit:visual": "xvfb-run -a -s '-screen 0 1600x1200x24' electron --no-sandbox scripts/visual-audit/capture.cjs",
     "build": "npm run build -w @pitchdog/reference-workspace && npm run build -w @pitchdog/reference-linux",
     "typecheck": "npm run typecheck -w @pitchdog/reference-bridge && npm run typecheck -w @pitchdog/reference-workspace",
     "test": "node --test scripts/tests/*.test.mjs apps/macos/contract-tests/*.test.mjs && npm run test -w @pitchdog/reference-workspace && npm run test -w @pitchdog/reference-linux",
