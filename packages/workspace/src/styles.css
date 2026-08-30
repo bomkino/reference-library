@@ -2032,6 +2032,10 @@ summary svg {
 .selection-tray__title { flex-wrap: wrap; }
 .selection-tray__headline-actions { flex-wrap: wrap; }
 .selection-tray__assets { overscroll-behavior-inline: contain; }
+.selection-tray__review-buttons button {
+  min-width: var(--target-min);
+  min-inline-size: var(--target-min);
+}
 
 .selection-tray__actions {
   position: absolute;
