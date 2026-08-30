@@ -35,7 +35,7 @@ Feature parity is not complete when the app merely finds and previews material. 
 find → shortlist → order → compare → decide → annotate → collect
 ```
 
-The candidate therefore adds a bounded, session-local Shortlist of up to 32 Assets. The first four ordered positions are explicit Compare slots. A side-by-side Compare Board mirrors normalized pan between differently sized images at 100% or 200%, exposes review context, and keeps Open, Reveal, and Copy Path available at the point of judgment. Batch review, Tags, Used In, and Collection membership apply to the exact Shortlist with fresh-revision checks and honest partial-failure reporting.
+Reference Library includes a bounded, session-local Shortlist of up to 32 Assets. The first four ordered positions are explicit Compare slots. A side-by-side Compare Board mirrors normalized pan between differently sized images at 100% or 200%, exposes review context, and keeps Open, Reveal, and Copy Path available at the point of judgment. Batch review, Tags, Used In, and Collection membership apply to the exact Shortlist with fresh-revision checks and honest partial-failure reporting.
 
 The Shortlist is intentionally transient: it is working attention, not canonical Library meaning. A deliberate selection becomes durable when the user adds it to a Collection or writes curation metadata.
 
@@ -55,4 +55,4 @@ The old **Consolidate Fonts** command is not part of Reference Library. Font con
 
 ## Remaining target proof
 
-Source and compatible-runner proof do not replace real use. Feature-parity promotion still requires exact packaged journeys on Apple-Silicon macOS and Garuda/Arch/KDE, plus a real cross-platform Library round trip.
+Source and compatible-runner proof do not replace real use. Representative target-integration acceptance still requires exact packaged journeys on Apple-Silicon macOS and Garuda/Arch/KDE, plus a real cross-platform Library round trip.

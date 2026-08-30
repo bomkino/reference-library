@@ -6,9 +6,11 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
+import { Check, Plus } from "@phosphor-icons/react";
 import type {
   AssetSummary,
   AssetViewMode,
+  InterfaceScale,
   ReferenceWorkspaceBridge,
 } from "@pitchdog/reference-bridge";
 import {
@@ -17,6 +19,7 @@ import {
   type NavigationKey,
 } from "./selection";
 import { computeVirtualWindow } from "./virtual-window";
+import { UiIcon } from "./ui-icon";
 
 interface ContactSheetProps {
   bridge: ReferenceWorkspaceBridge;
@@ -24,6 +27,7 @@ interface ContactSheetProps {
   total: number;
   items: ReadonlyMap<number, AssetSummary>;
   thumbnailSize: number;
+  interfaceScale: InterfaceScale;
   viewMode: AssetViewMode;
   multiThumbnailPreviews: boolean;
   selectedAssetId: string | null;
@@ -42,7 +46,7 @@ export function ContactSheet(props: ContactSheetProps) {
   const pendingFocusIndex = useRef<number | null>(null);
   const restoreGridFocus = useRef(false);
   const [geometry, setGeometry] = useState({ width: 900, height: 600, scrollTop: 0 });
-  const layout = contactSheetLayout(props.viewMode, props.thumbnailSize, geometry.width);
+  const layout = contactSheetLayout(props.viewMode, props.thumbnailSize, geometry.width, props.interfaceScale);
   const virtual = useMemo(
     () => computeVirtualWindow({
       itemCount: props.total,
@@ -164,7 +168,7 @@ export function ContactSheet(props: ContactSheetProps) {
             top: virtual.offsetTop,
             gridTemplateColumns: layout.template,
             gridAutoRows: `${layout.cardHeight}px`,
-            gap: layout.gap,
+            gap: props.viewMode === "list" ? "var(--space-2)" : "var(--space-4)",
           }}
         >
           {indices.map((index) => {
@@ -230,7 +234,7 @@ export function ContactSheet(props: ContactSheetProps) {
                   aria-hidden="true"
                   title={shortlisted ? "Remove from shortlist" : "Add to shortlist"}
                 >
-                  {shortlisted ? "✓" : "+"}
+                  <UiIcon icon={shortlisted ? Check : Plus} />
                 </span>
                 <AssetVisual
                   asset={asset}
@@ -324,8 +328,9 @@ function AssetPlaceholder({ asset }: { asset: AssetSummary }) {
   );
 }
 
-function contactSheetLayout(view: AssetViewMode, thumbnailSize: number, width: number) {
-  const gap = view === "list" ? 8 : 16;
+function contactSheetLayout(view: AssetViewMode, thumbnailSize: number, width: number, interfaceScale: InterfaceScale) {
+  const rootSize = 15 * interfaceScale;
+  const gap = view === "list" ? rootSize * 0.5 : rootSize;
   if (view === "list") {
     return { columns: 1, cardHeight: 96, gap, template: "minmax(0, 1fr)" };
   }

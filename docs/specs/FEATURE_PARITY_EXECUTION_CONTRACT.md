@@ -1,5 +1,7 @@
 # Feature-Parity Execution Contract
 
+> **Historical contract:** fulfilled by the 0.2 source increment and now frozen. Read [`CONTEXT.md`](../../CONTEXT.md), the [implementation frontier](../roadmap/IMPLEMENTATION_FRONTIER.md) and current release notes for present status. Period-specific wording below is preserved as acceptance evidence.
+
 ## Goal
 
 Restore the useful breadth and speed of the original Pitch Deck Tools Asset Browser without reintroducing path-derived identity, generated HTML as state, browser-local canonical data, silent decoder failures, unrestricted path exposure, or source mutation.

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "productName": "Reference Library",
-  "version": "0.2.0",
-  "buildNumber": "2",
+  "version": "0.3.0",
+  "buildNumber": "3",
   "bundleIdentifier": "io.pitchdog.ReferenceLibrary",
   "documentTypeIdentifier": "io.pitchdog.pitchlibrary",
   "targets": {
@@ -10,16 +10,16 @@
       "os": "linux",
       "arch": "x86_64",
       "artifacts": [
-        "reference-library-0.2.0-x64.pacman",
-        "reference-library-0.2.0-x86_64.AppImage",
-        "reference-library-0.2.0-x64.tar.gz"
+        "reference-library-0.3.0-x64.pacman",
+        "reference-library-0.3.0-x86_64.AppImage",
+        "reference-library-0.3.0-x64.tar.gz"
       ]
     },
     "macos-arm64": {
       "os": "macos",
       "arch": "arm64",
       "artifacts": [
-        "reference-library-0.2.0-macos-arm64.app.zip"
+        "reference-library-0.3.0-macos-arm64.app.zip"
       ]
     }
   }

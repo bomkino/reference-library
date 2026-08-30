@@ -22,8 +22,8 @@ Shortlist is a transient working set for the current Library session.
 - Identity: stable Asset IDs, never paths.
 - Scope: survives query, filter, sort and virtual-window changes while the Library remains open.
 - Persistence: intentionally not canonical. Use a Collection for a durable set.
-- Entry: `X`, modifier-click, the visible `+` control, or Shift-click across a loaded visible range.
-- Removal: `X`, the visible check control, individual tray removal, or Clear.
+- Entry: `X`, modifier-click, the semantic Add to Shortlist control, or Shift-click across a loaded visible range.
+- Removal: `X`, the semantic Remove from Shortlist control, individual tray removal, or Clear.
 - Order: explicit Earlier/Later controls decide which four candidates occupy Compare slots.
 
 The Shortlist holds refreshed summaries rather than duplicating canonical state. When an Asset changes, every visible Shortlist surface receives the new title, review state, category, media information, tags, Used In values and revision.

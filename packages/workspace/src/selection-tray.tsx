@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { ArrowLeft, ArrowRight, Columns, X } from "@phosphor-icons/react";
 import type {
   AssetSummary,
   CollectionSummary,
@@ -6,6 +7,7 @@ import type {
   ReviewState,
 } from "@pitchdog/reference-bridge";
 import { MAX_COMPARE_ASSETS } from "./selection";
+import { UiIcon } from "./ui-icon";
 
 export function SelectionTray(props: {
   bridge: ReferenceWorkspaceBridge;
@@ -52,7 +54,7 @@ export function SelectionTray(props: {
             disabled={props.busy || props.assets.length < 2}
             onClick={props.onCompare}
           >
-            Compare {props.assets.length > MAX_COMPARE_ASSETS ? `first ${MAX_COMPARE_ASSETS}` : ""}
+            <UiIcon icon={Columns} />{" "}Compare {props.assets.length > MAX_COMPARE_ASSETS ? `first ${MAX_COMPARE_ASSETS}` : ""}
           </button>
           <button
             className="button--secondary"
@@ -84,16 +86,17 @@ export function SelectionTray(props: {
               </span>
             </button>
             <span className="selection-chip__order" role="group" aria-label={`Reorder ${asset.displayName}`}>
-              <button className="button--quiet" aria-label={`Move ${asset.displayName} earlier`} disabled={props.busy || index === 0} onClick={() => props.onMove(asset.assetId, -1)}>←</button>
-              <button className="button--quiet" aria-label={`Move ${asset.displayName} later`} disabled={props.busy || index === props.assets.length - 1} onClick={() => props.onMove(asset.assetId, 1)}>→</button>
+              <button className="button--quiet" aria-label={`Move ${asset.displayName} earlier`} title={`Move ${asset.displayName} earlier`} disabled={props.busy || index === 0} onClick={() => props.onMove(asset.assetId, -1)}><UiIcon icon={ArrowLeft} /></button>
+              <button className="button--quiet" aria-label={`Move ${asset.displayName} later`} title={`Move ${asset.displayName} later`} disabled={props.busy || index === props.assets.length - 1} onClick={() => props.onMove(asset.assetId, 1)}><UiIcon icon={ArrowRight} /></button>
             </span>
             <button
               className="selection-chip__remove"
               aria-label={`Remove ${asset.displayName} from shortlist`}
+              title={`Remove ${asset.displayName} from shortlist`}
               disabled={props.busy}
               onClick={() => props.onRemove(asset.assetId)}
             >
-              ×
+              <UiIcon icon={X} />
             </button>
           </div>
         ))}

@@ -133,15 +133,3 @@ jobs:
             release-bundle/BUILD_RECEIPT-linux-x86_64.json \
             release-bundle/BUILD_RECEIPT-macos-arm64.json \
             release-bundle/RELEASE_RECEIPT.json
-
-      - name: Remove merged Codex branches
-        if: steps.metadata.outputs.publish == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          git ls-remote --heads origin 'refs/heads/codex/*' \
-            | awk '{sub("refs/heads/", "", $2); print $2}' \
-            | while IFS= read -r branch; do
-                test -n "$branch" || continue
-                git push origin --delete "$branch"
-              done

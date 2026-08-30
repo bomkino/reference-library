@@ -3,3 +3,7 @@
 Reference Library is licensed under GNU Affero General Public License v3.0.
 
 Third-party notices are derived from `THIRD_PARTY.md`, lockfiles and `DEPENDENCY-LICENSES.json`. No external source code has been copied into the repository at foundation time.
+
+The bundled PD Head, PD Head Alt, PD Body, PD Body Alt and PD Eyebrow font binaries come from pitch.dog Type System v13.0.0 and are dedicated under CC0 1.0 Universal. Their exact source commit and checksums are recorded in `THIRD_PARTY.md`.
+
+Interface icons use `@phosphor-icons/react` 2.1.10 under the MIT License. Its locked dependency notice is generated into `THIRD_PARTY-NOTICES.txt`.

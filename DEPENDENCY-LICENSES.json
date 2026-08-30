@@ -17,7 +17,7 @@
     "npm": {
       "edgePolicy": "application production closure plus pinned Electron runtime closure",
       "packageCounts": {
-        "npm-production": 3,
+        "npm-production": 4,
         "electron-runtime": 13
       }
     }
@@ -679,6 +679,16 @@
       "source": "https://registry.npmjs.org/@electron/get/-/get-5.1.0.tgz",
       "shippedIn": [
         "electron-runtime"
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@phosphor-icons/react",
+      "version": "2.1.10",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/@phosphor-icons/react/-/react-2.1.10.tgz",
+      "shippedIn": [
+        "npm-production"
       ]
     },
     {

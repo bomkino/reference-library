@@ -105,7 +105,11 @@ def npm_closure(packages: dict[str, dict[str, Any]], seeds: Iterable[str]) -> se
 
 def npm_production_groups(lock: dict[str, Any]) -> dict[str, set[str]]:
     packages = lock.get("packages", {})
-    workspace_paths = [path for path, package in packages.items() if package.get("link")]
+    workspace_paths = [
+        package["resolved"]
+        for package in packages.values()
+        if package.get("link") and package.get("resolved") in packages
+    ]
     application = npm_closure(packages, ["", *workspace_paths])
     electron_path = "node_modules/electron"
     if electron_path not in packages:

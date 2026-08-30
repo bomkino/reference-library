@@ -306,6 +306,11 @@ License: MIT
 Shipped in: electron-runtime
 Source: https://registry.npmjs.org/@electron/get/-/get-5.1.0.tgz
 
+npm:@phosphor-icons/react@2.1.10
+License: MIT
+Shipped in: npm-production
+Source: https://registry.npmjs.org/@phosphor-icons/react/-/react-2.1.10.tgz
+
 npm:@types/node@24.13.3
 License: MIT
 Shipped in: electron-runtime

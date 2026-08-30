@@ -49,7 +49,11 @@ A green compatible runner proves source-ready behavior only. M1, L1, X1 and C1 r
 - Read `docs/product/BRUTALIST_INTERFACE_SYSTEM.md` before changing workspace presentation.
 - Preserve independent Interface Scale, thumbnail density and Preview zoom.
 - Keep ordinary targets at least `max(44px, 3.5rem)` in the root sizing system.
-- Reflow the Inspector at supported narrow widths; do not hide it.
+- Keep compact and icon-only targets at least `max(44px, 2.75rem)`; the visible icon may be smaller inside that target.
+- Preserve Library and Inspector capability at supported narrow widths through explicit, focus-managed drawers; never remove their content to make a layout pass.
+- Use the locally bundled CC0 pitch.dog v13 fonts: PD Body by default, PD Head for major editorial display and PD Eyebrow for literal metadata/data. Use authentic weight anchors only.
+- Use pinned Phosphor icons through the shared `UiIcon` wrapper. Keep the product mark separate; do not add hand-drawn utility SVGs, CSS-mask icons or icon-like Unicode controls.
+- Use `--space-1` through `--space-8` for component padding and gaps. Reserve fluid spacing for page and region gutters.
 - Use one restrained signal colour. Do not add gradients, glass panels or dashboard-card styling.
 - Keep frequent keyboard actions instant and respect `prefers-reduced-motion`.
 - Generate product icon output through `scripts/generate-product-icon.mjs`; never hand-edit a derivative alone.
